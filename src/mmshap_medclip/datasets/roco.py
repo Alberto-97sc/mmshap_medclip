@@ -3,7 +3,7 @@ import pandas as pd
 from PIL import Image
 from io import BytesIO
 
-from .base import DatasetBase
+from mmshap_medclip.datasets.base import DatasetBase
 from mmshap_medclip.registry import register_dataset
 
 @register_dataset("roco")
