@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mmshap_medclip"
+version = "0.1.0"
+description = "Pipeline modular para medir el balance multimodal con SHAP en modelos tipo CLIP (incl. PubMedCLIP)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+  { name = "Tu Nombre" }
+]
+keywords = ["shap", "clip", "multimodal", "xai", "medical-ai"]
+
+# Dependencias que se instalarán automáticamente al hacer `pip install -e .`
+dependencies = [
+  "torch",
+  "transformers",
+  "shap",
+  "matplotlib",
+  "pandas",
+  "pillow",
+  "pyyaml",
+  "tqdm",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# (Opcional) extras para desarrollo
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "black",
+  "ruff",
+]

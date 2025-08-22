@@ -1,0 +1,37 @@
+# Notebooks auto-saves
+.ipynb_checkpoints/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# System files
+.DS_Store
+
+# Resultados y logs
+result_jsons/
+results_txts/
+
+# Datos (se mantienen en Drive, no en GitHub)
+*.zip
+*.csv
+*.json
+*.h5
+*.pt
+*.pth
+*.ckpt
+/content/drive/MyDrive/MAESTRIA-TESIS/datasets/
+
+
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+.env
+.venv/
+dist/
+build/
+*.egg-info/
+outputs/
+result_jsons/
+*.zip

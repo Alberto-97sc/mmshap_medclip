@@ -1,0 +1,19 @@
+experiment_name: demo_roco_sample
+device: auto
+
+dataset:
+  name: roco
+  params:
+    zip_path: /content/drive/MyDrive/MAESTRIA-TESIS/datasets/ROCO/dataset_roco.zip
+    split: validation
+    n_rows: all
+    columns:
+      image_key: name
+      caption_key: caption
+      images_subdir: all_data/validation/radiology/images
+
+model:
+  name: pubmedclip-vit-b32
+  params: {}
+
+
