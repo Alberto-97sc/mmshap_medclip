@@ -46,11 +46,8 @@ def prepare_batch(
 
     # forward sin gradientes (con AMP si hay CUDA)
     with torch.inference_mode():
-        if amp_if_cuda and device.type == "cuda":
-            from torch.cuda.amp import autocast
-            with autocast():
-                outputs = model_wrapper(**inputs)
-        else:
+        amp_ctx = torch.amp.autocast("cuda") if (amp_if_cuda and device.type == "cuda") else nullcontext()
+        with amp_ctx:
             outputs = model_wrapper(**inputs)
 
     logits = outputs.logits_per_image  # [B, 1]
