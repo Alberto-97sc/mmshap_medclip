@@ -163,7 +163,7 @@ model:
 ---
 
 ## Licencia
-MIT (o la que prefieras).
+MIT
 
 ## Créditos
 Proyecto de tesis: **Medición del balance multimodal con SHAP en CLIP médico**.
