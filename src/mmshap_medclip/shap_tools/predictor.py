@@ -1,7 +1,9 @@
 # src/mmshap_medclip/shap_tools/predictor.py
 from typing import Dict, Optional, Union
+from contextlib import nullcontext
 import numpy as np
 import torch
+
 
 class Predictor:
     """
@@ -9,9 +11,10 @@ class Predictor:
     - Acepta x como np.ndarray o torch.Tensor (1D o 2D) con [texto | parches].
     - No usa variables globales: todo viene del constructor.
     """
+
     def __init__(
         self,
-        model_wrapper,                         # p.ej. CLIPWrapper (expone .model)
+        model_wrapper,                         # p.ej., CLIPWrapper (expone .model)
         base_inputs: Dict[str, torch.Tensor],  # dict del processor para este batch
         patch_size: Optional[int] = None,      # si None se infiere del modelo
         device: Optional[torch.device] = None,
@@ -36,8 +39,8 @@ class Predictor:
 
         # Geometría de la imagen
         _, _, H, W = self.base_inputs["pixel_values"].shape
-        assert H % self.patch_size == 0 and W % self.patch_size == 0, \
-            f"Imagen {H}×{W} no divisible por patch_size={self.patch_size}"
+        if (H % self.patch_size != 0) or (W % self.patch_size != 0):
+            raise AssertionError(f"Imagen {H}×{W} no divisible por patch_size={self.patch_size}")
         self.grid_h = H // self.patch_size
         self.grid_w = W // self.patch_size
         self.num_patches = self.grid_h * self.grid_w
@@ -58,22 +61,16 @@ class Predictor:
 
         B, L = x.shape
         exp_L = self.text_len + self.num_patches
-        assert L == exp_L, f"L esperado={exp_L}, recibido={L}"
+        if L != exp_L:
+            raise AssertionError(f"L esperado={exp_L}, recibido={L}")
 
-        input_ids = x[:, :self.text_len]             # [B, L_txt]
-        patch_mask_ids = x[:, self.text_len:]        # [B, N]
+        input_ids = x[:, :self.text_len]      # [B, L_txt]
+        patch_mask_ids = x[:, self.text_len:] # [B, N]
 
         out = torch.empty(B, dtype=torch.float32, device=self.device)
 
-        # Contexto AMP si aplica
-        if self.use_amp:
-            from torch.cuda.amp import autocast
-            amp_ctx = autocast()
-        else:
-            class _Noop:
-                def __enter__(self): return None
-                def __exit__(self, *a): return False
-            amp_ctx = _Noop()
+        # Contexto AMP (API nueva de PyTorch)
+        amp_ctx = torch.amp.autocast("cuda") if self.use_amp else nullcontext()
 
         with torch.inference_mode(), amp_ctx:
             for i in range(B):
@@ -87,8 +84,8 @@ class Predictor:
                     masked["attention_mask"] = (am[i] if am.shape[0] > i else am[0]).unsqueeze(0)
 
                 # Poner en cero los parches donde patch_mask_ids == 0
-                mid = patch_mask_ids[i]                       # [N]
-                pix = masked["pixel_values"]                  # [1, 3, H, W]
+                mid = patch_mask_ids[i]              # [N]
+                pix = masked["pixel_values"]         # [1, 3, H, W]
                 for k in range(self.num_patches):
                     if mid[k].item() == 0:
                         r = k // self.grid_w
@@ -97,7 +94,7 @@ class Predictor:
                         c0, c1 = c * self.patch_size, (c + 1) * self.patch_size
                         pix[:, :, r0:r1, c0:c1] = 0
 
-                outputs = self.model(**masked)                # logits_per_image: [1,1]
+                outputs = self.model(**masked)       # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()
 
         return out.detach().cpu().numpy()
