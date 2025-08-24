@@ -44,11 +44,33 @@ mmshap_medclip/
 En **Colab** o local, tras clonar el repo:
 
 ```bash
+REPO_URL  = "https://github.com/Alberto-97sc/mmshap_medclip.git"
+LOCAL_DIR = "/content/mmshap_medclip"
+BRANCH    = "main"
+
 %cd /content
-!git clone https://github.com/<tu_usuario>/mmshap_medclip.git
-%cd mmshap_medclip
-%pip install -e .
+import os, shutil, subprocess, sys
+
+if not os.path.isdir(f"{LOCAL_DIR}/.git"):
+    # No está clonado aún
+    !git clone $REPO_URL $LOCAL_DIR
+else:
+    # Ya existe: actualiza a la última versión del remoto
+    %cd $LOCAL_DIR
+    !git fetch origin
+    !git checkout $BRANCH
+    !git reset --hard origin/$BRANCH
+%cd $LOCAL_DIR
+!git rev-parse --short HEAD
+
 ```
+
+```bash
+# === Instalar en modo editable (pyproject.toml) ===
+%pip install -e /content/mmshap_medclip
+
+```
+
 
 - `-e` instala el paquete en **modo editable**: puedes hacer `from mmshap_medclip...` y cualquier cambio en `src/` se refleja sin reinstalar.
 - Las **dependencias** se resuelven automáticamente desde `pyproject.toml` (`[project].dependencies`).
@@ -66,62 +88,40 @@ from google.colab import drive; drive.mount('/content/drive')
 
 2) **Imports y carga de config/dataset/modelo**
 ```python
-from mmshap_medclip.io_utils import load_config
-from mmshap_medclip.devices import get_device
-from mmshap_medclip.registry import build_dataset, build_model
 
-cfg = load_config('/content/mmshap_medclip/configs/roco_isa_pubmedclip.yaml')
-device  = get_device()
-dataset = build_dataset(cfg['dataset'])
-model   = build_model(cfg['model'], device=device)
+CFG_PATH="/content/mmshap_medclip/configs/roco_isa_pubmedclip.yaml"
 
-muestra = 0
+# Asegura que cfg, device, dataset y model estén listos en esta sesión
+if not all(k in globals() for k in ("cfg", "device", "dataset", "model")):
+    from mmshap_medclip.io_utils import load_config
+    from mmshap_medclip.devices import get_device
+    from mmshap_medclip.registry import build_dataset, build_model
+
+    cfg = load_config(CFG_PATH)
+    device  = get_device()
+    dataset = build_dataset(cfg["dataset"])
+    model   = build_model(cfg["model"], device=device)
+
+print("OK → len(dataset) =", len(dataset), "| device =", device)
+
+```
+3) **Imprimir muestra**
+
+```python
+from mmshap_medclip.tasks.isa import run_isa_one
+
+muestra = 266
 sample  = dataset[muestra]
 image, caption = sample['image'], sample['text']
+
+res = run_isa_one(model, image, caption, device, explain=True, plot=True)
+print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscore']:.2%}")
+# Si quieres la figura:
+# display(res['fig'])
+
 ```
 
-3) **Batch + SHAP + métricas**
-```python
-from mmshap_medclip.tasks.utils import (
-    prepare_batch, compute_text_token_lengths, make_image_token_ids, concat_text_image_tokens
-)
-from mmshap_medclip.shap_tools.masker import build_masker
-from mmshap_medclip.shap_tools.predictor import Predictor
-from mmshap_medclip.metrics import compute_mm_score, compute_iscore
-import shap
 
-inputs, logits = prepare_batch(model, [caption], [image], device=device)
-
-nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
-image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
-X_clean, _ = concat_text_image_tokens(inputs, image_token_ids_expanded, device=device)
-
-masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
-predict_fn = Predictor(model, inputs, patch_size=imginfo['patch_size'], device=device, use_amp=True)
-
-explainer = shap.Explainer(predict_fn, masker, silent=True)
-shap_values = explainer(X_clean.cpu())
-
-tscore, word_shap = compute_mm_score(shap_values, model.tokenizer, inputs, i=0)
-iscore = compute_iscore(shap_values, inputs, i=0)
-print(f'TScore: {tscore:.2%} | IScore: {iscore:.2%}')
-```
-
-4) **Mapas de calor**
-```python
-from mmshap_medclip.vis.heatmaps import plot_text_image_heatmaps
-plot_text_image_heatmaps(
-    shap_values=shap_values,
-    inputs=inputs,
-    tokenizer=model.tokenizer,
-    images=image,
-    texts=[caption],
-    mm_scores=[(tscore, word_shap)],
-    model_wrapper=model,
-)
-```
-
----
 
 ## Config de ejemplo (`configs/roco_isa_pubmedclip.yaml`)
 
