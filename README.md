@@ -1,6 +1,12 @@
 # mmshap_medclip
 
-Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP) sobre datasets médicos (p. ej., ROCO). Diseñado para ejecutarse en **Colab + Google Drive**, versionar en **GitHub**, y escalar a más modelos/datasets/tareas.
+Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP y RClip) sobre datasets médicos (p. ej., ROCO). Diseñado para ejecutarse en **Colab + Google Drive**, versionar en **GitHub**, y escalar a más modelos/datasets/tareas.
+
+## ✨ Nuevas características
+- **Soporte para RClip**: Modelo especializado en radiología de Hugging Face (`kaveh/rclip`)
+- **Tarea de clasificación**: Además de ISA (Image-Sentence Alignment), ahora soporta clasificación multiclase
+- **Balance multimodal**: Medición automática del equilibrio entre modalidades imagen-texto usando SHAP
+- **Mapas de calor**: Visualización de la importancia de parches de imagen y tokens de texto
 
 > Esta versión asume **instalación con `pyproject.toml`** y uso de **`pip install -e .`**.
 
@@ -16,11 +22,13 @@ mmshap_medclip/
 │   ├── __init__.py
 │   ├── devices.py                          # manejo de device (CUDA/CPU)
 │   ├── registry.py                         # registro de modelos y datasets
-│   ├── models.py                           # wrappers de CLIP (openai/pubmed…)
+│   ├── models.py                           # wrappers de CLIP (openai/pubmed/rclip)
 │   ├── datasets/
 │   │   ├── base.py                         # interfaz DatasetBase
 │   │   └── roco.py                         # loader ROCO (lee ZIP en Drive)
 │   ├── tasks/
+│   │   ├── isa.py                          # Image-Sentence Alignment
+│   │   ├── classification.py               # Clasificación multiclase
 │   │   └── utils.py                        # prepare_batch, token lengths, etc.
 │   ├── shap_tools/
 │   │   ├── masker.py                       # build_masker (BOS/EOS safe)
@@ -30,7 +38,8 @@ mmshap_medclip/
 │   │   └── heatmaps.py                     # mapas de calor imagen+texto
 │   └── io_utils.py                         # cargar configs YAML
 ├── configs/
-│   └── roco_isa_pubmedclip.yaml            # config de ejemplo
+│   ├── roco_isa_pubmedclip.yaml            # config ISA con PubMedCLIP
+│   └── roco_classification_rclip.yaml      # config clasificación con RClip
 ├── README.md
 ├── pyproject.toml                          # instalación editable
 ├── .gitignore
@@ -81,6 +90,8 @@ else:
 
 ## Quickstart (Colab)
 
+### Opción A: ISA con PubMedCLIP (original)
+
 1) **Montar Google Drive** (para leer ROCO desde ZIP)
 ```python
 from google.colab import drive; drive.mount('/content/drive')
@@ -88,7 +99,6 @@ from google.colab import drive; drive.mount('/content/drive')
 
 2) **Imports y carga de config/dataset/modelo**
 ```python
-
 CFG_PATH="/content/mmshap_medclip/configs/roco_isa_pubmedclip.yaml"
 
 # Asegura que cfg, device, dataset y model estén listos en esta sesión
@@ -103,10 +113,9 @@ if not all(k in globals() for k in ("cfg", "device", "dataset", "model")):
     model   = build_model(cfg["model"], device=device)
 
 print("OK → len(dataset) =", len(dataset), "| device =", device)
-
 ```
-3) **Imprimir muestra**
 
+3) **Ejecutar ISA**
 ```python
 from mmshap_medclip.tasks.isa import run_isa_one
 
@@ -118,12 +127,78 @@ res = run_isa_one(model, image, caption, device, explain=True, plot=True)
 print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscore']:.2%}")
 # Si quieres la figura:
 # display(res['fig'])
+```
 
+### Opción B: Clasificación con RClip (¡NUEVO!)
+
+1) **Montar Google Drive**
+```python
+from google.colab import drive; drive.mount('/content/drive')
+```
+
+2) **Imports y carga de config/dataset/modelo RClip**
+```python
+CFG_PATH="/content/mmshap_medclip/configs/roco_classification_rclip.yaml"
+
+if not all(k in globals() for k in ("cfg", "device", "dataset", "model")):
+    from mmshap_medclip.io_utils import load_config
+    from mmshap_medclip.devices import get_device
+    from mmshap_medclip.registry import build_dataset, build_model
+
+    cfg = load_config(CFG_PATH)
+    device  = get_device()
+    dataset = build_dataset(cfg["dataset"])
+    model   = build_model(cfg["model"], device=device)
+
+print("OK → len(dataset) =", len(dataset), "| device =", device)
+```
+
+3) **Ejecutar clasificación con SHAP**
+```python
+from mmshap_medclip.tasks.classification import run_classification_one
+
+# Clases de ejemplo para radiología
+class_names = [
+    "Chest X-Ray", "Brain MRI", "Abdominal CT Scan", 
+    "Ultrasound", "OPG", "Mammography", "Bone X-Ray"
+]
+
+muestra = 266
+sample = dataset[muestra]
+image = sample['image']
+
+# Ejecutar clasificación con explicabilidad SHAP
+res = run_classification_one(
+    model, image, class_names, device, 
+    explain=True, plot=True
+)
+
+print(f"Clase predicha: {res['predicted_class']}")
+print(f"Probabilidades:")
+for i, (clase, prob) in enumerate(zip(class_names, res['probabilities'])):
+    print(f"  {clase}: {prob:.2%}")
+print(f"TScore: {res['tscore']:.2%}  IScore: {res['iscore']:.2%}")
+
+# Mostrar figura con mapas de calor
+if 'fig' in res:
+    display(res['fig'])
+```
+
+4) **Ejemplo simple de clasificación (sin SHAP)**
+```python
+# Para pruebas rápidas sin explicabilidad
+res_simple = run_classification_one(
+    model, image, class_names, device, 
+    explain=False  # Más rápido
+)
+print(f"Predicción rápida: {res_simple['predicted_class']} ({res_simple['probabilities'].max():.2%})")
 ```
 
 
 
-## Config de ejemplo (`configs/roco_isa_pubmedclip.yaml`)
+## Configuraciones de ejemplo
+
+### Config ISA con PubMedCLIP (`configs/roco_isa_pubmedclip.yaml`)
 
 ```yaml
 experiment_name: demo_roco_sample
@@ -143,6 +218,48 @@ dataset:
 model:
   name: pubmedclip-vit-b32
   params: {}
+```
+
+### Config Clasificación con RClip (`configs/roco_classification_rclip.yaml`)
+
+```yaml
+experiment_name: demo_roco_classification_rclip
+device: auto
+
+dataset:
+  name: roco
+  params:
+    zip_path: /content/drive/MyDrive/MAESTRIA-TESIS/datasets/ROCO/dataset_roco.zip
+    split: validation
+    n_rows: all
+    columns:
+      image_key: name
+      caption_key: caption
+      images_subdir: all_data/validation/radiology/images
+
+model:
+  name: rclip
+  params: {}
+
+# Configuración específica para clasificación
+classification:
+  class_names:
+    - "Chest X-Ray"
+    - "Brain MRI"
+    - "Abdominal CT Scan"
+    - "Ultrasound"
+    - "OPG"
+    - "Mammography"
+    - "Bone X-Ray"
+    - "Cardiac MRI"
+    - "Pulmonary CT"
+    - "Spinal MRI"
+
+# Configuración para ISA si se quiere usar también
+isa:
+  enabled: true
+  explain: true
+  plot: true
 ```
 
 ---

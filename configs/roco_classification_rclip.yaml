@@ -1,0 +1,37 @@
+experiment_name: demo_roco_classification_rclip
+device: auto
+
+dataset:
+  name: roco
+  params:
+    zip_path: /content/drive/MyDrive/MAESTRIA-TESIS/datasets/ROCO/dataset_roco.zip
+    split: validation
+    n_rows: all
+    columns:
+      image_key: name
+      caption_key: caption
+      images_subdir: all_data/validation/radiology/images
+
+model:
+  name: rclip
+  params: {}
+
+# Configuración específica para clasificación
+classification:
+  class_names:
+    - "Chest X-Ray"
+    - "Brain MRI"
+    - "Abdominal CT Scan"
+    - "Ultrasound"
+    - "OPG"
+    - "Mammography"
+    - "Bone X-Ray"
+    - "Cardiac MRI"
+    - "Pulmonary CT"
+    - "Spinal MRI"
+
+# Configuración para ISA (Image-Sentence Alignment) si se quiere usar también
+isa:
+  enabled: true
+  explain: true
+  plot: true
