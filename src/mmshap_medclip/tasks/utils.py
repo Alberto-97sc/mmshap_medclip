@@ -1,5 +1,6 @@
 # src/mmshap_medclip/tasks/utils.py
 from typing import List, Tuple, Optional, Dict
+from contextlib import nullcontext
 import torch
 from mmshap_medclip.devices import move_to_device
 
