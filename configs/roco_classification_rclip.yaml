@@ -40,5 +40,5 @@ isa:
 shap:
   algorithm: "permutation"  # "exact", "permutation", "sampling"
   max_evals: 1000          # Mínimo requerido: 521, recomendado: 1000+
-  force_cpu: false         # Forzar CPU para SHAP si hay problemas de GPU
-  hybrid_mode: true        # Usar GPU para modelo, CPU para SHAP
+  force_cpu: true          # ✅ Forzar CPU para estabilidad y debugging
+  hybrid_mode: false       # ✅ Solo CPU para evitar problemas de GPU

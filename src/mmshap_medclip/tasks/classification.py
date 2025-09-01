@@ -11,6 +11,17 @@ from mmshap_medclip.shap_tools.masker import build_masker
 from mmshap_medclip.shap_tools.predictor import ClassificationPredictor
 from mmshap_medclip.metrics import compute_mm_score, compute_iscore
 
+def load_shap_config_from_yaml(config_path: str) -> Dict[str, Any]:
+    """Carga la configuración de SHAP desde un archivo YAML."""
+    try:
+        import yaml
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        return config.get('shap', {})
+    except Exception as e:
+        print(f"⚠️ No se pudo cargar configuración SHAP: {e}")
+        return {}
+
 def run_classification_one(
     model,
     image,
@@ -72,17 +83,28 @@ def run_classification_one(
 
     # 3) SHAP - explicamos la predicción para la clase predicha
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
-    predict_fn = ClassificationPredictor(
-        model, inputs_for_shap, class_names, predicted_class_idx, 
-        patch_size=imginfo["patch_size"], device=device, use_amp=amp_if_cuda
-    )
     
-    # Configuración de SHAP
+    # Configuración de SHAP y device
     shap_algorithm = "permutation"
     max_evals = 1000
+    force_cpu = False
     if shap_config:
         shap_algorithm = shap_config.get("algorithm", "permutation")
         max_evals = shap_config.get("max_evals", 1000)
+        force_cpu = shap_config.get("force_cpu", False)
+    
+    # Si force_cpu es True, mover todo a CPU para SHAP
+    if force_cpu:
+        device_for_shap = torch.device('cpu')
+        inputs_for_shap = {k: v.cpu() for k, v in inputs_for_shap.items()}
+        X_clean = X_clean.cpu()
+    else:
+        device_for_shap = device
+    
+    predict_fn = ClassificationPredictor(
+        model, inputs_for_shap, class_names, predicted_class_idx, 
+        patch_size=imginfo["patch_size"], device=device_for_shap, use_amp=False  # No AMP en CPU
+    )
     
     # Crear explainer con parámetros configurados
     if shap_algorithm == "exact":
@@ -90,7 +112,7 @@ def run_classification_one(
     else:
         explainer = shap.Explainer(predict_fn, masker, algorithm=shap_algorithm, max_evals=max_evals, silent=True)
     
-    shap_values = explainer(X_clean.cpu())
+    shap_values = explainer(X_clean)
 
     # 4) métricas
     tscore, word_shap = compute_mm_score(shap_values, model.tokenizer, inputs_for_shap, i=0)
