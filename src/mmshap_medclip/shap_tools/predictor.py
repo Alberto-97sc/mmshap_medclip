@@ -152,12 +152,67 @@ class ClassificationPredictor:
 
         self.use_amp = bool(use_amp and self.device.type == "cuda")
 
+        # Obtener información del vocabulario del modelo
+        self.vocab_size = getattr(self.model.config, "vocab_size", None)
+        if self.vocab_size is None:
+            # Intentar obtener del text model
+            text_model = getattr(self.model, "text_model", None)
+            if text_model:
+                self.vocab_size = getattr(text_model.config, "vocab_size", None)
+        
+        if self.vocab_size is None:
+            # Fallback: usar un valor seguro
+            self.vocab_size = 50000
+            print(f"⚠️ No se pudo obtener vocab_size, usando fallback: {self.vocab_size}")
+
         # Debug info
         print(f"🔍 ClassificationPredictor inicializado:")
         print(f"  - target_class_idx: {target_class_idx}")
         print(f"  - num_classes: {len(class_names)}")
         print(f"  - text_len: {self.text_len}")
         print(f"  - num_patches: {self.num_patches}")
+        print(f"  - vocab_size: {self.vocab_size}")
+
+    def _sanitize_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """
+        Sanitiza input_ids para evitar IndexError en el embedding layer.
+        - Reemplaza IDs fuera de rango con [PAD] token (ID 0)
+        - Mantiene BOS/EOS tokens si están en rango
+        """
+        # Clonar para no modificar el original
+        sanitized = input_ids.clone()
+        
+        # Obtener tokens especiales del modelo si es posible
+        pad_token_id = 0  # Default
+        bos_token_id = 1  # Default
+        eos_token_id = 2  # Default
+        
+        # Intentar obtener del config del modelo
+        if hasattr(self.model, 'config'):
+            pad_token_id = getattr(self.model.config, 'pad_token_id', pad_token_id)
+            bos_token_id = getattr(self.model.config, 'bos_token_id', bos_token_id)
+            eos_token_id = getattr(self.model.config, 'eos_token_id', eos_token_id)
+        
+        # Validar y sanitizar
+        invalid_mask = (sanitized < 0) | (sanitized >= self.vocab_size)
+        
+        if invalid_mask.any():
+            print(f"⚠️ Encontrados {invalid_mask.sum().item()} tokens inválidos")
+            print(f"  - Rango válido: [0, {self.vocab_size-1}]")
+            print(f"  - Tokens inválidos: {sanitized[invalid_mask].tolist()}")
+            
+            # Reemplazar tokens inválidos con PAD
+            sanitized[invalid_mask] = pad_token_id
+            
+            # Preservar BOS y EOS si están en rango
+            if bos_token_id < self.vocab_size:
+                sanitized[0] = bos_token_id  # Primer token
+            if eos_token_id < self.vocab_size and self.text_len > 1:
+                sanitized[self.text_len - 1] = eos_token_id  # Último token de texto
+                
+            print(f"✅ Tokens sanitizados, usando PAD_ID={pad_token_id}")
+        
+        return sanitized
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
         # Normalizar x → tensor long en device
@@ -185,7 +240,11 @@ class ClassificationPredictor:
             for i in range(B):
                 # Clonar tensores base para no mutar el estado
                 masked = {k: v.clone() for k, v in self.base_inputs.items()}
-                masked["input_ids"] = input_ids[i].unsqueeze(0)  # [1, L_txt]
+                
+                # Sanitizar input_ids antes de pasarlos al modelo
+                current_input_ids = input_ids[i].unsqueeze(0)  # [1, L_txt]
+                sanitized_input_ids = self._sanitize_input_ids(current_input_ids)
+                masked["input_ids"] = sanitized_input_ids
 
                 # Atender attention_mask si existe
                 if "attention_mask" in masked:
@@ -205,6 +264,8 @@ class ClassificationPredictor:
 
                 try:
                     print(f"🔍 Ejecutando forward pass {i+1}/{B}...")
+                    print(f"🔍 Input IDs sanitizados: {sanitized_input_ids[0].tolist()}")
+                    
                     outputs = self.model(**masked)
                     
                     # Debug: verificar la estructura completa de outputs
