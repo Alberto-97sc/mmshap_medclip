@@ -201,10 +201,22 @@ class ClassificationPredictor:
         
         # Intentar obtener del config del modelo
         if hasattr(self.model, 'config'):
-            pad_token_id = getattr(self.model.config, 'pad_token_id', pad_token_id)
-            bos_token_id = getattr(self.model.config, 'bos_token_id', bos_token_id)
-            eos_token_id = getattr(self.model.config, 'eos_token_id', eos_token_id)
-        
+            config = self.model.config
+            # Obtener pad_token_id
+            temp_pad = getattr(config, 'pad_token_id', None)
+            if temp_pad is not None:
+                pad_token_id = temp_pad
+                
+            # Obtener bos_token_id
+            temp_bos = getattr(config, 'bos_token_id', None)
+            if temp_bos is not None:
+                bos_token_id = temp_bos
+                
+            # Obtener eos_token_id
+            temp_eos = getattr(config, 'eos_token_id', None)
+            if temp_eos is not None:
+                eos_token_id = temp_eos
+            
         # Asegurar que los tokens especiales no sean None
         if pad_token_id is None:
             pad_token_id = 0
