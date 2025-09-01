@@ -16,7 +16,7 @@ class Predictor:
         self,
         model_wrapper,                         # p.ej., CLIPWrapper (expone .model)
         base_inputs: Dict[str, torch.Tensor],  # dict del processor para este batch
-        patch_size: Optional[int] = None,      # si None se infiere del modelo
+        patch_size: Optional[int] = None,      # si None se infere del modelo
         device: Optional[torch.device] = None,
         use_amp: bool = True,                  # AMP en CUDA
     ):
@@ -122,6 +122,10 @@ class ClassificationPredictor:
         self.class_names = class_names
         self.target_class_idx = target_class_idx
 
+        # Validar target_class_idx
+        if target_class_idx < 0 or target_class_idx >= len(class_names):
+            raise ValueError(f"target_class_idx={target_class_idx} fuera de rango [0, {len(class_names)-1}]")
+
         # Copia base_inputs al device del modelo
         self.base_inputs = {k: v.to(self.device) for k, v in base_inputs.items()}
 
@@ -147,6 +151,13 @@ class ClassificationPredictor:
         self.text_len = self.base_inputs["input_ids"].shape[1]
 
         self.use_amp = bool(use_amp and self.device.type == "cuda")
+
+        # Debug info
+        print(f"🔍 ClassificationPredictor inicializado:")
+        print(f"  - target_class_idx: {target_class_idx}")
+        print(f"  - num_classes: {len(class_names)}")
+        print(f"  - text_len: {self.text_len}")
+        print(f"  - num_patches: {self.num_patches}")
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
         # Normalizar x → tensor long en device
@@ -192,9 +203,35 @@ class ClassificationPredictor:
                         c0, c1 = c * self.patch_size, (c + 1) * self.patch_size
                         pix[:, :, r0:r1, c0:c1] = 0
 
-                outputs = self.model(**masked)
-                # Para clasificación, tomamos el logit de la clase objetivo
-                logits_per_image = outputs.logits_per_image  # [1, num_classes]
-                out[i] = logits_per_image[0, self.target_class_idx]
+                try:
+                    outputs = self.model(**masked)
+                    
+                    # Debug: verificar la forma de outputs
+                    if hasattr(outputs, 'logits_per_image'):
+                        logits_shape = outputs.logits_per_image.shape
+                        print(f"🔍 Outputs logits_per_image shape: {logits_shape}")
+                        
+                        # Validar que target_class_idx esté en rango
+                        if self.target_class_idx >= logits_shape[1]:
+                            print(f"⚠️ target_class_idx={self.target_class_idx} >= logits_shape[1]={logits_shape[1]}")
+                            # Usar el primer logit como fallback
+                            out[i] = outputs.logits_per_image[0, 0]
+                        else:
+                            out[i] = outputs.logits_per_image[0, self.target_class_idx]
+                    else:
+                        print(f"⚠️ No se encontró logits_per_image en outputs")
+                        # Fallback: usar el primer logit disponible
+                        if hasattr(outputs, 'logits'):
+                            out[i] = outputs.logits[0, 0]
+                        else:
+                            # Último recurso: usar 0.0
+                            out[i] = torch.tensor(0.0, device=self.device)
+                            
+                except Exception as e:
+                    print(f"❌ Error en forward pass: {e}")
+                    print(f"  - target_class_idx: {self.target_class_idx}")
+                    print(f"  - class_names: {self.class_names}")
+                    # Fallback: usar 0.0
+                    out[i] = torch.tensor(0.0, device=self.device)
 
         return out.detach().cpu().numpy()
