@@ -164,6 +164,18 @@ class ClassificationPredictor:
             # Fallback: usar un valor seguro
             self.vocab_size = 50000
             print(f"⚠️ No se pudo obtener vocab_size, usando fallback: {self.vocab_size}")
+        
+        # Asegurar que vocab_size sea un entero válido
+        try:
+            self.vocab_size = int(self.vocab_size)
+        except (TypeError, ValueError):
+            self.vocab_size = 50000
+            print(f"⚠️ Error convirtiendo vocab_size, usando fallback: {self.vocab_size}")
+        
+        # Validar que vocab_size sea positivo
+        if self.vocab_size <= 0:
+            self.vocab_size = 50000
+            print(f"⚠️ vocab_size no válido, usando fallback: {self.vocab_size}")
 
         # Debug info
         print(f"🔍 ClassificationPredictor inicializado:")
