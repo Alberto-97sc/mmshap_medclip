@@ -24,8 +24,17 @@ def run_classification_one(
     # 1) forward - procesamos la imagen con todas las clases
     inputs, logits = prepare_classification_batch(model, class_names, [image], device=device, amp_if_cuda=amp_if_cuda)
     
+    # Para clasificación, usamos logits_per_image que ahora tiene shape [num_classes, num_classes]
+    # Tomamos la diagonal que representa la similitud entre cada imagen y su clase correspondiente
+    if logits.dim() == 2:
+        # Si es [num_classes, num_classes], tomamos la diagonal
+        logits_diagonal = torch.diag(logits)
+    else:
+        # Si es [1, num_classes], lo usamos directamente
+        logits_diagonal = logits.squeeze()
+    
     # Calculamos probabilidades
-    probs = torch.softmax(logits.squeeze(), dim=0)
+    probs = torch.softmax(logits_diagonal, dim=0)
     predicted_class_idx = torch.argmax(probs).item()
     predicted_class = class_names[predicted_class_idx]
     
@@ -97,6 +106,9 @@ def prepare_classification_batch(
     """
     Prepara el batch para clasificación con RClip.
     Procesa una imagen con múltiples nombres de clases.
+    
+    Nota: Para mantener compatibilidad con el modelo, expandimos la imagen
+    para que coincida con el número de clases, creando un batch balanceado.
     """
     # normaliza inputs a listas
     if not isinstance(images, (list, tuple)):
@@ -108,7 +120,13 @@ def prepare_classification_batch(
 
     # tokenización con el processor del wrapper
     processor = model_wrapper.processor
-    inputs = processor(text=class_names, images=images, return_tensors="pt", padding=padding)
+    
+    # Para clasificación, necesitamos que imagen y texto tengan el mismo batch size
+    # Expandimos la imagen para que coincida con el número de clases
+    num_classes = len(class_names)
+    expanded_images = images * num_classes  # Repetir la imagen para cada clase
+    
+    inputs = processor(text=class_names, images=expanded_images, return_tensors="pt", padding=padding)
 
     # mover al device del wrapper si no se pasó explícito
     if device is None:
