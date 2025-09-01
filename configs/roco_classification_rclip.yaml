@@ -35,3 +35,10 @@ isa:
   enabled: true
   explain: true
   plot: true
+
+# Configuración para SHAP y análisis
+shap:
+  algorithm: "permutation"  # "exact", "permutation", "sampling"
+  max_evals: 1000          # Mínimo requerido: 521, recomendado: 1000+
+  force_cpu: false         # Forzar CPU para SHAP si hay problemas de GPU
+  hybrid_mode: true        # Usar GPU para modelo, CPU para SHAP

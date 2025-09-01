@@ -19,6 +19,7 @@ def run_classification_one(
     explain: bool = True,
     plot: bool = False,
     amp_if_cuda: bool = True,
+    shap_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Pipeline de clasificación para 1 imagen con múltiples clases posibles."""
     # 1) forward - procesamos la imagen con todas las clases
@@ -75,7 +76,20 @@ def run_classification_one(
         model, inputs_for_shap, class_names, predicted_class_idx, 
         patch_size=imginfo["patch_size"], device=device, use_amp=amp_if_cuda
     )
-    explainer = shap.Explainer(predict_fn, masker, silent=True)
+    
+    # Configuración de SHAP
+    shap_algorithm = "permutation"
+    max_evals = 1000
+    if shap_config:
+        shap_algorithm = shap_config.get("algorithm", "permutation")
+        max_evals = shap_config.get("max_evals", 1000)
+    
+    # Crear explainer con parámetros configurados
+    if shap_algorithm == "exact":
+        explainer = shap.Explainer(predict_fn, masker, silent=True)
+    else:
+        explainer = shap.Explainer(predict_fn, masker, algorithm=shap_algorithm, max_evals=max_evals, silent=True)
+    
     shap_values = explainer(X_clean.cpu())
 
     # 4) métricas
