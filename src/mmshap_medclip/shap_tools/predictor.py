@@ -204,12 +204,22 @@ class ClassificationPredictor:
                         pix[:, :, r0:r1, c0:c1] = 0
 
                 try:
+                    print(f"🔍 Ejecutando forward pass {i+1}/{B}...")
                     outputs = self.model(**masked)
                     
-                    # Debug: verificar la forma de outputs
+                    # Debug: verificar la estructura completa de outputs
+                    print(f"🔍 Tipo de outputs: {type(outputs)}")
+                    print(f"🔍 Atributos de outputs: {dir(outputs)}")
+                    
+                    # Debug: verificar la forma de outputs si es un tensor
+                    if hasattr(outputs, 'shape'):
+                        print(f"🔍 Outputs shape: {outputs.shape}")
+                    
+                    # Debug: verificar si tiene logits_per_image
                     if hasattr(outputs, 'logits_per_image'):
                         logits_shape = outputs.logits_per_image.shape
                         print(f"🔍 Outputs logits_per_image shape: {logits_shape}")
+                        print(f"🔍 logits_per_image dtype: {outputs.logits_per_image.dtype}")
                         
                         # Validar que target_class_idx esté en rango
                         if self.target_class_idx >= logits_shape[1]:
@@ -217,20 +227,28 @@ class ClassificationPredictor:
                             # Usar el primer logit como fallback
                             out[i] = outputs.logits_per_image[0, 0]
                         else:
+                            print(f"✅ Accediendo a logits_per_image[0, {self.target_class_idx}]")
                             out[i] = outputs.logits_per_image[0, self.target_class_idx]
                     else:
                         print(f"⚠️ No se encontró logits_per_image en outputs")
                         # Fallback: usar el primer logit disponible
                         if hasattr(outputs, 'logits'):
+                            print(f"🔍 Usando outputs.logits como fallback")
+                            if hasattr(outputs.logits, 'shape'):
+                                print(f"🔍 outputs.logits shape: {outputs.logits.shape}")
                             out[i] = outputs.logits[0, 0]
                         else:
+                            print(f"⚠️ No se encontró ningún atributo de logits")
                             # Último recurso: usar 0.0
                             out[i] = torch.tensor(0.0, device=self.device)
                             
                 except Exception as e:
-                    print(f"❌ Error en forward pass: {e}")
+                    print(f"❌ Error en forward pass {i+1}/{B}: {e}")
                     print(f"  - target_class_idx: {self.target_class_idx}")
                     print(f"  - class_names: {self.class_names}")
+                    print(f"  - Tipo de error: {type(e).__name__}")
+                    import traceback
+                    print(f"  - Traceback: {traceback.format_exc()}")
                     # Fallback: usar 0.0
                     out[i] = torch.tensor(0.0, device=self.device)
 
