@@ -52,9 +52,18 @@ def run_classification_one(
         return out
 
     # 2) tokens y X_clean para SHAP
-    # Para SHAP, necesitamos procesar solo la primera imagen del batch expandido
-    # ya que todas las imágenes son la misma (expandidas para las clases)
-    inputs_for_shap = {k: v[:1] for k, v in inputs.items()}  # Solo primera imagen
+    # Para SHAP, necesitamos procesar solo la primera imagen y la clase predicha
+    # Creamos inputs específicos para SHAP con batch size = 1
+    single_image = [image]  # Solo una imagen
+    single_class = [class_names[predicted_class_idx]]  # Solo la clase predicha
+    
+    # Procesamos solo la imagen y clase predicha para SHAP
+    processor = model.processor
+    inputs_for_shap = processor(text=single_class, images=single_image, return_tensors="pt", padding=True)
+    
+    # Mover al device
+    from mmshap_medclip.devices import move_to_device
+    inputs_for_shap = move_to_device(inputs_for_shap, device)
     
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs_for_shap, model.tokenizer)
     image_token_ids_expanded, imginfo = make_image_token_ids(inputs_for_shap, model)
