@@ -193,6 +193,22 @@ class ClassificationPredictor:
             bos_token_id = getattr(self.model.config, 'bos_token_id', bos_token_id)
             eos_token_id = getattr(self.model.config, 'eos_token_id', eos_token_id)
         
+        # Asegurar que los tokens especiales no sean None
+        if pad_token_id is None:
+            pad_token_id = 0
+        if bos_token_id is None:
+            bos_token_id = 1
+        if eos_token_id is None:
+            eos_token_id = 2
+            
+        # Validar que los tokens especiales estén en rango
+        if pad_token_id >= self.vocab_size:
+            pad_token_id = 0
+        if bos_token_id >= self.vocab_size:
+            bos_token_id = 0
+        if eos_token_id >= self.vocab_size:
+            eos_token_id = 0
+        
         # Validar y sanitizar
         invalid_mask = (sanitized < 0) | (sanitized >= self.vocab_size)
         
@@ -200,6 +216,7 @@ class ClassificationPredictor:
             print(f"⚠️ Encontrados {invalid_mask.sum().item()} tokens inválidos")
             print(f"  - Rango válido: [0, {self.vocab_size-1}]")
             print(f"  - Tokens inválidos: {sanitized[invalid_mask].tolist()}")
+            print(f"  - Tokens especiales: PAD={pad_token_id}, BOS={bos_token_id}, EOS={eos_token_id}")
             
             # Reemplazar tokens inválidos con PAD
             sanitized[invalid_mask] = pad_token_id
