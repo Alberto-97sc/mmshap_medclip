@@ -52,22 +52,26 @@ def run_classification_one(
         return out
 
     # 2) tokens y X_clean para SHAP
-    nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
-    image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
-    X_clean, _ = concat_text_image_tokens(inputs, image_token_ids_expanded, device=device)
+    # Para SHAP, necesitamos procesar solo la primera imagen del batch expandido
+    # ya que todas las imágenes son la misma (expandidas para las clases)
+    inputs_for_shap = {k: v[:1] for k, v in inputs.items()}  # Solo primera imagen
+    
+    nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs_for_shap, model.tokenizer)
+    image_token_ids_expanded, imginfo = make_image_token_ids(inputs_for_shap, model)
+    X_clean, _ = concat_text_image_tokens(inputs_for_shap, image_token_ids_expanded, device=device)
 
     # 3) SHAP - explicamos la predicción para la clase predicha
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
     predict_fn = ClassificationPredictor(
-        model, inputs, class_names, predicted_class_idx, 
+        model, inputs_for_shap, class_names, predicted_class_idx, 
         patch_size=imginfo["patch_size"], device=device, use_amp=amp_if_cuda
     )
     explainer = shap.Explainer(predict_fn, masker, silent=True)
     shap_values = explainer(X_clean.cpu())
 
     # 4) métricas
-    tscore, word_shap = compute_mm_score(shap_values, model.tokenizer, inputs, i=0)
-    iscore = compute_iscore(shap_values, inputs, i=0)
+    tscore, word_shap = compute_mm_score(shap_values, model.tokenizer, inputs_for_shap, i=0)
+    iscore = compute_iscore(shap_values, inputs_for_shap, i=0)
     
     out.update({
         "shap_values": shap_values,
