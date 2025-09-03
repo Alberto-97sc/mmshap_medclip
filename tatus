@@ -1,0 +1,5 @@
+[33mca35931[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mothers-clips-version[m[33m, [m[1;31morigin/others-clips-version[m[33m)[m Fix TypeError: handle getattr None values safely for token special IDs
+[33mbde3554[m Fix TypeError: ensure vocab_size is always a valid integer before comparisons
+[33me6be1d1[m Fix TypeError: ensure pad_token_id is never None and validate token ranges
+[33mb129090[m Fix IndexError in embedding layer: add input_ids sanitization and vocabulary validation
+[33m2ba7887[m Add comprehensive debugging to ClassificationPredictor to identify IndexError root cause
