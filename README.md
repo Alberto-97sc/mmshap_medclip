@@ -11,30 +11,31 @@ Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos ti
 ```
 mmshap_medclip/
 ├── notebooks/
-│   └── 01_heatmaps_and_figures.ipynb      # SOLO figuras/tablas del paper
+│   └── 01_pubmedclip_roco_isa_formateado.ipynb  # Notebook para pruebas ISA con PubMedCLIP
 ├── src/mmshap_medclip/
 │   ├── __init__.py
 │   ├── devices.py                          # manejo de device (CUDA/CPU)
 │   ├── registry.py                         # registro de modelos y datasets
 │   ├── models.py                           # wrappers de CLIP (openai/pubmed…)
+│   ├── io_utils.py                         # cargar configs YAML
+│   ├── metrics.py                          # MM-score, IScore
 │   ├── datasets/
+│   │   ├── __init__.py
 │   │   ├── base.py                         # interfaz DatasetBase
 │   │   └── roco.py                         # loader ROCO (lee ZIP en Drive)
 │   ├── tasks/
+│   │   ├── __init__.py
+│   │   ├── isa.py                          # tarea Image-Sentence Alignment
 │   │   └── utils.py                        # prepare_batch, token lengths, etc.
 │   ├── shap_tools/
 │   │   ├── masker.py                       # build_masker (BOS/EOS safe)
 │   │   └── predictor.py                    # Predictor callable para SHAP
-│   ├── metrics.py                          # MM-score, IScore
-│   ├── vis/
-│   │   └── heatmaps.py                     # mapas de calor imagen+texto
-│   └── io_utils.py                         # cargar configs YAML
+│   └── vis/
+│       └── heatmaps.py                     # mapas de calor imagen+texto
 ├── configs/
-│   └── roco_isa_pubmedclip.yaml            # config de ejemplo
+│   └── roco_isa_pubmedclip.yaml            # config de ejemplo para ISA
 ├── README.md
-├── pyproject.toml                          # instalación editable
-├── .gitignore
-└── requirements.txt                        # opcional (si necesitas fijar versiones)
+└── pyproject.toml                          # instalación editable
 ```
 
 ---
