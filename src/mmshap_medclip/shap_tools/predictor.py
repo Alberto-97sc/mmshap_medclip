@@ -20,8 +20,10 @@ class Predictor:
         device: Optional[torch.device] = None,
         use_amp: bool = True,                  # AMP en CUDA
     ):
-        self.wrapper = model_wrapper
-        self.model = getattr(model_wrapper, "model", model_wrapper).eval()
+        self.wrapper = model_wrapper.eval() if hasattr(model_wrapper, "eval") else model_wrapper
+        self.model = getattr(self.wrapper, "model", self.wrapper)
+        if hasattr(self.model, "eval"):
+            self.model = self.model.eval()
         self.device = device or next(self.model.parameters()).device
 
         # Copia base_inputs al device del modelo
@@ -111,7 +113,7 @@ class Predictor:
                         c0, c1 = c * self.patch_size, (c + 1) * self.patch_size
                         pix[:, :, r0:r1, c0:c1] = 0
 
-                outputs = self.model(**masked)       # logits_per_image: [1,1]
+                outputs = self.wrapper(**masked)       # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()
 
         return out.detach().cpu().numpy()
