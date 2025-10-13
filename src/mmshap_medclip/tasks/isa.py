@@ -47,8 +47,8 @@ def run_isa_one(
     min_evals = 2 * num_features + 1
     max_evals = max(min_evals, 512)
 
-    explainer = shap.Explainer(predict_fn, masker, silent=True, max_evals=max_evals)
-    shap_values = explainer(X_clean.cpu())
+    explainer = shap.Explainer(predict_fn, masker, silent=True)
+    shap_values = explainer(X_clean.cpu(), max_evals=max_evals)
 
     # 4) métricas
     tscore, word_shap = compute_mm_score(shap_values, model.tokenizer, inputs, i=0)
@@ -106,8 +106,8 @@ def run_isa_batch(
     min_evals = 2 * num_features + 1
     max_evals = max(min_evals, 512)
 
-    explainer = shap.Explainer(predict_fn, masker, silent=True, max_evals=max_evals)
-    shap_values = explainer(X_clean.cpu())
+    explainer = shap.Explainer(predict_fn, masker, silent=True)
+    shap_values = explainer(X_clean.cpu(), max_evals=max_evals)
 
     mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(len(captions))]
     iscores   = [compute_iscore(shap_values, inputs, i=i) for i in range(len(captions))]
