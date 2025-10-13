@@ -28,13 +28,30 @@ class Predictor:
         self.base_inputs = {k: v.to(self.device) for k, v in base_inputs.items()}
 
         # Inferir patch_size si no viene
+        def _normalize(ps_value):
+            if ps_value is None:
+                return None
+            if isinstance(ps_value, (tuple, list)):
+                if len(ps_value) == 0:
+                    return None
+                # si es (px, py) y ambos iguales, toma uno solo
+                if len(ps_value) >= 2 and ps_value[0] == ps_value[1]:
+                    return int(ps_value[0])
+                return int(ps_value[0])
+            return int(ps_value)
+
         if patch_size is None:
             ps = getattr(getattr(getattr(self.model, "config", None), "vision_config", None), "patch_size", None)
+            ps = _normalize(ps)
             if ps is None:
                 ps = getattr(getattr(getattr(self.model, "vision_model", None), "config", None), "patch_size", None)
+                ps = _normalize(ps)
+            if ps is None:
+                visual = getattr(self.model, "visual", None)
+                ps = _normalize(getattr(visual, "patch_size", None)) if visual is not None else None
             if ps is None:
                 raise ValueError("No pude inferir patch_size del modelo. Pásalo explícitamente.")
-            patch_size = int(ps)
+            patch_size = ps
         self.patch_size = int(patch_size)
 
         # Geometría de la imagen

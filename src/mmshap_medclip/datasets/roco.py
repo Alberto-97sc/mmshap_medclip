@@ -1,4 +1,4 @@
-import os, zipfile
+import os, re, zipfile
 import pandas as pd
 from PIL import Image
 from io import BytesIO
@@ -10,16 +10,30 @@ def _build_roco(params):
     return RocoDataset(**params)
 
 class RocoDataset(DatasetBase):
-    def __init__(self, zip_path: str, split: str, columns: dict, images_subdir: str = None, n_rows="all"):
+    def __init__(
+        self,
+        zip_path: str,
+        split: str,
+        columns: dict,
+        images_subdir: str = None,
+        n_rows="all",
+        caption_regex: str = None,
+        casefold: bool = True,
+    ):
         self.zip_path = zip_path
         self.split = split
         self.image_key = columns["image_key"]
         self.caption_key = columns["caption_key"]
         self.images_subdir = images_subdir
+        self._caption_pattern = re.compile(caption_regex, re.IGNORECASE if casefold else 0) if caption_regex else None
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             csv_name = next(n for n in zf.namelist() if split in n.lower() and n.lower().endswith(".csv"))
             self.df = pd.read_csv(zf.open(csv_name)) if n_rows=="all" else pd.read_csv(zf.open(csv_name), nrows=int(n_rows))
+
+            if self._caption_pattern is not None:
+                mask = self.df[self.caption_key].astype(str).map(lambda x: bool(self._caption_pattern.search(x)))
+                self.df = self.df[mask].reset_index(drop=True)
 
             # índice basename -> ruta completa (preferimos las que tienen /images/ y el split)
             self._name_to_path = {}
