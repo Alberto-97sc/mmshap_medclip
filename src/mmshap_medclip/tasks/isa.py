@@ -1,4 +1,5 @@
 # src/mmshap_medclip/tasks/isa.py
+import re
 from typing import List, Dict, Any, Optional
 import numpy as np
 import shap
@@ -53,7 +54,9 @@ def run_isa_one(
         max_evals=max_evals,
         silent=True,
     )
-    shap_values = explainer(X_clean.cpu(), max_evals=max_evals)
+
+    call_kwargs = {"max_evals": max_evals, "silent": True}
+    shap_values = _call_shap_with_budget(explainer, X_clean.cpu(), call_kwargs)
 
     # 4) métricas
     tscore, word_shap = compute_mm_score(shap_values, model.tokenizer, inputs, i=0)
@@ -117,7 +120,8 @@ def run_isa_batch(
         max_evals=max_evals,
         silent=True,
     )
-    shap_values = explainer(X_clean.cpu(), max_evals=max_evals)
+    call_kwargs = {"max_evals": max_evals, "silent": True}
+    shap_values = _call_shap_with_budget(explainer, X_clean.cpu(), call_kwargs)
 
     mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(len(captions))]
     iscores   = [compute_iscore(shap_values, inputs, i=i) for i in range(len(captions))]
@@ -128,3 +132,41 @@ def run_isa_batch(
         "iscores": iscores,
     })
     return result
+
+
+def _call_shap_with_budget(explainer, X, call_kwargs):
+    """Call a SHAP explainer ensuring the evaluation budget satisfies tokenizer demands."""
+
+    try:
+        return explainer(X, **call_kwargs)
+    except ValueError as exc:
+        message = str(exc)
+        if "max_evals" not in message or "too low" not in message:
+            raise
+
+        required = _extract_required_evals(message)
+        if required is None:
+            raise
+
+        current = call_kwargs.get("max_evals", 0) or 0
+        updated = max(current, required)
+        call_kwargs["max_evals"] = updated
+
+        call_defaults = getattr(getattr(explainer, "__call__", None), "__kwdefaults__", None)
+        if isinstance(call_defaults, dict):
+            call_defaults["max_evals"] = updated
+
+        return explainer(X, **call_kwargs)
+
+
+_REQUIRED_EVALS_RE = re.compile(r"2 \* num_features \+ 1 = (?P<required>\d+)")
+
+
+def _extract_required_evals(message: str) -> Optional[int]:
+    match = _REQUIRED_EVALS_RE.search(message)
+    if not match:
+        return None
+    try:
+        return int(match.group("required"))
+    except (ValueError, TypeError):
+        return None
