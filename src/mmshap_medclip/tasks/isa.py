@@ -39,7 +39,15 @@ def run_isa_one(
     # 3) SHAP
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
     predict_fn = Predictor(model, inputs, patch_size=imginfo["patch_size"], device=device, use_amp=amp_if_cuda)
-    explainer = shap.Explainer(predict_fn, masker, silent=True)
+
+    # SHAP (Permutation) requiere al menos 2 * num_features + 1 evaluaciones para una
+    # explicación válida. Ajustamos dinámicamente ``max_evals`` para evitar errores cuando
+    # el número de tokens (features) supera el default (500).
+    num_features = int(X_clean.shape[1])
+    min_evals = 2 * num_features + 1
+    max_evals = max(min_evals, 512)
+
+    explainer = shap.Explainer(predict_fn, masker, silent=True, max_evals=max_evals)
     shap_values = explainer(X_clean.cpu())
 
     # 4) métricas
@@ -93,7 +101,12 @@ def run_isa_batch(
 
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
     predict_fn = Predictor(model, inputs, patch_size=imginfo["patch_size"], device=device, use_amp=amp_if_cuda)
-    explainer = shap.Explainer(predict_fn, masker, silent=True)
+
+    num_features = int(X_clean.shape[1])
+    min_evals = 2 * num_features + 1
+    max_evals = max(min_evals, 512)
+
+    explainer = shap.Explainer(predict_fn, masker, silent=True, max_evals=max_evals)
     shap_values = explainer(X_clean.cpu())
 
     mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(len(captions))]

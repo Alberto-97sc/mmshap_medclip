@@ -68,14 +68,32 @@ else:
 
 ```
 
-```bash
+```python
 # === Instalar en modo editable (pyproject.toml) ===
-%pip install -e /content/mmshap_medclip
+FORCE_REINSTALL = False
+PKG_ROOT = "/content/mmshap_medclip"
+
+import importlib.util, subprocess, sys
+
+def install_editable():
+    cmd = [sys.executable, "-m", "pip", "install", "-e", PKG_ROOT]
+    print(" ".join(cmd))
+    subprocess.check_call(cmd)
+
+if FORCE_REINSTALL:
+    install_editable()
+elif "mmshap_medclip" in sys.modules:
+    print("mmshap_medclip ya está importado en esta sesión; omite reinstalación para evitar el reinicio.")
+elif importlib.util.find_spec("mmshap_medclip") is None:
+    install_editable()
+else:
+    print("mmshap_medclip ya está disponible en modo editable; cambia FORCE_REINSTALL=True si necesitas reinstalar.")
 
 ```
 
 
 - `-e` instala el paquete en **modo editable**: puedes hacer `from mmshap_medclip...` y cualquier cambio en `src/` se refleja sin reinstalar.
+- El bloque anterior solo ejecuta `pip install` cuando la sesión aún no tiene disponible el paquete (o cuando fuerzas la reinstalación), evitando el mensaje de "restaurar sesión" de Colab.
 - Las **dependencias** se resuelven automáticamente desde `pyproject.toml` (`[project].dependencies`).
 
 > Si además prefieres un `requirements.txt` con versiones fijas, mantenlo en la raíz y ejecútalo **antes** o **después** de `-e` según tu flujo.
