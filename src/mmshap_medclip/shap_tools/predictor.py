@@ -29,9 +29,13 @@ class Predictor:
 
         # Inferir patch_size si no viene
         if patch_size is None:
-            ps = getattr(getattr(getattr(self.model, "config", None), "vision_config", None), "patch_size", None)
+            ps = getattr(model_wrapper, "patch_size", None)
+            if ps is None:
+                ps = getattr(getattr(getattr(self.model, "config", None), "vision_config", None), "patch_size", None)
             if ps is None:
                 ps = getattr(getattr(getattr(self.model, "vision_model", None), "config", None), "patch_size", None)
+            if ps is None:
+                ps = getattr(getattr(self.model, "visual", None), "patch_size", None)
             if ps is None:
                 raise ValueError("No pude inferir patch_size del modelo. Pásalo explícitamente.")
             patch_size = int(ps)

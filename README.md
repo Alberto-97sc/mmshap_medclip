@@ -11,7 +11,8 @@ Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos ti
 ```
 mmshap_medclip/
 ├── notebooks/
-│   └── 01_pubmedclip_roco_isa_formateado.ipynb  # Notebook para pruebas ISA con PubMedCLIP
+│   ├── 01_pubmedclip_roco_isa_formateado.ipynb  # Notebook para pruebas ISA con PubMedCLIP
+│   └── 02_whyxrayclip_roco_isa.ipynb            # Notebook análogo usando WhyXrayCLIP
 ├── src/mmshap_medclip/
 │   ├── __init__.py
 │   ├── devices.py                          # manejo de device (CUDA/CPU)
@@ -33,7 +34,8 @@ mmshap_medclip/
 │   └── vis/
 │       └── heatmaps.py                     # mapas de calor imagen+texto
 ├── configs/
-│   └── roco_isa_pubmedclip.yaml            # config de ejemplo para ISA
+│   ├── roco_isa_pubmedclip.yaml            # config de ejemplo para ISA
+│   └── roco_isa_whyxrayclip.yaml           # config equivalente para WhyXrayCLIP
 ├── README.md
 └── pyproject.toml                          # instalación editable
 ```
@@ -121,6 +123,8 @@ print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscor
 # display(res['fig'])
 
 ```
+
+> 💡 Para experimentar con **WhyXrayCLIP** usa el notebook `notebooks/02_whyxrayclip_roco_isa.ipynb` y la configuración `configs/roco_isa_whyxrayclip.yaml`. El wrapper interno se apoya en `open-clip-torch`/`torchvision`, ya incluidos en `pyproject.toml`.
 
 
 

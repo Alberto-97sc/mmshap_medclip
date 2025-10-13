@@ -1,0 +1,20 @@
+experiment_name: demo_roco_whyxrayclip
+device: auto
+
+dataset:
+  name: roco
+  params:
+    zip_path: /content/drive/MyDrive/MAESTRIA-TESIS/datasets/ROCO/dataset_roco.zip
+    split: validation
+    n_rows: all
+    columns:
+      image_key: name
+      caption_key: caption
+      images_subdir: all_data/validation/radiology/images
+
+model:
+  name: whyxrayclip
+  params:
+    model_name: ViT-L-14
+    pretrained: hf-hub:yyupenn/whyxrayclip
+    tokenizer_name: ViT-L-14

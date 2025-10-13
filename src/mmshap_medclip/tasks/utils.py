@@ -1,4 +1,5 @@
 # src/mmshap_medclip/tasks/utils.py
+from contextlib import nullcontext
 from typing import List, Tuple, Optional, Dict
 import torch
 from mmshap_medclip.devices import move_to_device
@@ -91,11 +92,15 @@ def make_image_token_ids(
     # 1) resolver patch_size
     ps = patch_size
     if ps is None:
+        ps = getattr(model_wrapper, "patch_size", None)
+    if ps is None:
         m = getattr(model_wrapper, "model", model_wrapper)
         # intentos comunes en CLIP
         ps = getattr(getattr(getattr(m, "config", None), "vision_config", None), "patch_size", None)
         if ps is None:
             ps = getattr(getattr(getattr(m, "vision_model", None), "config", None), "patch_size", None)
+        if ps is None:
+            ps = getattr(getattr(m, "visual", None), "patch_size", None)
 
     if ps is None:
         if strict:

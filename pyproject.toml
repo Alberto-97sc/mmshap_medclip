@@ -17,6 +17,7 @@ keywords = ["shap", "clip", "multimodal", "xai", "medical-ai"]
 # Dependencias que se instalarán automáticamente al hacer `pip install -e .`
 dependencies = [
   "torch",
+  "torchvision",
   "transformers",
   "shap",
   "matplotlib",
@@ -24,6 +25,7 @@ dependencies = [
   "pillow",
   "pyyaml",
   "tqdm",
+  "open-clip-torch",
 ]
 
 [tool.setuptools]
