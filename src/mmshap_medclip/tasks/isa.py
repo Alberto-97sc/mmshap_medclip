@@ -1,6 +1,6 @@
 # src/mmshap_medclip/tasks/isa.py
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import shap
 
@@ -16,7 +16,7 @@ def run_isa_one(
     image,
     caption: str,
     device,
-    explain: bool = True,
+    explain: Any = True,
     plot: bool = False,
     amp_if_cuda: bool = True,
     max_evals: Optional[int] = None,
@@ -24,10 +24,17 @@ def run_isa_one(
     """Pipeline mínimo de ISA para 1 (imagen, texto).
 
     Args:
+        explain: Puede ser un booleano o un diccionario con opciones. Si es un
+            diccionario, se reconocen las llaves ``enabled`` (bool), ``plot`` (bool)
+            y ``max_evals`` (int). Cualquier valor de ``max_evals`` tendrá prioridad
+            sobre el argumento homónimo de la función.
         max_evals: Presupuesto opcional de evaluaciones para el explicador de SHAP.
             Si no se especifica, se calculará automáticamente para satisfacer el
             requisito ``2 * num_features + 1``.
     """
+    explain_enabled, plot = _resolve_explain_options(explain, plot)
+    max_evals = _resolve_max_evals(explain, max_evals)
+
     # 1) forward
     inputs, logits = prepare_batch(model, [caption], [image], device=device, debug_tokens=False, amp_if_cuda=amp_if_cuda)
     out: Dict[str, Any] = {
@@ -36,7 +43,7 @@ def run_isa_one(
         "image": image,
         "text": caption,
     }
-    if not explain:
+    if not explain_enabled:
         return out
 
     # 2) tokens y X_clean
@@ -98,23 +105,28 @@ def run_isa_batch(
     images,
     captions: List[str],
     device,
-    explain: bool = True,
+    explain: Any = True,
     amp_if_cuda: bool = True,
     max_evals: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Pipeline de ISA para batch (lista de PILs y textos).
 
     Args:
+        explain: Puede ser un booleano o un diccionario con opciones (ver
+            ``run_isa_one``).
         max_evals: Presupuesto opcional de evaluaciones para el explicador de SHAP.
             Si no se especifica, se calculará automáticamente para satisfacer el
             requisito ``2 * num_features + 1``.
     """
+    explain_enabled, _ = _resolve_explain_options(explain, plot=False)
+    max_evals = _resolve_max_evals(explain, max_evals)
+
     inputs, logits = prepare_batch(model, captions, images, device=device, debug_tokens=False, amp_if_cuda=amp_if_cuda)
     result: Dict[str, Any] = {
         "inputs": inputs,
         "logits": logits.detach().cpu().numpy(),
     }
-    if not explain:
+    if not explain_enabled:
         return result
 
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
@@ -146,6 +158,29 @@ def run_isa_batch(
         "iscores": iscores,
     })
     return result
+
+
+def _resolve_explain_options(explain: Any, plot: bool) -> Tuple[bool, bool]:
+    """Return a tuple ``(enabled, plot)`` based on the ``explain`` argument."""
+
+    if isinstance(explain, dict):
+        enabled = explain.get("enabled", True)
+        plot_flag = explain.get("plot", plot)
+        return bool(enabled), bool(plot_flag)
+
+    return bool(explain), bool(plot)
+
+
+def _resolve_max_evals(explain: Any, max_evals: Optional[int]) -> Optional[int]:
+    """Resolve the SHAP evaluation budget from ``max_evals`` or ``explain`` options."""
+
+    if max_evals is not None:
+        return max_evals
+
+    if isinstance(explain, dict):
+        return explain.get("max_evals")
+
+    return None
 
 
 def _call_shap_with_budget(explainer, X, call_kwargs):
