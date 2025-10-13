@@ -99,7 +99,27 @@ class OpenCLIPWrapper(torch.nn.Module):
     def forward(self, input_ids=None, pixel_values=None, **_):
         if input_ids is None or pixel_values is None:
             raise ValueError("OpenCLIPWrapper requiere 'input_ids' y 'pixel_values'.")
-        logits_per_image, logits_per_text = self.model(image=pixel_values, text=input_ids)
+
+        outputs = self.model(image=pixel_values, text=input_ids)
+
+        if isinstance(outputs, dict):
+            logits_per_image = outputs.get("logits_per_image")
+            logits_per_text = outputs.get("logits_per_text")
+        elif isinstance(outputs, (tuple, list)):
+            logits_per_image = outputs[0] if len(outputs) > 0 else None
+            logits_per_text = outputs[1] if len(outputs) > 1 else None
+        else:
+            logits_per_image = getattr(outputs, "logits_per_image", None)
+            logits_per_text = getattr(outputs, "logits_per_text", None)
+
+        if logits_per_image is None:
+            raise ValueError("El modelo OpenCLIP no devolvió 'logits_per_image'.")
+        if logits_per_text is None:
+            # Algunos forward de open_clip devuelven (logits_per_image, logit_scale).
+            # Aseguramos la simetría generando logits de texto a partir de la matriz
+            # si no vienen explícitos.
+            logits_per_text = logits_per_image.t()
+
         return SimpleNamespace(logits_per_image=logits_per_image, logits_per_text=logits_per_text)
 
 @register_model("pubmedclip-vit-b32")
