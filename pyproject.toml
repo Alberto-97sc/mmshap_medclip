@@ -18,6 +18,7 @@ keywords = ["shap", "clip", "multimodal", "xai", "medical-ai"]
 dependencies = [
   "torch",
   "transformers",
+  "open-clip-torch",
   "shap",
   "matplotlib",
   "pandas",

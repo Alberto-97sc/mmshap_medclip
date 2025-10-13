@@ -1,25 +1,82 @@
-import os, zipfile
+import os
+import re
+import zipfile
+from io import BytesIO
+
 import pandas as pd
 from PIL import Image
-from io import BytesIO
+
 from mmshap_medclip.datasets.base import DatasetBase
 from mmshap_medclip.registry import register_dataset
 
+def _apply_caption_filter(dataset, caption_regex: str, casefold: bool = True):
+    if not caption_regex:
+        return
+
+    if not hasattr(dataset, "df") or not hasattr(dataset, "caption_key"):
+        raise AttributeError(
+            "El dataset de ROCO no expone 'df' o 'caption_key'; no se puede aplicar el filtro de captions."
+        )
+
+    flags = re.IGNORECASE if casefold else 0
+    pattern = re.compile(caption_regex, flags)
+    captions = dataset.df[dataset.caption_key].astype(str)
+    mask = captions.map(lambda text: bool(pattern.search(text)))
+    dataset.df = dataset.df[mask].reset_index(drop=True)
+
+
 @register_dataset("roco")
 def _build_roco(params):
-    return RocoDataset(**params)
+    params = dict(params)
+    columns = dict(params.pop("columns")) if "columns" in params else {}
+
+    images_subdir = params.pop("images_subdir", None)
+    if images_subdir is None:
+        images_subdir = columns.pop("images_subdir", None)
+
+    params["columns"] = columns
+    if images_subdir is not None:
+        params["images_subdir"] = images_subdir
+
+    caption_regex = params.pop("caption_regex", None)
+    casefold = params.pop("casefold", True)
+
+    try:
+        dataset = RocoDataset(caption_regex=caption_regex, casefold=casefold, **params)
+    except TypeError:
+        dataset = RocoDataset(**params)
+        _apply_caption_filter(dataset, caption_regex, casefold)
+    else:
+        if not getattr(dataset, "_caption_pattern", None) and caption_regex:
+            _apply_caption_filter(dataset, caption_regex, casefold)
+
+    return dataset
 
 class RocoDataset(DatasetBase):
-    def __init__(self, zip_path: str, split: str, columns: dict, images_subdir: str = None, n_rows="all"):
+    def __init__(
+        self,
+        zip_path: str,
+        split: str,
+        columns: dict,
+        images_subdir: str = None,
+        n_rows="all",
+        caption_regex: str = None,
+        casefold: bool = True,
+    ):
         self.zip_path = zip_path
         self.split = split
         self.image_key = columns["image_key"]
         self.caption_key = columns["caption_key"]
         self.images_subdir = images_subdir
+        self._caption_pattern = re.compile(caption_regex, re.IGNORECASE if casefold else 0) if caption_regex else None
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             csv_name = next(n for n in zf.namelist() if split in n.lower() and n.lower().endswith(".csv"))
             self.df = pd.read_csv(zf.open(csv_name)) if n_rows=="all" else pd.read_csv(zf.open(csv_name), nrows=int(n_rows))
+
+            if self._caption_pattern is not None:
+                mask = self.df[self.caption_key].astype(str).map(lambda x: bool(self._caption_pattern.search(x)))
+                self.df = self.df[mask].reset_index(drop=True)
 
             # índice basename -> ruta completa (preferimos las que tienen /images/ y el split)
             self._name_to_path = {}
@@ -57,7 +114,12 @@ class RocoDataset(DatasetBase):
 
             if path is None:
                 # 3) último intento: búsqueda por sufijo
-                candidates = [n for n in zf.namelist() if n.lower().endswith("/" + fname.lower()) or os.path.basename(n).lower() == fname.lower()]
+                candidates = [
+                    n
+                    for n in zf.namelist()
+                    if n.lower().endswith("/" + fname.lower())
+                    or os.path.basename(n).lower() == fname.lower()
+                ]
                 if candidates:
                     path = candidates[0]
 

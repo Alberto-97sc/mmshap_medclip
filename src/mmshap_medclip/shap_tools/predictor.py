@@ -1,8 +1,9 @@
 # src/mmshap_medclip/shap_tools/predictor.py
 from typing import Dict, Optional, Union
-from contextlib import nullcontext
 import numpy as np
 import torch
+
+from .clip_adapter import ClipAdapter
 
 
 class Predictor:
@@ -20,21 +21,40 @@ class Predictor:
         device: Optional[torch.device] = None,
         use_amp: bool = True,                  # AMP en CUDA
     ):
-        self.wrapper = model_wrapper
-        self.model = getattr(model_wrapper, "model", model_wrapper).eval()
+        self.model_wrapper = model_wrapper.eval() if hasattr(model_wrapper, "eval") else model_wrapper
+        self.model = getattr(self.model_wrapper, "model", self.model_wrapper)
+        if hasattr(self.model, "eval"):
+            self.model = self.model.eval()
         self.device = device or next(self.model.parameters()).device
 
         # Copia base_inputs al device del modelo
         self.base_inputs = {k: v.to(self.device) for k, v in base_inputs.items()}
 
         # Inferir patch_size si no viene
+        def _normalize(ps_value):
+            if ps_value is None:
+                return None
+            if isinstance(ps_value, (tuple, list)):
+                if len(ps_value) == 0:
+                    return None
+                # si es (px, py) y ambos iguales, toma uno solo
+                if len(ps_value) >= 2 and ps_value[0] == ps_value[1]:
+                    return int(ps_value[0])
+                return int(ps_value[0])
+            return int(ps_value)
+
         if patch_size is None:
             ps = getattr(getattr(getattr(self.model, "config", None), "vision_config", None), "patch_size", None)
+            ps = _normalize(ps)
             if ps is None:
                 ps = getattr(getattr(getattr(self.model, "vision_model", None), "config", None), "patch_size", None)
+                ps = _normalize(ps)
+            if ps is None:
+                visual = getattr(self.model, "visual", None)
+                ps = _normalize(getattr(visual, "patch_size", None)) if visual is not None else None
             if ps is None:
                 raise ValueError("No pude inferir patch_size del modelo. Pásalo explícitamente.")
-            patch_size = int(ps)
+            patch_size = ps
         self.patch_size = int(patch_size)
 
         # Geometría de la imagen
@@ -49,6 +69,7 @@ class Predictor:
         self.text_len = self.base_inputs["input_ids"].shape[1]
 
         self.use_amp = bool(use_amp and self.device.type == "cuda")
+        self.adapter = ClipAdapter(self.model, self.device, use_amp=self.use_amp)
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
         # Normalizar x → tensor long en device
@@ -69,10 +90,8 @@ class Predictor:
 
         out = torch.empty(B, dtype=torch.float32, device=self.device)
 
-        # Contexto AMP (API nueva de PyTorch)
-        amp_ctx = torch.amp.autocast("cuda") if self.use_amp else nullcontext()
-
-        with torch.inference_mode(), amp_ctx:
+        # Forward sin gradientes; ClipAdapter administra AMP si procede.
+        with torch.inference_mode():
             for i in range(B):
                 # Clonar tensores base para no mutar el estado
                 masked = {k: v.clone() for k, v in self.base_inputs.items()}
@@ -94,7 +113,11 @@ class Predictor:
                         c0, c1 = c * self.patch_size, (c + 1) * self.patch_size
                         pix[:, :, r0:r1, c0:c1] = 0
 
-                outputs = self.model(**masked)       # logits_per_image: [1,1]
-                out[i] = outputs.logits_per_image.squeeze()
+                logits = self.adapter(
+                    pixel_values=masked["pixel_values"],
+                    input_ids=masked["input_ids"],
+                    attention_mask=masked.get("attention_mask"),
+                )
+                out[i] = logits.squeeze()
 
         return out.detach().cpu().numpy()

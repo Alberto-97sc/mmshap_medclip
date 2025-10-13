@@ -50,7 +50,11 @@ def build_model(cfg: dict, device=None):
     fn = _REG_MODELS.get(name)
     if fn is None:
         raise KeyError(f"Modelo '{name}' no registrado.")
-    params = dict(cfg.get("params", {}))
+    params_cfg = cfg.get("params", {})
+    if params_cfg is None:
+        params = {}
+    else:
+        params = dict(params_cfg)
     params["_device"] = device
     return fn(params)
 
@@ -60,4 +64,9 @@ def build_dataset(cfg: dict):
     fn = _REG_DATASETS.get(name)
     if fn is None:
         raise KeyError(f"Dataset '{name}' no registrado.")
-    return fn(cfg.get("params", {}))
+    params_cfg = cfg.get("params", {})
+    if params_cfg is None:
+        params = {}
+    else:
+        params = dict(params_cfg)
+    return fn(params)
