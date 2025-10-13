@@ -112,7 +112,22 @@ class OpenCLIPWrapper(torch.nn.Module):
         if text is None:
             text = inputs.get("text")
 
-        logits_per_image, logits_per_text = self.model(image=image, text=text)
+        outputs = self.model(image=image, text=text)
+
+        if isinstance(outputs, tuple):
+            if len(outputs) < 2:
+                raise ValueError("El modelo OpenCLIP no devolvió logits para imagen y texto.")
+            logits_per_image, logits_per_text = outputs[0], outputs[1]
+        elif isinstance(outputs, dict):
+            logits_per_image = outputs.get("logits_per_image")
+            logits_per_text = outputs.get("logits_per_text")
+        else:
+            logits_per_image = getattr(outputs, "logits_per_image", None)
+            logits_per_text = getattr(outputs, "logits_per_text", None)
+
+        if logits_per_image is None or logits_per_text is None:
+            raise ValueError("No se pudieron extraer los logits del modelo OpenCLIP.")
+
         return SimpleNamespace(logits_per_image=logits_per_image, logits_per_text=logits_per_text)
 
 @register_model("pubmedclip-vit-b32")
