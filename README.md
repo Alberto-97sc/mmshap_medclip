@@ -49,7 +49,7 @@ En **Colab** o local, tras clonar el repo:
 ```bash
 REPO_URL  = "https://github.com/Alberto-97sc/mmshap_medclip.git"
 LOCAL_DIR = "/content/mmshap_medclip"
-BRANCH    = "main"
+BRANCH    = "codex/adapt-whyxrayclip-model-to-modular-repo-bsndgl"
 
 %cd /content
 import os, shutil, subprocess, sys

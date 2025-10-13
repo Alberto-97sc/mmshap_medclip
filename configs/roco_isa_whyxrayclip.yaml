@@ -7,12 +7,12 @@ dataset:
     zip_path: /content/drive/MyDrive/MAESTRIA-TESIS/datasets/ROCO/dataset_roco.zip
     split: validation
     n_rows: all
+    images_subdir: all_data/validation/radiology/images
     caption_regex: "chest x-ray|lung"
     casefold: true
     columns:
       image_key: name
       caption_key: caption
-      images_subdir: all_data/validation/radiology/images
 
 model:
   name: whyxrayclip-vit-l-14
