@@ -120,11 +120,36 @@ def _mk_openai_clip(params):
 @register_model("whyxrayclip")
 def _mk_whyxrayclip(params):
     device = params.get("_device", torch.device("cpu"))
-    model_name = params.get("model_name", "ViT-L-14")
-    pretrained = params.get("pretrained", "hf-hub:yyupenn/whyxrayclip")
-    tokenizer_name = params.get("tokenizer_name", model_name)
+    model_name = params.get("model_name", "hf-hub:yyupenn/whyxrayclip")
+    pretrained = params.get("pretrained")
 
-    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+    # El modelo WhyXrayCLIP se publica en Hugging Face y open_clip lo carga
+    # usando el identificador completo "hf-hub:<repo_id>" como nombre de
+    # modelo. Si el usuario pasa dicho identificador en ``pretrained`` (por
+    # compatibilidad con otras configuraciones del repositorio) reutilizamos
+    # ese valor como nombre de modelo y evitamos forzar un tag inexistente.
+    create_kwargs = {}
+    model_name_for_create = model_name
+    if (
+        pretrained
+        and pretrained.startswith("hf-hub:")
+        and not model_name.startswith("hf-hub:")
+    ):
+        model_name_for_create = pretrained
+        pretrained = None
+
+    if pretrained:
+        create_kwargs["pretrained"] = pretrained
+
+    model, _, preprocess = open_clip.create_model_and_transforms(
+        model_name_for_create, **create_kwargs
+    )
+
+    tokenizer_name = params.get(
+        "tokenizer_name",
+        model_name_for_create if not model_name_for_create.startswith("hf-hub:") else "ViT-L-14",
+    )
+
     tokenizer = OpenCLIPTokenizerAdapter(open_clip.get_tokenizer(tokenizer_name))
     processor = OpenCLIPProcessor(preprocess, tokenizer)
 

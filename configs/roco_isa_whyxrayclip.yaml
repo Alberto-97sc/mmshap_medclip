@@ -15,6 +15,5 @@ dataset:
 model:
   name: whyxrayclip
   params:
-    model_name: ViT-L-14
-    pretrained: hf-hub:yyupenn/whyxrayclip
+    model_name: hf-hub:yyupenn/whyxrayclip
     tokenizer_name: ViT-L-14
