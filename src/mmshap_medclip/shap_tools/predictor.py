@@ -1,8 +1,9 @@
 # src/mmshap_medclip/shap_tools/predictor.py
 from typing import Dict, Optional, Union
-from contextlib import nullcontext
 import numpy as np
 import torch
+
+from .clip_adapter import ClipAdapter
 
 
 class Predictor:
@@ -20,8 +21,8 @@ class Predictor:
         device: Optional[torch.device] = None,
         use_amp: bool = True,                  # AMP en CUDA
     ):
-        self.wrapper = model_wrapper.eval() if hasattr(model_wrapper, "eval") else model_wrapper
-        self.model = getattr(self.wrapper, "model", self.wrapper)
+        self.model_wrapper = model_wrapper.eval() if hasattr(model_wrapper, "eval") else model_wrapper
+        self.model = getattr(self.model_wrapper, "model", self.model_wrapper)
         if hasattr(self.model, "eval"):
             self.model = self.model.eval()
         self.device = device or next(self.model.parameters()).device
@@ -68,6 +69,7 @@ class Predictor:
         self.text_len = self.base_inputs["input_ids"].shape[1]
 
         self.use_amp = bool(use_amp and self.device.type == "cuda")
+        self.adapter = ClipAdapter(self.model, self.device, use_amp=self.use_amp)
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
         # Normalizar x → tensor long en device
@@ -88,10 +90,8 @@ class Predictor:
 
         out = torch.empty(B, dtype=torch.float32, device=self.device)
 
-        # Contexto AMP (API nueva de PyTorch)
-        amp_ctx = torch.amp.autocast("cuda") if self.use_amp else nullcontext()
-
-        with torch.inference_mode(), amp_ctx:
+        # Forward sin gradientes; ClipAdapter administra AMP si procede.
+        with torch.inference_mode():
             for i in range(B):
                 # Clonar tensores base para no mutar el estado
                 masked = {k: v.clone() for k, v in self.base_inputs.items()}
@@ -113,7 +113,11 @@ class Predictor:
                         c0, c1 = c * self.patch_size, (c + 1) * self.patch_size
                         pix[:, :, r0:r1, c0:c1] = 0
 
-                outputs = self.wrapper(**masked)       # logits_per_image: [1,1]
-                out[i] = outputs.logits_per_image.squeeze()
+                logits = self.adapter(
+                    pixel_values=masked["pixel_values"],
+                    input_ids=masked["input_ids"],
+                    attention_mask=masked.get("attention_mask"),
+                )
+                out[i] = logits.squeeze()
 
         return out.detach().cpu().numpy()

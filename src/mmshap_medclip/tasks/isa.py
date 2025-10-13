@@ -3,6 +3,7 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import shap
+import torch
 
 from mmshap_medclip.tasks.utils import (
     prepare_batch, compute_text_token_lengths, make_image_token_ids, concat_text_image_tokens
@@ -58,9 +59,11 @@ def run_isa_one(
     # SHAP (Permutation) requiere al menos 2 * num_features + 1 evaluaciones para una
     # explicación válida. Ajustamos dinámicamente ``max_evals`` para evitar errores cuando
     # el número de tokens (features) supera el default (500).
-    num_features = int(X_clean.shape[1])
+    counted_features = _count_features(inputs, imginfo["patch_size"], tokenizer=model.tokenizer)
+    num_features = max(counted_features, int(X_clean.shape[1]))
     min_evals = 2 * num_features + 1
-    eval_budget = max(min_evals, max_evals or 512)
+    requested_budget = max_evals if max_evals is not None else min_evals
+    eval_budget = max(min_evals, requested_budget)
 
     explainer = shap.explainers.Permutation(
         predict_fn,
@@ -136,9 +139,11 @@ def run_isa_batch(
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
     predict_fn = Predictor(model, inputs, patch_size=imginfo["patch_size"], device=device, use_amp=amp_if_cuda)
 
-    num_features = int(X_clean.shape[1])
+    counted_features = _count_features(inputs, imginfo["patch_size"], tokenizer=model.tokenizer)
+    num_features = max(counted_features, int(X_clean.shape[1]))
     min_evals = 2 * num_features + 1
-    eval_budget = max(min_evals, max_evals or 512)
+    requested_budget = max_evals if max_evals is not None else min_evals
+    eval_budget = max(min_evals, requested_budget)
 
     explainer = shap.explainers.Permutation(
         predict_fn,
@@ -181,6 +186,45 @@ def _resolve_max_evals(explain: Any, max_evals: Optional[int]) -> Optional[int]:
         return explain.get("max_evals")
 
     return None
+
+
+def _count_features(inputs: Dict[str, torch.Tensor], patch_size: int, tokenizer=None) -> int:
+    """Estimate the number of SHAP features (texto + parches) for una muestra."""
+
+    if patch_size <= 0:
+        raise ValueError("patch_size debe ser positivo.")
+
+    input_ids = inputs["input_ids"][0]
+    attention_mask = inputs.get("attention_mask")
+
+    if attention_mask is not None:
+        text_tokens = int(attention_mask[0].sum().item())
+    else:
+        if tokenizer is not None and getattr(tokenizer, "pad_token_id", None) is not None:
+            pad_id = tokenizer.pad_token_id
+            text_tokens = int((input_ids != pad_id).sum().item())
+        else:
+            text_tokens = int(input_ids.numel())
+
+    if tokenizer is not None:
+        bos = getattr(tokenizer, "bos_token_id", None)
+        eos = getattr(tokenizer, "eos_token_id", None)
+        if bos is not None and text_tokens > 0 and input_ids[0].item() == bos:
+            text_tokens -= 1
+        if eos is not None and text_tokens > 0:
+            eos_index = text_tokens - 1
+            if eos_index < input_ids.numel() and input_ids[eos_index].item() == eos:
+                text_tokens -= 1
+
+    text_tokens = max(text_tokens, 0)
+
+    pixel_values = inputs["pixel_values"]
+    _, _, height, width = pixel_values.shape
+    grid_h = height // patch_size
+    grid_w = width // patch_size
+    image_tokens = grid_h * grid_w
+
+    return text_tokens + image_tokens
 
 
 def _call_shap_with_budget(explainer, X, call_kwargs):
