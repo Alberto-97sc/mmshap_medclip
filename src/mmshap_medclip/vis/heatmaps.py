@@ -42,13 +42,29 @@ def plot_text_image_heatmaps(
     assert len(mm_scores) == B, f"len(mm_scores)={len(mm_scores)} != batch={B}"
 
     # --- resolver patch/grid ---
+    def _normalize(ps_value):
+        if ps_value is None:
+            return None
+        if isinstance(ps_value, (tuple, list)):
+            if len(ps_value) == 0:
+                return None
+            if len(ps_value) >= 2 and ps_value[0] == ps_value[1]:
+                return int(ps_value[0])
+            return int(ps_value[0])
+        return int(ps_value)
+
     m = getattr(model_wrapper, "model", model_wrapper)
     ps = getattr(getattr(getattr(m, "config", None), "vision_config", None), "patch_size", None)
+    ps = _normalize(ps)
     if ps is None:
         ps = getattr(getattr(getattr(m, "vision_model", None), "config", None), "patch_size", None)
+        ps = _normalize(ps)
+    if ps is None:
+        visual = getattr(m, "visual", None)
+        ps = _normalize(getattr(visual, "patch_size", None)) if visual is not None else None
     if ps is None:
         raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper.")
-    patch_size = int(ps)
+    patch_size = ps
 
     _, _, H, W = inputs["pixel_values"].shape
     assert H % patch_size == 0 and W % patch_size == 0, f"Imagen {H}x{W} no divisible por patch_size={patch_size}"

@@ -89,13 +89,29 @@ def make_image_token_ids(
     B, C, H, W = inputs["pixel_values"].shape
 
     # 1) resolver patch_size
+    def _normalize(ps_value):
+        if ps_value is None:
+            return None
+        if isinstance(ps_value, (tuple, list)):
+            if len(ps_value) == 0:
+                return None
+            if len(ps_value) >= 2 and ps_value[0] == ps_value[1]:
+                return int(ps_value[0])
+            return int(ps_value[0])
+        return int(ps_value)
+
     ps = patch_size
     if ps is None:
         m = getattr(model_wrapper, "model", model_wrapper)
         # intentos comunes en CLIP
         ps = getattr(getattr(getattr(m, "config", None), "vision_config", None), "patch_size", None)
+        ps = _normalize(ps)
         if ps is None:
             ps = getattr(getattr(getattr(m, "vision_model", None), "config", None), "patch_size", None)
+            ps = _normalize(ps)
+        if ps is None:
+            visual = getattr(m, "visual", None)
+            ps = _normalize(getattr(visual, "patch_size", None)) if visual is not None else None
 
     if ps is None:
         if strict:
