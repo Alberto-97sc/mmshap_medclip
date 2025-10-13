@@ -19,8 +19,15 @@ def run_isa_one(
     explain: bool = True,
     plot: bool = False,
     amp_if_cuda: bool = True,
+    max_evals: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Pipeline mínimo de ISA para 1 (imagen, texto)."""
+    """Pipeline mínimo de ISA para 1 (imagen, texto).
+
+    Args:
+        max_evals: Presupuesto opcional de evaluaciones para el explicador de SHAP.
+            Si no se especifica, se calculará automáticamente para satisfacer el
+            requisito ``2 * num_features + 1``.
+    """
     # 1) forward
     inputs, logits = prepare_batch(model, [caption], [image], device=device, debug_tokens=False, amp_if_cuda=amp_if_cuda)
     out: Dict[str, Any] = {
@@ -46,16 +53,16 @@ def run_isa_one(
     # el número de tokens (features) supera el default (500).
     num_features = int(X_clean.shape[1])
     min_evals = 2 * num_features + 1
-    max_evals = max(min_evals, 512)
+    eval_budget = max(min_evals, max_evals or 512)
 
     explainer = shap.explainers.Permutation(
         predict_fn,
         masker,
-        max_evals=max_evals,
+        max_evals=eval_budget,
         silent=True,
     )
 
-    call_kwargs = {"max_evals": max_evals, "silent": True}
+    call_kwargs = {"max_evals": eval_budget, "silent": True}
     shap_values = _call_shap_with_budget(explainer, X_clean.cpu(), call_kwargs)
 
     # 4) métricas
@@ -93,8 +100,15 @@ def run_isa_batch(
     device,
     explain: bool = True,
     amp_if_cuda: bool = True,
+    max_evals: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Pipeline de ISA para batch (lista de PILs y textos)."""
+    """Pipeline de ISA para batch (lista de PILs y textos).
+
+    Args:
+        max_evals: Presupuesto opcional de evaluaciones para el explicador de SHAP.
+            Si no se especifica, se calculará automáticamente para satisfacer el
+            requisito ``2 * num_features + 1``.
+    """
     inputs, logits = prepare_batch(model, captions, images, device=device, debug_tokens=False, amp_if_cuda=amp_if_cuda)
     result: Dict[str, Any] = {
         "inputs": inputs,
@@ -112,15 +126,15 @@ def run_isa_batch(
 
     num_features = int(X_clean.shape[1])
     min_evals = 2 * num_features + 1
-    max_evals = max(min_evals, 512)
+    eval_budget = max(min_evals, max_evals or 512)
 
     explainer = shap.explainers.Permutation(
         predict_fn,
         masker,
-        max_evals=max_evals,
+        max_evals=eval_budget,
         silent=True,
     )
-    call_kwargs = {"max_evals": max_evals, "silent": True}
+    call_kwargs = {"max_evals": eval_budget, "silent": True}
     shap_values = _call_shap_with_budget(explainer, X_clean.cpu(), call_kwargs)
 
     mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(len(captions))]
