@@ -16,7 +16,7 @@ dataset:
 
 model:
   name: whyxrayclip-vit-l-14
-  params:
+  params: {}
     # Puedes sobreescribir 'pretrained' o 'tokenizer' si clonas el modelo localmente.
     # pretrained: hf-hub:yyupenn/whyxrayclip
     # tokenizer: ViT-L-14
