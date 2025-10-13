@@ -22,7 +22,8 @@ class Predictor:
     ):
         self.wrapper = model_wrapper
         self.model = getattr(model_wrapper, "model", model_wrapper).eval()
-        self.device = device or next(self.model.parameters()).device
+        reference_module = getattr(model_wrapper, "model", model_wrapper)
+        self.device = device or next(reference_module.parameters()).device
 
         # Copia base_inputs al device del modelo
         self.base_inputs = {k: v.to(self.device) for k, v in base_inputs.items()}
@@ -98,7 +99,7 @@ class Predictor:
                         c0, c1 = c * self.patch_size, (c + 1) * self.patch_size
                         pix[:, :, r0:r1, c0:c1] = 0
 
-                outputs = self.model(**masked)       # logits_per_image: [1,1]
+                outputs = self.wrapper(**masked)     # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()
 
         return out.detach().cpu().numpy()

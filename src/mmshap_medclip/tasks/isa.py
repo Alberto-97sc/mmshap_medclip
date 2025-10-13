@@ -1,5 +1,5 @@
 # src/mmshap_medclip/tasks/isa.py
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import shap
 
@@ -20,50 +20,37 @@ def run_isa_one(
     amp_if_cuda: bool = True,
 ) -> Dict[str, Any]:
     """Pipeline mínimo de ISA para 1 (imagen, texto)."""
-    # 1) forward
-    inputs, logits = prepare_batch(model, [caption], [image], device=device, debug_tokens=False, amp_if_cuda=amp_if_cuda)
+    inputs, logits = prepare_batch(
+        model, [caption], [image], device=device, debug_tokens=False, amp_if_cuda=amp_if_cuda
+    )
+
     out: Dict[str, Any] = {
         "inputs": inputs,
-        "logit": float(logits[0, 0]),
+        "logits": logits,
+        "logit": float(logits.squeeze()),
         "image": image,
         "text": caption,
+        "model_wrapper": model,
     }
-    if not explain:
+
+    if not (explain or plot):
         return out
 
-    # 2) tokens y X_clean
-    nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
-    image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
-    X_clean, _ = concat_text_image_tokens(inputs, image_token_ids_expanded, device=device)
+    explanation = explain_isa(
+        model,
+        inputs,
+        device=device,
+        amp_if_cuda=amp_if_cuda,
+    )
+    out.update(explanation)
 
-    # 3) SHAP
-    masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
-    predict_fn = Predictor(model, inputs, patch_size=imginfo["patch_size"], device=device, use_amp=amp_if_cuda)
-    explainer = shap.Explainer(predict_fn, masker, silent=True)
-    shap_values = explainer(X_clean.cpu())
-
-    # 4) métricas
-    tscore, word_shap = compute_mm_score(shap_values, model.tokenizer, inputs, i=0)
-    iscore = compute_iscore(shap_values, inputs, i=0)
-    out.update({
-        "shap_values": shap_values,
-        "mm_scores": [(tscore, word_shap)],
-        "tscore": float(tscore),
-        "iscore": float(iscore),
-    })
-
-    # 5) figura opcional
-    if plot:
-        from mmshap_medclip.vis.heatmaps import plot_text_image_heatmaps
-        fig = plot_text_image_heatmaps(
-            shap_values=shap_values,
-            inputs=inputs,
-            tokenizer=model.tokenizer,
-            images=image,
-            texts=[caption],
-            mm_scores=[(tscore, word_shap)],
+    if plot and "shap_values" in out:
+        fig = plot_isa(
+            image=image,
+            caption=caption,
+            isa_output=out,
             model_wrapper=model,
-            return_fig=True,
+            display_plot=True,
         )
         out["fig"] = fig
 
@@ -79,29 +66,124 @@ def run_isa_batch(
     amp_if_cuda: bool = True,
 ) -> Dict[str, Any]:
     """Pipeline de ISA para batch (lista de PILs y textos)."""
-    inputs, logits = prepare_batch(model, captions, images, device=device, debug_tokens=False, amp_if_cuda=amp_if_cuda)
+    inputs, logits = prepare_batch(
+        model, captions, images, device=device, debug_tokens=False, amp_if_cuda=amp_if_cuda
+    )
     result: Dict[str, Any] = {
         "inputs": inputs,
         "logits": logits.detach().cpu().numpy(),
+        "model_wrapper": model,
     }
     if not explain:
         return result
 
+    shap_values, mm_scores, iscores = _compute_isa_shap(
+        model,
+        inputs,
+        device=device,
+        amp_if_cuda=amp_if_cuda,
+    )
+
+    result.update({
+        "shap_values": shap_values,
+        "mm_scores": mm_scores,
+        "iscores": [float(s) for s in iscores],
+    })
+    return result
+
+
+def explain_isa(
+    model,
+    inputs: Dict[str, Any],
+    device,
+    amp_if_cuda: bool = True,
+) -> Dict[str, Any]:
+    """Calcula explicaciones ISA para un batch preparado."""
+    shap_values, mm_scores, iscores = _compute_isa_shap(
+        model,
+        inputs,
+        device=device,
+        amp_if_cuda=amp_if_cuda,
+    )
+
+    out: Dict[str, Any] = {
+        "shap_values": shap_values,
+        "mm_scores": mm_scores,
+        "iscores": [float(s) for s in iscores],
+    }
+
+    if len(mm_scores) == 1:
+        tscore, _ = mm_scores[0]
+        out.update({
+            "tscore": float(tscore),
+            "iscore": float(iscores[0]),
+        })
+
+    return out
+
+
+def plot_isa(
+    image,
+    caption: str,
+    isa_output: Dict[str, Any],
+    model_wrapper=None,
+    display_plot: bool = True,
+):
+    """Genera la figura de heatmaps para un resultado ISA."""
+    from mmshap_medclip.vis.heatmaps import plot_text_image_heatmaps
+
+    if model_wrapper is None:
+        model_wrapper = isa_output.get("model_wrapper")
+    if model_wrapper is None:
+        raise ValueError("Se requiere el wrapper del modelo para plot_isa.")
+
+    shap_values = isa_output.get("shap_values")
+    mm_scores = isa_output.get("mm_scores")
+    inputs = isa_output.get("inputs")
+    if shap_values is None or mm_scores is None or inputs is None:
+        raise ValueError("plot_isa necesita 'shap_values', 'mm_scores' e 'inputs' en isa_output.")
+
+    fig = plot_text_image_heatmaps(
+        shap_values=shap_values,
+        inputs=inputs,
+        tokenizer=model_wrapper.tokenizer,
+        images=image,
+        texts=[caption],
+        mm_scores=mm_scores,
+        model_wrapper=model_wrapper,
+        return_fig=True,
+    )
+
+    if display_plot:
+        fig.show()
+
+    return fig
+
+
+def _compute_isa_shap(
+    model,
+    inputs: Dict[str, Any],
+    device,
+    amp_if_cuda: bool = True,
+) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float]]:
+    """Aplica SHAP al batch dado y retorna valores por muestra."""
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
     image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
     X_clean, _ = concat_text_image_tokens(inputs, image_token_ids_expanded, device=device)
 
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
-    predict_fn = Predictor(model, inputs, patch_size=imginfo["patch_size"], device=device, use_amp=amp_if_cuda)
+    predict_fn = Predictor(
+        model,
+        inputs,
+        patch_size=imginfo["patch_size"],
+        device=device,
+        use_amp=amp_if_cuda,
+    )
     explainer = shap.Explainer(predict_fn, masker, silent=True)
     shap_values = explainer(X_clean.cpu())
 
-    mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(len(captions))]
-    iscores   = [compute_iscore(shap_values, inputs, i=i) for i in range(len(captions))]
+    batch_size = inputs["input_ids"].shape[0]
+    mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(batch_size)]
+    iscores = [compute_iscore(shap_values, inputs, i=i) for i in range(batch_size)]
 
-    result.update({
-        "shap_values": shap_values,
-        "mm_scores": mm_scores,
-        "iscores": iscores,
-    })
-    return result
+    return shap_values, mm_scores, iscores
