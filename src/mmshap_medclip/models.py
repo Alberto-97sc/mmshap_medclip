@@ -100,25 +100,16 @@ class OpenCLIPWrapper(torch.nn.Module):
         if input_ids is None or pixel_values is None:
             raise ValueError("OpenCLIPWrapper requiere 'input_ids' y 'pixel_values'.")
 
-        outputs = self.model(image=pixel_values, text=input_ids)
+        image_features = self.model.encode_image(pixel_values)
+        text_features = self.model.encode_text(input_ids)
 
-        if isinstance(outputs, dict):
-            logits_per_image = outputs.get("logits_per_image")
-            logits_per_text = outputs.get("logits_per_text")
-        elif isinstance(outputs, (tuple, list)):
-            logits_per_image = outputs[0] if len(outputs) > 0 else None
-            logits_per_text = outputs[1] if len(outputs) > 1 else None
+        if hasattr(self.model, "logit_scale"):
+            logit_scale = self.model.logit_scale.exp()
         else:
-            logits_per_image = getattr(outputs, "logits_per_image", None)
-            logits_per_text = getattr(outputs, "logits_per_text", None)
+            logit_scale = torch.tensor(1.0, device=image_features.device, dtype=image_features.dtype)
 
-        if logits_per_image is None:
-            raise ValueError("El modelo OpenCLIP no devolvió 'logits_per_image'.")
-        if logits_per_text is None:
-            # Algunos forward de open_clip devuelven (logits_per_image, logit_scale).
-            # Aseguramos la simetría generando logits de texto a partir de la matriz
-            # si no vienen explícitos.
-            logits_per_text = logits_per_image.t()
+        logits_per_image = logit_scale * image_features @ text_features.t()
+        logits_per_text = logits_per_image.t()
 
         return SimpleNamespace(logits_per_image=logits_per_image, logits_per_text=logits_per_text)
 
