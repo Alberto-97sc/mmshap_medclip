@@ -1,10 +1,10 @@
 # src/mmshap_medclip/vis/heatmaps.py
 import math
 from typing import List, Tuple, Union
-import numpy as np
-import torch
+
 import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
+import numpy as np
+from matplotlib.colors import Normalize, TwoSlopeNorm
 from PIL import Image
 
 def _infer_patch_size(model_wrapper, inputs, shap_values):
@@ -62,6 +62,58 @@ def _infer_patch_size(model_wrapper, inputs, shap_values):
     return ps
 
 
+def _decode_tokens_for_plot(tokenizer, input_ids):
+    """Return display tokens, decoded text and kept indices for SHAP visualization."""
+    ids = input_ids.detach().cpu().tolist()
+
+    if tokenizer is None:
+        tokens = [str(x) for x in ids]
+        text_clean = " ".join(tokens)
+        keep = list(range(len(ids)))
+        return tokens, text_clean, keep
+
+    if hasattr(tokenizer, "convert_ids_to_tokens"):
+        converted = tokenizer.convert_ids_to_tokens(ids)
+    else:
+        converted = [str(x) for x in ids]
+
+    special_ids = set(getattr(tokenizer, "all_special_ids", []))
+    special_tokens = set(getattr(tokenizer, "all_special_tokens", []))
+
+    tokens = []
+    keep = []
+    for idx, tok_id in enumerate(ids):
+        if tok_id in special_ids:
+            continue
+        tok = converted[idx] if idx < len(converted) else str(tok_id)
+        if tok in special_tokens:
+            continue
+
+        clean_tok = tok
+        for prefix in ("Ġ", "▁"):
+            if clean_tok.startswith(prefix):
+                clean_tok = clean_tok[len(prefix):]
+        clean_tok = clean_tok.replace("</w>", "")
+        if clean_tok.startswith("##"):
+            clean_tok = clean_tok[2:]
+        if not clean_tok:
+            clean_tok = tok
+
+        tokens.append(clean_tok)
+        keep.append(idx)
+
+    if hasattr(tokenizer, "decode"):
+        text_clean = tokenizer.decode(ids, skip_special_tokens=True)
+    else:
+        text_clean = " ".join(tokens)
+
+    if not tokens:
+        tokens = converted if converted else [str(x) for x in ids]
+        keep = list(range(len(tokens)))
+
+    return tokens, text_clean, keep
+
+
 def plot_text_image_heatmaps(
     shap_values: Union[np.ndarray, "shap._explanation.Explanation"],
     inputs: dict,
@@ -70,13 +122,13 @@ def plot_text_image_heatmaps(
     texts: List[str],
     mm_scores: List[Tuple[float, dict]],     # [(tscore, OrderedDict(word->score)), ...]
     model_wrapper,
-    cmap_name: str = "RdYlBu_r",
+    cmap_name: str = "viridis",
     alpha_img: float = 0.60,
     return_fig: bool = False,
 ):
     """
-    Dibuja, por muestra del batch, el heatmap de parches de imagen (fracción visual)
-    y un renglón de tokens coloreado por |SHAP| agregado a nivel palabra.
+    Dibuja, por muestra del batch, el heatmap de parches de imagen usando valores SHAP
+    y un renglón de tokens coloreado por la contribución SHAP (con signo) a nivel token.
     - Soporta shap_values con formas (B, L), (B,1,L) o (L,).
     - Usa attention_mask por muestra para el # de tokens de texto.
 
@@ -132,31 +184,64 @@ def plot_text_image_heatmaps(
     seq_lens = [int(inputs["attention_mask"][i].sum().item()) if "attention_mask" in inputs
                 else int(inputs["input_ids"][i].shape[0]) for i in range(B)]
 
-    # --- normalizaciones globales ---
-    # a) para imagen: fracción visual por parche (0..1)
-    all_fracs = []
+    decoded_info = []
+    all_text_values = []
+    all_image_values = []
     for i in range(B):
+        seq_len = seq_lens[i]
+        token_ids = inputs["input_ids"][i][:seq_len]
+        tokens_vis, text_clean, keep_idx = _decode_tokens_for_plot(tokenizer, token_ids)
+        decoded_info.append((tokens_vis, text_clean, keep_idx))
+
         feats = vals_all[i]
-        tlen  = seq_lens[i]
-        ta = np.abs(feats[:tlen])
-        ia = np.abs(feats[tlen:tlen + num_patches])
-        s  = ta.sum() + ia.sum()
-        all_fracs.append(ia / s if s > 0 else np.zeros_like(ia))
-    global_vmax_img = float(np.max(np.concatenate(all_fracs))) if B > 0 else 1.0
+        text_raw = feats[:seq_len]
+        valid_idx = [idx for idx in keep_idx if idx < len(text_raw)]
+        if valid_idx:
+            text_vals = text_raw[valid_idx]
+        else:
+            text_vals = np.zeros((0,), dtype=feats.dtype)
+        all_text_values.append(text_vals)
 
-    # b) para texto: magnitud por palabra (usar mm_scores)
-    all_word_mags = []
-    for _, word_shap in mm_scores:
-        if word_shap:
-            all_word_mags.extend([abs(v) for v in word_shap.values()])
-    global_vmax_txt = float(max(all_word_mags)) if all_word_mags else 1.0
+        image_vals = feats[seq_len:seq_len + num_patches]
+        all_image_values.append(image_vals)
 
-    cmap      = plt.get_cmap(cmap_name)
-    norm_img  = Normalize(vmin=0, vmax=global_vmax_img)
-    norm_text = Normalize(vmin=0, vmax=global_vmax_txt)
+    def _concat_or_zero(arrays):
+        valid = [a for a in arrays if a.size > 0]
+        if not valid:
+            return np.zeros((1,), dtype=np.float32)
+        return np.concatenate(valid)
+
+    text_concat = _concat_or_zero(all_text_values)
+    img_concat = _concat_or_zero(all_image_values)
+
+    if np.any(text_concat < 0):
+        absmax = float(np.percentile(np.abs(text_concat), 95))
+        if absmax <= 0:
+            absmax = float(np.max(np.abs(text_concat))) if text_concat.size else 0.0
+        absmax = max(absmax, 1e-6)
+        norm_text = TwoSlopeNorm(vmin=-absmax, vcenter=0.0, vmax=absmax)
+        cmap_text = plt.get_cmap("coolwarm")
+    else:
+        vmax_text = float(np.percentile(text_concat, 95)) if text_concat.size else 0.0
+        vmax_text = max(vmax_text, 1e-6)
+        norm_text = Normalize(vmin=0.0, vmax=vmax_text)
+        cmap_text = plt.get_cmap("Reds")
+
+    if np.any(img_concat < 0):
+        absmax_img = float(np.percentile(np.abs(img_concat), 95))
+        if absmax_img <= 0:
+            absmax_img = float(np.max(np.abs(img_concat))) if img_concat.size else 0.0
+        absmax_img = max(absmax_img, 1e-6)
+        norm_img = TwoSlopeNorm(vmin=-absmax_img, vcenter=0.0, vmax=absmax_img)
+        cmap_img = plt.get_cmap("coolwarm")
+    else:
+        vmax_img = float(np.percentile(img_concat, 95)) if img_concat.size else 0.0
+        vmax_img = max(vmax_img, 1e-6)
+        norm_img = Normalize(vmin=0.0, vmax=vmax_img)
+        cmap_img = plt.get_cmap(cmap_name)
 
     # --- figura ---
-    fig = plt.figure(figsize=(5*B, 6))
+    fig = plt.figure(figsize=(5 * B, 6))
     gs  = fig.add_gridspec(2, B, height_ratios=[4, 1], hspace=0.05, wspace=0.03)
 
     # for measuring token widths to center text row
@@ -172,25 +257,31 @@ def plot_text_image_heatmaps(
             heat[r0:r1, c0:c1] = v
         return heat
 
-    for i, (tscore, word_shap) in enumerate(mm_scores):
+    for i, (tscore, _) in enumerate(mm_scores):
         feats  = vals_all[i]
         tlen   = seq_lens[i]
         ta, ia = np.abs(feats[:tlen]), np.abs(feats[tlen:tlen + num_patches])
         tot    = ta.sum() + ia.sum()
-        rel_img = ia / tot if tot > 0 else np.zeros_like(ia)
         iscore  = float(ia.sum() / tot) if tot > 0 else 0.0
 
         # --- imagen ---
-        heat = reconstruct_heat(rel_img)
+        patch_vals = feats[tlen:tlen + num_patches]
+        heat = reconstruct_heat(patch_vals)
         ax_img = fig.add_subplot(gs[0, i])
         ax_img.imshow(images_for_batch[i].resize((W, H)).convert("RGB"), alpha=1.0)
-        ax_img.imshow(heat, cmap=cmap, norm=norm_img, alpha=alpha_img)
+        ax_img.imshow(heat, cmap=cmap_img, norm=norm_img, alpha=alpha_img)
         ax_img.set_title(f"{texts[i]}\nIScore {iscore:.2%}", fontsize=14, pad=8)
         ax_img.axis("off")
 
         # --- texto ---
-        toks     = list(word_shap.keys())
-        vals_tok = [abs(v) for v in word_shap.values()]
+        toks_vis, text_clean, keep_idx = decoded_info[i]
+        text_raw = feats[:tlen]
+        valid_idx = [idx for idx in keep_idx if idx < len(text_raw)]
+        text_vals = text_raw[valid_idx] if valid_idx else np.zeros((0,), dtype=text_raw.dtype)
+        if len(toks_vis) > len(text_vals):
+            toks_vis = toks_vis[:len(text_vals)]
+        elif len(text_vals) > len(toks_vis):
+            text_vals = text_vals[:len(toks_vis)]
 
         ax_txt = fig.add_subplot(gs[1, i])
         ax_txt.axis("off")
@@ -199,10 +290,15 @@ def plot_text_image_heatmaps(
         ax_txt.text(0.5, 0.85, f"TScore {tscore:.2%}",
                     ha="center", va="center", transform=ax_txt.transAxes, fontsize=13)
 
+        if len(toks_vis) == 0 or len(text_vals) == 0:
+            ax_txt.text(0.5, 0.35, text_clean if text_clean else "(sin tokens)",
+                        ha="center", va="center", transform=ax_txt.transAxes, fontsize=12)
+            continue
+
         # medir ancho de tokens para centrar
         widths = []
         bbox_kw = dict(facecolor="white", pad=0.2, alpha=0)
-        for tok in toks:
+        for tok in toks_vis:
             t = ax_txt.text(0, 0, tok, ha="left", va="center", fontsize=14, bbox=bbox_kw)
             bb = t.get_window_extent(renderer=renderer)
             bb_data = ax_txt.transAxes.inverted().transform([[bb.x1, bb.y1], [bb.x0, bb.y0]])
@@ -210,12 +306,12 @@ def plot_text_image_heatmaps(
             t.remove()
 
         gap     = 0.01
-        total_w = sum(widths) + gap * max(0, len(toks)-1)
+        total_w = sum(widths) + gap * max(0, len(toks_vis)-1)
         start_x = 0.5 - total_w/2
         x = start_x
 
-        for tok, val, w in zip(toks, vals_tok, widths):
-            color = cmap(norm_text(val))
+        for tok, val, w in zip(toks_vis, text_vals, widths):
+            color = cmap_text(norm_text(val))
             ax_txt.text(
                 x, 0.5, tok,
                 ha="left", va="center", fontsize=14, color="black",
@@ -227,11 +323,11 @@ def plot_text_image_heatmaps(
     # colorbars
     first_pos = fig.axes[0].get_position()
     cax_i = fig.add_axes([first_pos.x1 + 0.01, first_pos.y0, 0.015, first_pos.height])
-    fig.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=norm_img), cax=cax_i, label="Fracción visual por parche")
+    fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_img, norm=norm_img), cax=cax_i, label="Valor SHAP por parche")
 
     cax_t = fig.add_axes([0.05, 0.03, 0.9, 0.02])
-    fig.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=norm_text),
-                 cax=cax_t, orientation="horizontal", label="Importancia SHAP por palabra")
+    fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_text, norm=norm_text),
+                 cax=cax_t, orientation="horizontal", label="Valor SHAP por token")
 
     if return_fig:
         return fig
