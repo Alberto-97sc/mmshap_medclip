@@ -16,7 +16,7 @@ _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float
 
 PLOT_ISA_IMG_PERCENTILE = 90   # escala robusta al percentil 90
 PLOT_ISA_ALPHA_IMG = 0.50      # opacidad del overlay
-PLOT_ISA_COARSEN_G = 3         # tamaño de super-parches (3x3)
+PLOT_ISA_COARSEN_G = 2        # tamaño de super-parches (3x3)
 
 def _infer_patch_size(model_wrapper, inputs, shap_values):
     ps = None
