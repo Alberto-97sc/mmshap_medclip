@@ -239,7 +239,6 @@ def plot_text_image_heatmaps(
 
     grid_h = int(imginfo.get("grid_h", 0) or 0)
     grid_w = int(imginfo.get("grid_w", 0) or 0)
-    num_patches = int(imginfo.get("num_patches", grid_h * grid_w) or (grid_h * grid_w))
 
     patch_h = patch_w = None
     patch_size_info = imginfo.get("patch_size")
@@ -254,11 +253,11 @@ def plot_text_image_heatmaps(
     _, _, H, W = inputs["pixel_values"].shape
 
     if patch_h is None and grid_h > 0:
-        patch_h = max(1, H // grid_h)
+        patch_h = max(1, int(round(H / max(grid_h, 1))))
     if patch_w is None and grid_w > 0:
-        patch_w = max(1, W // grid_w)
+        patch_w = max(1, int(round(W / max(grid_w, 1))))
 
-    if patch_h is None or patch_w is None or patch_h <= 0 or patch_w <= 0 or grid_h <= 0 or grid_w <= 0 or num_patches <= 0:
+    if patch_h is None or patch_w is None or patch_h <= 0 or patch_w <= 0 or grid_h <= 0 or grid_w <= 0:
         ps = _infer_patch_size(model_wrapper, inputs, shap_values)
         if ps is None:
             raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper o inputs.")
@@ -271,14 +270,13 @@ def plot_text_image_heatmaps(
                 patch_h, patch_w = int(ps[0]), int(ps[1])
         else:
             patch_h = patch_w = int(ps)
-        grid_h = max(1, H // max(patch_h, 1))
-        grid_w = max(1, W // max(patch_w, 1))
+        grid_h = max(1, int(round(H / max(patch_h, 1))))
+        grid_w = max(1, int(round(W / max(patch_w, 1))))
 
     patch_h = max(1, int(patch_h))
     patch_w = max(1, int(patch_w))
-    side_h = grid_h if grid_h > 0 else max(1, H // patch_h)
-    side_w = grid_w if grid_w > 0 else max(1, W // patch_w)
-    num_patches = max(1, side_h * side_w)
+    side_h_base = grid_h if grid_h > 0 else None
+    side_w_base = grid_w if grid_w > 0 else None
 
     # --- normalizar SHAP a matriz (B, L) ---
     vals = shap_values.values if hasattr(shap_values, "values") else shap_values
@@ -313,7 +311,7 @@ def plot_text_image_heatmaps(
             text_vals = np.zeros((0,), dtype=feats.dtype)
         all_text_values.append(text_vals)
 
-        image_vals = feats[seq_len:seq_len + num_patches]
+        image_vals = feats[seq_len:]
         all_image_values.append(image_vals)
 
     def _concat_or_zero(arrays):
@@ -372,29 +370,44 @@ def plot_text_image_heatmaps(
         return formatted
 
     for i, (tscore, _) in enumerate(mm_scores):
-        feats  = vals_all[i]
-        tlen   = seq_lens[i]
-        ta, ia = np.abs(feats[:tlen]), np.abs(feats[tlen:tlen + num_patches])
-        tot    = ta.sum() + ia.sum()
+        feats = vals_all[i]
+        tlen = seq_lens[i]
+        text_slice = feats[:tlen]
+        img_slice = feats[tlen:]
+        ta = np.abs(text_slice)
+        ia = np.abs(img_slice)
+        tot = ta.sum() + ia.sum()
         iscore  = float(ia.sum() / tot) if tot > 0 else 0.0
 
         # --- imagen ---
-        patch_vals = np.asarray(feats[tlen:tlen + num_patches])
-        if patch_vals.size < num_patches:
-            patch_vals = np.pad(patch_vals, (0, num_patches - patch_vals.size), mode="constant")
-        elif patch_vals.size > num_patches:
-            patch_vals = patch_vals[:num_patches]
-        expected = side_h * side_w
-        if patch_vals.size != expected:
-            if patch_vals.size == 0:
-                patch_vals = np.zeros((expected,), dtype=feats.dtype)
-            elif patch_vals.size < expected:
-                patch_vals = np.pad(patch_vals, (0, expected - patch_vals.size), mode="edge")
+        px_tensor = inputs["pixel_values"][i].detach().cpu()
+        H = int(px_tensor.shape[-2])
+        W = int(px_tensor.shape[-1])
+        side_h = side_h_base if side_h_base else max(1, int(round(H / float(patch_h))))
+        side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w))))
+
+        patch_vals = np.asarray(img_slice)
+        expected = max(1, side_h * side_w)
+        actual = patch_vals.size
+        if actual == 0:
+            patch_vals = np.zeros((expected,), dtype=feats.dtype)
+            actual = expected
+        if actual != expected:
+            side_guess = int(round(math.sqrt(actual))) if actual > 0 else 1
+            if side_guess > 0 and side_guess * side_guess == actual:
+                side_h = side_w = side_guess
+                expected = actual
             else:
-                patch_vals = patch_vals[:expected]
+                side_h = max(1, int(round(H / float(patch_h))))
+                side_w = max(1, int(round(W / float(patch_w))))
+                expected = max(1, side_h * side_w)
+        if actual < expected:
+            patch_vals = np.pad(patch_vals, (0, expected - actual), mode="edge")
+        elif actual > expected:
+            patch_vals = patch_vals[:expected]
+
         patch_grid = patch_vals.reshape(side_h, side_w)
 
-        px_tensor = inputs["pixel_values"][i].detach().cpu()
         mean = _CLIP_MEAN.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
         std = _CLIP_STD.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
         img_vis = torch.clamp(px_tensor * std + mean, 0, 1).permute(1, 2, 0).numpy()
@@ -403,15 +416,15 @@ def plot_text_image_heatmaps(
         heat_up = F.interpolate(heat_tensor, size=(H, W), mode="nearest").squeeze().numpy()
 
         ax_img = fig.add_subplot(gs[0, i])
-        ax_img.imshow(img_vis, extent=[0, W, H, 0], origin="upper")
+        ax_img.imshow(img_vis, origin="upper", interpolation="nearest", zorder=0)
         ax_img.imshow(
             heat_up,
             cmap=cmap_img,
             norm=norm_img,
             alpha=alpha_img,
-            extent=[0, W, H, 0],
             origin="upper",
             interpolation="nearest",
+            zorder=1,
         )
         ax_img.set_aspect("equal")
         ax_img.set_xlim(0, W)
