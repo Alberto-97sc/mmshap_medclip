@@ -48,11 +48,17 @@ def plot_text_image_heatmaps(
         ps = getattr(getattr(getattr(m, "vision_model", None), "config", None), "patch_size", None)
     if ps is None:
         raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper.")
-    patch_size = int(ps)
+
+    if isinstance(ps, (list, tuple)):
+        if len(ps) != 2:
+            raise ValueError(f"patch_size iterable inesperado: {ps}")
+        patch_h, patch_w = int(ps[0]), int(ps[1])
+    else:
+        patch_h = patch_w = int(ps)
 
     _, _, H, W = inputs["pixel_values"].shape
-    assert H % patch_size == 0 and W % patch_size == 0, f"Imagen {H}x{W} no divisible por patch_size={patch_size}"
-    grid_h, grid_w = H // patch_size, W // patch_size
+    assert H % patch_h == 0 and W % patch_w == 0, f"Imagen {H}x{W} no divisible por patch_size={(patch_h, patch_w)}"
+    grid_h, grid_w = H // patch_h, W // patch_w
     num_patches = grid_h * grid_w
 
     # --- normalizar SHAP a matriz (B, L) ---
@@ -105,8 +111,8 @@ def plot_text_image_heatmaps(
         heat = np.zeros((H, W), dtype=np.float32)
         for k, v in enumerate(rel_img[:num_patches]):
             r, c = k // grid_w, k % grid_w
-            r0, r1 = r * patch_size, (r + 1) * patch_size
-            c0, c1 = c * patch_size, (c + 1) * patch_size
+            r0, r1 = r * patch_h, (r + 1) * patch_h
+            c0, c1 = c * patch_w, (c + 1) * patch_w
             heat[r0:r1, c0:c1] = v
         return heat
 

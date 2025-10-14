@@ -1,5 +1,5 @@
 # src/mmshap_medclip/shap_tools/predictor.py
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, Tuple
 from contextlib import nullcontext
 import numpy as np
 import torch
@@ -16,7 +16,7 @@ class Predictor:
         self,
         model_wrapper,                         # p.ej., CLIPWrapper (expone .model)
         base_inputs: Dict[str, torch.Tensor],  # dict del processor para este batch
-        patch_size: Optional[int] = None,      # si None se infiere del modelo
+        patch_size: Optional[Union[int, Tuple[int, int]]] = None,  # si None se infiere del modelo
         device: Optional[torch.device] = None,
         use_amp: bool = True,                  # AMP en CUDA
     ):
@@ -29,7 +29,8 @@ class Predictor:
         self.base_inputs = {k: v.to(self.device) for k, v in base_inputs.items()}
 
         # Inferir patch_size si no viene
-        if patch_size is None:
+        ps = patch_size
+        if ps is None:
             ps = getattr(model_wrapper, "patch_size", None)
             if ps is None:
                 ps = getattr(getattr(getattr(self.model, "config", None), "vision_config", None), "patch_size", None)
@@ -39,15 +40,26 @@ class Predictor:
                 ps = getattr(getattr(self.model, "visual", None), "patch_size", None)
             if ps is None:
                 raise ValueError("No pude inferir patch_size del modelo. Pásalo explícitamente.")
-            patch_size = int(ps)
-        self.patch_size = int(patch_size)
+
+        if isinstance(ps, (list, tuple)):
+            if len(ps) != 2:
+                raise ValueError(f"patch_size iterable inesperado: {ps}")
+            patch_h, patch_w = int(ps[0]), int(ps[1])
+        else:
+            patch_h = patch_w = int(ps)
+
+        self.patch_size = (patch_h, patch_w)
+        self.patch_h = patch_h
+        self.patch_w = patch_w
 
         # Geometría de la imagen
         _, _, H, W = self.base_inputs["pixel_values"].shape
-        if (H % self.patch_size != 0) or (W % self.patch_size != 0):
-            raise AssertionError(f"Imagen {H}×{W} no divisible por patch_size={self.patch_size}")
-        self.grid_h = H // self.patch_size
-        self.grid_w = W // self.patch_size
+        if (H % self.patch_h != 0) or (W % self.patch_w != 0):
+            raise AssertionError(
+                f"Imagen {H}×{W} no divisible por patch_size={self.patch_size}"
+            )
+        self.grid_h = H // self.patch_h
+        self.grid_w = W // self.patch_w
         self.num_patches = self.grid_h * self.grid_w
 
         # Longitud de texto (para el split)
@@ -95,8 +107,8 @@ class Predictor:
                     if mid[k].item() == 0:
                         r = k // self.grid_w
                         c = k %  self.grid_w
-                        r0, r1 = r * self.patch_size, (r + 1) * self.patch_size
-                        c0, c1 = c * self.patch_size, (c + 1) * self.patch_size
+                        r0, r1 = r * self.patch_h, (r + 1) * self.patch_h
+                        c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
                         pix[:, :, r0:r1, c0:c1] = 0
 
                 outputs = self.wrapper(**masked)     # logits_per_image: [1,1]
