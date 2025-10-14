@@ -4,8 +4,13 @@ from typing import List, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+import torch.nn.functional as F
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from PIL import Image
+
+_CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float32)
+_CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32)
 
 def _infer_patch_size(model_wrapper, inputs, shap_values):
     ps = None
@@ -320,15 +325,6 @@ def plot_text_image_heatmaps(
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
 
-    def reconstruct_heat(rel_img: np.ndarray) -> np.ndarray:
-        heat = np.zeros((H, W), dtype=np.float32)
-        for k, v in enumerate(rel_img[:num_patches]):
-            r, c = k // grid_w, k % grid_w
-            r0, r1 = r * patch_h, (r + 1) * patch_h
-            c0, c1 = c * patch_w, (c + 1) * patch_w
-            heat[r0:r1, c0:c1] = v
-        return heat
-
     def _format_tokens(tokens: List[str]) -> List[str]:
         formatted = []
         for tok in tokens:
@@ -349,11 +345,35 @@ def plot_text_image_heatmaps(
         iscore  = float(ia.sum() / tot) if tot > 0 else 0.0
 
         # --- imagen ---
-        patch_vals = feats[tlen:tlen + num_patches]
-        heat = reconstruct_heat(patch_vals)
+        patch_vals = np.asarray(feats[tlen:tlen + num_patches])
+        if patch_vals.size < num_patches:
+            patch_vals = np.pad(patch_vals, (0, num_patches - patch_vals.size), mode="constant")
+        elif patch_vals.size > num_patches:
+            patch_vals = patch_vals[:num_patches]
+        patch_grid = patch_vals.reshape(grid_h, grid_w)
+
+        px_tensor = inputs["pixel_values"][i].detach().cpu()
+        mean = _CLIP_MEAN.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
+        std = _CLIP_STD.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
+        img_vis = torch.clamp(px_tensor * std + mean, 0, 1).permute(1, 2, 0).numpy()
+
+        heat_tensor = torch.tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        heat_up = F.interpolate(heat_tensor, size=(H, W), mode="nearest").squeeze().numpy()
+
         ax_img = fig.add_subplot(gs[0, i])
-        ax_img.imshow(images_for_batch[i].resize((W, H)).convert("RGB"), alpha=1.0)
-        ax_img.imshow(heat, cmap=cmap_img, norm=norm_img, alpha=alpha_img)
+        ax_img.imshow(img_vis, extent=[0, W, H, 0], origin="upper")
+        ax_img.imshow(
+            heat_up,
+            cmap=cmap_img,
+            norm=norm_img,
+            alpha=alpha_img,
+            extent=[0, W, H, 0],
+            origin="upper",
+            interpolation="nearest",
+        )
+        ax_img.set_aspect("equal")
+        ax_img.set_xlim(0, W)
+        ax_img.set_ylim(H, 0)
         ax_img.set_title(f"{texts[i]}\nIScore {iscore:.2%}", fontsize=14, pad=8)
         ax_img.axis("off")
 
