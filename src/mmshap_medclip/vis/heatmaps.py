@@ -1,10 +1,66 @@
 # src/mmshap_medclip/vis/heatmaps.py
+import math
 from typing import List, Tuple, Union
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from PIL import Image
+
+def _infer_patch_size(model_wrapper, inputs, shap_values):
+    ps = None
+    m = model_wrapper
+    base = getattr(model_wrapper, "model", None)
+
+    candidates = [
+        getattr(m, "vision_patch_size", None),
+        getattr(base, "vision_patch_size", None) if base is not None else None,
+        getattr(getattr(m, "vision_model", None), "patch_size", None),
+        getattr(getattr(base, "vision_model", None), "patch_size", None) if base is not None else None,
+        getattr(getattr(getattr(m, "vision_model", None), "config", None), "patch_size", None),
+        getattr(getattr(getattr(base, "vision_model", None), "config", None), "patch_size", None) if base is not None else None,
+        getattr(getattr(m, "visual", None), "patch_size", None),
+        getattr(getattr(base, "visual", None), "patch_size", None) if base is not None else None,
+        getattr(getattr(getattr(m, "vision_model", None), "patch_embed", None), "patch_size", None),
+        getattr(getattr(getattr(base, "vision_model", None), "patch_embed", None), "patch_size", None) if base is not None else None,
+    ]
+
+    for cand in candidates:
+        if cand is not None:
+            ps = cand
+            break
+
+    if isinstance(ps, (tuple, list)):
+        if len(ps) == 0:
+            ps = None
+        else:
+            ps = int(ps[0])
+
+    if ps is None:
+        n_tokens = int(inputs["input_ids"].shape[1]) if "input_ids" in inputs else 0
+        sv = shap_values.values if hasattr(shap_values, "values") else shap_values
+        fdim = sv.shape[-1]
+        n_patches = max(fdim - n_tokens, 1)
+
+        if "pixel_values" in inputs:
+            H = int(inputs["pixel_values"].shape[-2])
+        else:
+            H = getattr(m, "vision_input_size", None)
+            if H is None and base is not None:
+                H = getattr(base, "vision_input_size", None)
+            if H is None:
+                H = getattr(base, "image_size", None) if base is not None else None
+            if isinstance(H, (list, tuple)):
+                H = int(H[0])
+            if H is None:
+                H = 224
+
+        side = int(round(math.sqrt(max(n_patches, 1))))
+        if side > 0:
+            ps = max(1, int(round(H / side)))
+
+    return ps
+
 
 def plot_text_image_heatmaps(
     shap_values: Union[np.ndarray, "shap._explanation.Explanation"],
@@ -42,17 +98,17 @@ def plot_text_image_heatmaps(
     assert len(mm_scores) == B, f"len(mm_scores)={len(mm_scores)} != batch={B}"
 
     # --- resolver patch/grid ---
-    m = getattr(model_wrapper, "model", model_wrapper)
-    ps = getattr(getattr(getattr(m, "config", None), "vision_config", None), "patch_size", None)
+    ps = _infer_patch_size(model_wrapper, inputs, shap_values)
     if ps is None:
-        ps = getattr(getattr(getattr(m, "vision_model", None), "config", None), "patch_size", None)
-    if ps is None:
-        raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper.")
+        raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper o inputs.")
 
     if isinstance(ps, (list, tuple)):
-        if len(ps) != 2:
+        if len(ps) == 1:
+            patch_h = patch_w = int(ps[0])
+        elif len(ps) >= 2:
+            patch_h, patch_w = int(ps[0]), int(ps[1])
+        else:
             raise ValueError(f"patch_size iterable inesperado: {ps}")
-        patch_h, patch_w = int(ps[0]), int(ps[1])
     else:
         patch_h = patch_w = int(ps)
 
