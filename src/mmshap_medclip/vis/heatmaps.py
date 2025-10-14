@@ -90,6 +90,62 @@ def _get_special_ids(tokenizer) -> set:
     return special
 
 
+def _clean_token_string(raw_tok: str) -> str:
+    tok_clean = raw_tok if raw_tok is not None else ""
+    tok_clean = tok_clean.replace("Ċ", " ")
+    for prefix in ("Ġ", "▁"):
+        if tok_clean.startswith(prefix):
+            tok_clean = tok_clean[len(prefix):]
+    tok_clean = tok_clean.replace("</w>", "")
+    if tok_clean.startswith("##"):
+        tok_clean = tok_clean[2:]
+    tok_clean = tok_clean.strip()
+    return tok_clean
+
+
+def _decode_single_token(tokenizer, token_id: int) -> str:
+    if tokenizer is None:
+        return str(token_id)
+
+    decoded = ""
+    if hasattr(tokenizer, "decode"):
+        try:
+            decoded = tokenizer.decode([token_id], skip_special_tokens=True)
+        except TypeError:
+            decoded = tokenizer.decode([token_id])
+        except Exception:
+            decoded = ""
+    if decoded:
+        cleaned = _clean_token_string(decoded)
+        if cleaned == str(token_id) or not cleaned:
+            cleaned = ""
+        if cleaned:
+            return cleaned
+
+    if hasattr(tokenizer, "convert_ids_to_tokens"):
+        try:
+            raw = tokenizer.convert_ids_to_tokens([token_id])
+            if raw:
+                cleaned = _clean_token_string(raw[0])
+                if cleaned == str(token_id) or not cleaned:
+                    cleaned = ""
+                if cleaned:
+                    return cleaned
+        except Exception:
+            pass
+
+    if hasattr(tokenizer, "id_to_token"):
+        try:
+            raw = tokenizer.id_to_token(token_id)
+            cleaned = _clean_token_string(raw)
+            if cleaned:
+                return cleaned
+        except Exception:
+            pass
+
+    return str(token_id)
+
+
 def _decode_tokens_for_plot(tokenizer, input_ids):
     """Return display tokens, decoded text and kept indices for SHAP visualization."""
     if hasattr(input_ids, "detach"):
@@ -116,26 +172,13 @@ def _decode_tokens_for_plot(tokenizer, input_ids):
     else:
         text_clean = ""
 
-    if hasattr(tokenizer, "convert_ids_to_tokens"):
-        tokens_vis = tokenizer.convert_ids_to_tokens(kept_ids)
-        cleaned = []
-        for raw_tok in tokens_vis:
-            clean_tok = raw_tok.replace("Ċ", " ")
-            for prefix in ("Ġ", "▁"):
-                if clean_tok.startswith(prefix):
-                    clean_tok = clean_tok[len(prefix):]
-            clean_tok = clean_tok.replace("</w>", "")
-            if clean_tok.startswith("##"):
-                clean_tok = clean_tok[2:]
-            clean_tok = clean_tok.strip()
-            if not clean_tok:
-                clean_tok = raw_tok.strip() or raw_tok
-            cleaned.append(clean_tok)
-        tokens_vis = cleaned
-        if not any(token.strip() for token in tokens_vis) and text_clean:
-            tokens_vis = text_clean.split()
-    else:
-        tokens_vis = text_clean.split() if text_clean else [str(t) for t in kept_ids]
+    tokens_vis = []
+    for tid in kept_ids:
+        decoded_tok = _decode_single_token(tokenizer, tid)
+        tokens_vis.append(decoded_tok if decoded_tok else str(tid))
+
+    if not any(tok.strip() for tok in tokens_vis) and text_clean:
+        tokens_vis = text_clean.split()
 
     if not tokens_vis and kept_ids:
         tokens_vis = [str(t) for t in kept_ids]
