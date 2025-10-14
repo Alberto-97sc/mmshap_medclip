@@ -241,7 +241,24 @@ def plot_text_image_heatmaps(
     grid_w = int(imginfo.get("grid_w", 0) or 0)
     num_patches = int(imginfo.get("num_patches", grid_h * grid_w) or (grid_h * grid_w))
 
-    if grid_h <= 0 or grid_w <= 0 or num_patches <= 0:
+    patch_h = patch_w = None
+    patch_size_info = imginfo.get("patch_size")
+    if isinstance(patch_size_info, (list, tuple)):
+        if len(patch_size_info) >= 2:
+            patch_h, patch_w = int(patch_size_info[0]), int(patch_size_info[1])
+        elif len(patch_size_info) == 1:
+            patch_h = patch_w = int(patch_size_info[0])
+    elif patch_size_info is not None:
+        patch_h = patch_w = int(patch_size_info)
+
+    _, _, H, W = inputs["pixel_values"].shape
+
+    if patch_h is None and grid_h > 0:
+        patch_h = max(1, H // grid_h)
+    if patch_w is None and grid_w > 0:
+        patch_w = max(1, W // grid_w)
+
+    if patch_h is None or patch_w is None or patch_h <= 0 or patch_w <= 0 or grid_h <= 0 or grid_w <= 0 or num_patches <= 0:
         ps = _infer_patch_size(model_wrapper, inputs, shap_values)
         if ps is None:
             raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper o inputs.")
@@ -254,27 +271,14 @@ def plot_text_image_heatmaps(
                 patch_h, patch_w = int(ps[0]), int(ps[1])
         else:
             patch_h = patch_w = int(ps)
-        _, _, H, W = inputs["pixel_values"].shape
-        if patch_h <= 0 or patch_w <= 0:
-            raise ValueError(f"patch_size inválido: {(patch_h, patch_w)}")
-        grid_h = max(1, int(round(H / patch_h)))
-        grid_w = max(1, int(round(W / patch_w)))
-        num_patches = grid_h * grid_w
-    else:
-        patch_size_info = imginfo.get("patch_size")
-        if isinstance(patch_size_info, (list, tuple)):
-            if len(patch_size_info) >= 2:
-                patch_h, patch_w = int(patch_size_info[0]), int(patch_size_info[1])
-            elif len(patch_size_info) == 1:
-                patch_h = patch_w = int(patch_size_info[0])
-            else:
-                patch_h = patch_w = None
-        elif patch_size_info is not None:
-            patch_h = patch_w = int(patch_size_info)
-        else:
-            patch_h = patch_w = None
+        grid_h = max(1, H // max(patch_h, 1))
+        grid_w = max(1, W // max(patch_w, 1))
 
-    _, _, H, W = inputs["pixel_values"].shape
+    patch_h = max(1, int(patch_h))
+    patch_w = max(1, int(patch_w))
+    side_h = grid_h if grid_h > 0 else max(1, H // patch_h)
+    side_w = grid_w if grid_w > 0 else max(1, W // patch_w)
+    num_patches = max(1, side_h * side_w)
 
     # --- normalizar SHAP a matriz (B, L) ---
     vals = shap_values.values if hasattr(shap_values, "values") else shap_values
@@ -380,14 +384,22 @@ def plot_text_image_heatmaps(
             patch_vals = np.pad(patch_vals, (0, num_patches - patch_vals.size), mode="constant")
         elif patch_vals.size > num_patches:
             patch_vals = patch_vals[:num_patches]
-        patch_grid = patch_vals.reshape(grid_h, grid_w)
+        expected = side_h * side_w
+        if patch_vals.size != expected:
+            if patch_vals.size == 0:
+                patch_vals = np.zeros((expected,), dtype=feats.dtype)
+            elif patch_vals.size < expected:
+                patch_vals = np.pad(patch_vals, (0, expected - patch_vals.size), mode="edge")
+            else:
+                patch_vals = patch_vals[:expected]
+        patch_grid = patch_vals.reshape(side_h, side_w)
 
         px_tensor = inputs["pixel_values"][i].detach().cpu()
         mean = _CLIP_MEAN.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
         std = _CLIP_STD.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
         img_vis = torch.clamp(px_tensor * std + mean, 0, 1).permute(1, 2, 0).numpy()
 
-        heat_tensor = torch.tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
         heat_up = F.interpolate(heat_tensor, size=(H, W), mode="nearest").squeeze().numpy()
 
         ax_img = fig.add_subplot(gs[0, i])
@@ -404,6 +416,7 @@ def plot_text_image_heatmaps(
         ax_img.set_aspect("equal")
         ax_img.set_xlim(0, W)
         ax_img.set_ylim(H, 0)
+        ax_img.margins(0)
         ax_img.set_title(f"{texts[i]}\nIScore {iscore:.2%}", fontsize=14, pad=8)
         ax_img.axis("off")
 
