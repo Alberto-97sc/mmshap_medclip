@@ -389,18 +389,70 @@ def plot_text_image_heatmaps(
         side_h = side_h_base if side_h_base else max(1, int(round(H / float(patch_h_eff))))
         side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w_eff))))
 
-        patch_vals = np.asarray(img_slice)
+        patch_vals = np.asarray(img_slice).reshape(-1)
+        side_h_exp = max(1, H // patch_h_eff)
+        side_w_exp = max(1, W // patch_w_eff)
+        side_h = side_h_base if side_h_base else side_h_exp
+        side_w = side_w_base if side_w_base else side_w_exp
         n_patches = max(1, side_h * side_w)
-        if patch_vals.size == 0:
-            patch_vals = np.zeros((n_patches,), dtype=feats.dtype)
-        if patch_vals.size != n_patches:
-            side = int(round(patch_vals.size ** 0.5)) if patch_vals.size > 0 else 1
-            side = max(1, side)
-            side_h, side_w = side, side
-            n_patches = side_h * side_w
-            assert patch_vals.size == n_patches, "Grid SHAP no coincide con nº de parches"
 
-        patch_grid = patch_vals.reshape(side_h, side_w)
+        if patch_vals.size == 0:
+            pv_clean = np.zeros((n_patches,), dtype=feats.dtype)
+        else:
+            m = int(patch_vals.size)
+            pv = patch_vals.reshape(-1)
+            pv_clean = pv
+            side_h_eff = side_h
+            side_w_eff = side_w
+            n_grid = n_patches
+
+            if m == n_grid:
+                pv_clean = pv
+            elif m == n_grid + 1:
+                pv_clean = pv[1:]
+            elif m == n_grid + 2:
+                pv_clean = pv[2:]
+            elif n_grid > 0 and m % n_grid == 0:
+                k = m // n_grid
+                pv_clean = pv.reshape(k, n_grid).mean(axis=0)
+            else:
+                side_h_exp = max(1, side_h_exp)
+                side_w_exp = max(1, side_w_exp)
+                factors = []
+                for a in range(1, int(np.sqrt(max(m, 1))) + 1):
+                    if m % a == 0:
+                        b = m // a
+                        factors.append((a, b))
+                        if a != b:
+                            factors.append((b, a))
+                if factors:
+                    side_h_eff, side_w_eff = min(
+                        factors,
+                        key=lambda hw: (
+                            abs(hw[0] - side_h_exp) + abs(hw[1] - side_w_exp)
+                        ),
+                    )
+                    n_grid = side_h_eff * side_w_eff
+                else:
+                    n_grid = max(1, n_grid)
+                pv_clean = pv
+
+            side_h = side_h_eff
+            side_w = side_w_eff
+            n_patches = max(1, side_h * side_w)
+
+            if pv_clean.size > n_patches:
+                pv_clean = pv_clean[:n_patches]
+            elif pv_clean.size < n_patches:
+                pv_clean = np.concatenate(
+                    [pv_clean, np.zeros((n_patches - pv_clean.size,), dtype=pv_clean.dtype)]
+                )
+
+        assert pv_clean.size == n_patches, (
+            f"Tras limpieza, m={pv_clean.size} != side_h*side_w={n_patches}"
+        )
+
+        patch_grid = pv_clean.reshape(side_h, side_w)
 
         mean = _CLIP_MEAN.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
         std = _CLIP_STD.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
