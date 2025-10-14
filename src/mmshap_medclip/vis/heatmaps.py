@@ -62,9 +62,41 @@ def _infer_patch_size(model_wrapper, inputs, shap_values):
     return ps
 
 
+def _get_special_ids(tokenizer) -> set:
+    special = set()
+    if tokenizer is None:
+        return special
+
+    for name in ["all_special_ids", "special_ids", "special_token_ids"]:
+        if hasattr(tokenizer, name):
+            try:
+                special.update(getattr(tokenizer, name))
+            except Exception:
+                pass
+
+    for name in [
+        "bos_token_id",
+        "eos_token_id",
+        "pad_token_id",
+        "cls_token_id",
+        "sep_token_id",
+        "mask_token_id",
+    ]:
+        val = getattr(tokenizer, name, None)
+        if val is not None:
+            special.add(int(val))
+
+    special.update({49406, 49407, 0})
+    return special
+
+
 def _decode_tokens_for_plot(tokenizer, input_ids):
     """Return display tokens, decoded text and kept indices for SHAP visualization."""
-    ids = input_ids.detach().cpu().tolist()
+    if hasattr(input_ids, "detach"):
+        ids = input_ids.detach().cpu().tolist()
+    else:
+        ids = list(input_ids)
+    ids = [int(x) for x in ids]
 
     if tokenizer is None:
         tokens = [str(x) for x in ids]
@@ -72,46 +104,43 @@ def _decode_tokens_for_plot(tokenizer, input_ids):
         keep = list(range(len(ids)))
         return tokens, text_clean, keep
 
-    if hasattr(tokenizer, "convert_ids_to_tokens"):
-        converted = tokenizer.convert_ids_to_tokens(ids)
-    else:
-        converted = [str(x) for x in ids]
-
-    special_ids = set(getattr(tokenizer, "all_special_ids", []))
-    special_tokens = set(getattr(tokenizer, "all_special_tokens", []))
-
-    tokens = []
-    keep = []
-    for idx, tok_id in enumerate(ids):
-        if tok_id in special_ids:
-            continue
-        tok = converted[idx] if idx < len(converted) else str(tok_id)
-        if tok in special_tokens:
-            continue
-
-        clean_tok = tok
-        for prefix in ("Ġ", "▁"):
-            if clean_tok.startswith(prefix):
-                clean_tok = clean_tok[len(prefix):]
-        clean_tok = clean_tok.replace("</w>", "")
-        if clean_tok.startswith("##"):
-            clean_tok = clean_tok[2:]
-        if not clean_tok:
-            clean_tok = tok
-
-        tokens.append(clean_tok)
-        keep.append(idx)
+    special_ids = _get_special_ids(tokenizer)
+    keep_idx = [i for i, tid in enumerate(ids) if tid not in special_ids]
+    kept_ids = [ids[i] for i in keep_idx]
 
     if hasattr(tokenizer, "decode"):
-        text_clean = tokenizer.decode(ids, skip_special_tokens=True)
+        try:
+            text_clean = tokenizer.decode(kept_ids, skip_special_tokens=True)
+        except TypeError:
+            text_clean = tokenizer.decode(kept_ids)
     else:
-        text_clean = " ".join(tokens)
+        text_clean = ""
 
-    if not tokens:
-        tokens = converted if converted else [str(x) for x in ids]
-        keep = list(range(len(tokens)))
+    if hasattr(tokenizer, "convert_ids_to_tokens"):
+        tokens_vis = tokenizer.convert_ids_to_tokens(kept_ids)
+        cleaned = []
+        for raw_tok in tokens_vis:
+            clean_tok = raw_tok.replace("Ċ", " ")
+            for prefix in ("Ġ", "▁"):
+                if clean_tok.startswith(prefix):
+                    clean_tok = clean_tok[len(prefix):]
+            clean_tok = clean_tok.replace("</w>", "")
+            if clean_tok.startswith("##"):
+                clean_tok = clean_tok[2:]
+            clean_tok = clean_tok.strip()
+            if not clean_tok:
+                clean_tok = raw_tok.strip() or raw_tok
+            cleaned.append(clean_tok)
+        tokens_vis = cleaned
+        if not any(token.strip() for token in tokens_vis) and text_clean:
+            tokens_vis = text_clean.split()
+    else:
+        tokens_vis = text_clean.split() if text_clean else [str(t) for t in kept_ids]
 
-    return tokens, text_clean, keep
+    if not tokens_vis and kept_ids:
+        tokens_vis = [str(t) for t in kept_ids]
+
+    return tokens_vis, text_clean, keep_idx
 
 
 def plot_text_image_heatmaps(
