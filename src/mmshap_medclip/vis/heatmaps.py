@@ -9,6 +9,8 @@ import torch.nn.functional as F
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from PIL import Image
 
+from mmshap_medclip.tasks.utils import make_image_token_ids
+
 _CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float32)
 _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32)
 
@@ -227,24 +229,52 @@ def plot_text_image_heatmaps(
     assert len(mm_scores) == B, f"len(mm_scores)={len(mm_scores)} != batch={B}"
 
     # --- resolver patch/grid ---
-    ps = _infer_patch_size(model_wrapper, inputs, shap_values)
-    if ps is None:
-        raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper o inputs.")
+    image_token_ids, imginfo = make_image_token_ids(
+        inputs,
+        model_wrapper,
+        strict=False,
+    )
+    # liberar inmediatamente la matriz de IDs; solo necesitamos la metadata
+    del image_token_ids
 
-    if isinstance(ps, (list, tuple)):
-        if len(ps) == 1:
-            patch_h = patch_w = int(ps[0])
-        elif len(ps) >= 2:
-            patch_h, patch_w = int(ps[0]), int(ps[1])
+    grid_h = int(imginfo.get("grid_h", 0) or 0)
+    grid_w = int(imginfo.get("grid_w", 0) or 0)
+    num_patches = int(imginfo.get("num_patches", grid_h * grid_w) or (grid_h * grid_w))
+
+    if grid_h <= 0 or grid_w <= 0 or num_patches <= 0:
+        ps = _infer_patch_size(model_wrapper, inputs, shap_values)
+        if ps is None:
+            raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper o inputs.")
+        if isinstance(ps, (list, tuple)):
+            if len(ps) == 0:
+                raise ValueError(f"patch_size iterable inesperado: {ps}")
+            if len(ps) == 1:
+                patch_h = patch_w = int(ps[0])
+            else:
+                patch_h, patch_w = int(ps[0]), int(ps[1])
         else:
-            raise ValueError(f"patch_size iterable inesperado: {ps}")
+            patch_h = patch_w = int(ps)
+        _, _, H, W = inputs["pixel_values"].shape
+        if patch_h <= 0 or patch_w <= 0:
+            raise ValueError(f"patch_size inválido: {(patch_h, patch_w)}")
+        grid_h = max(1, int(round(H / patch_h)))
+        grid_w = max(1, int(round(W / patch_w)))
+        num_patches = grid_h * grid_w
     else:
-        patch_h = patch_w = int(ps)
+        patch_size_info = imginfo.get("patch_size")
+        if isinstance(patch_size_info, (list, tuple)):
+            if len(patch_size_info) >= 2:
+                patch_h, patch_w = int(patch_size_info[0]), int(patch_size_info[1])
+            elif len(patch_size_info) == 1:
+                patch_h = patch_w = int(patch_size_info[0])
+            else:
+                patch_h = patch_w = None
+        elif patch_size_info is not None:
+            patch_h = patch_w = int(patch_size_info)
+        else:
+            patch_h = patch_w = None
 
     _, _, H, W = inputs["pixel_values"].shape
-    assert H % patch_h == 0 and W % patch_w == 0, f"Imagen {H}x{W} no divisible por patch_size={(patch_h, patch_w)}"
-    grid_h, grid_w = H // patch_h, W // patch_w
-    num_patches = grid_h * grid_w
 
     # --- normalizar SHAP a matriz (B, L) ---
     vals = shap_values.values if hasattr(shap_values, "values") else shap_values
