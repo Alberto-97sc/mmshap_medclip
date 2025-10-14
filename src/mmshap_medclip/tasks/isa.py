@@ -179,8 +179,67 @@ def _compute_isa_shap(
         device=device,
         use_amp=amp_if_cuda,
     )
+
+    # --- Ajuste automático del presupuesto para el Permutation explainer ---
+    def _as_hw_tuple(value):
+        if value is None:
+            return None, None
+        if isinstance(value, (list, tuple)):
+            if len(value) == 0:
+                return None, None
+            if len(value) == 1:
+                val = int(value[0])
+                return val, val
+            return int(value[0]), int(value[1])
+        val = int(value)
+        return val, val
+
+    n_tokens = int(inputs["input_ids"].shape[1])
+
+    n_patches = int(imginfo.get("num_patches") or 0)
+    if n_patches <= 0:
+        patch = getattr(model, "vision_patch_size", None)
+        if patch is None:
+            patch = getattr(model, "patch_size", None)
+        if patch is None and "patch_size" in imginfo:
+            patch = imginfo["patch_size"]
+
+        img_sz = getattr(model, "vision_input_size", None)
+        if img_sz is None:
+            img_sz = getattr(model, "image_size", None)
+        if img_sz is None and hasattr(model, "config") and hasattr(model.config, "vision_config"):
+            img_sz = getattr(model.config.vision_config, "image_size", None)
+
+        patch_h, patch_w = _as_hw_tuple(patch)
+        img_h, img_w = _as_hw_tuple(img_sz)
+
+        if patch_h is None or patch_w is None:
+            patch_h = patch_w = 14
+        if img_h is None or img_w is None:
+            _, _, img_h, img_w = inputs["pixel_values"].shape
+
+        if patch_h <= 0 or patch_w <= 0:
+            patch_h = patch_w = 14
+
+        n_patches = max(1, (img_h // patch_h) * (img_w // patch_w))
+
+    n_features = n_tokens + n_patches
+    min_needed = 2 * n_features + 1
+
+    call_kwargs = {}
+    maybe_call_kwargs = getattr(model, "shap_call_kwargs", None)
+    if isinstance(maybe_call_kwargs, dict):
+        call_kwargs.update(maybe_call_kwargs)
+    maybe_call_kwargs = inputs.get("shap_call_kwargs") if isinstance(inputs, dict) else None
+    if isinstance(maybe_call_kwargs, dict):
+        call_kwargs.update(maybe_call_kwargs)
+
+    desired = call_kwargs.get("max_evals", 0) or 0
+    max_evals = max(int(desired), int(min_needed))
+    call_kwargs["max_evals"] = max_evals
+
     explainer = shap.Explainer(predict_fn, masker, silent=True)
-    shap_values = explainer(X_clean.cpu())
+    shap_values = explainer(X_clean.cpu(), **call_kwargs)
 
     batch_size = inputs["input_ids"].shape[0]
     mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(batch_size)]
