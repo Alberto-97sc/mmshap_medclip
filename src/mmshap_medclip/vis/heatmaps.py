@@ -14,6 +14,10 @@ from mmshap_medclip.tasks.utils import make_image_token_ids
 _CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float32)
 _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32)
 
+PLOT_ISA_IMG_PERCENTILE = 90   # escala robusta al percentil 90
+PLOT_ISA_ALPHA_IMG = 0.50      # opacidad del overlay
+PLOT_ISA_COARSEN_G = 3         # tamaño de super-parches (3x3)
+
 def _infer_patch_size(model_wrapper, inputs, shap_values):
     ps = None
     m = model_wrapper
@@ -201,8 +205,8 @@ def plot_text_image_heatmaps(
     texts: List[str],
     mm_scores: List[Tuple[float, dict]],     # [(tscore, OrderedDict(word->score)), ...]
     model_wrapper,
-    cmap_name: str = "viridis",
-    alpha_img: float = 0.60,
+    cmap_name: str = "coolwarm",
+    alpha_img: float = None,
     return_fig: bool = False,
 ):
     """
@@ -336,21 +340,19 @@ def plot_text_image_heatmaps(
         norm_text = Normalize(vmin=0.0, vmax=vmax_text)
         cmap_text = plt.get_cmap("Reds")
 
-    if np.any(img_concat < 0):
-        absmax_img = float(np.percentile(np.abs(img_concat), 95))
-        if absmax_img <= 0:
-            absmax_img = float(np.max(np.abs(img_concat))) if img_concat.size else 0.0
-        absmax_img = max(absmax_img, 1e-6)
-        norm_img = TwoSlopeNorm(vmin=-absmax_img, vcenter=0.0, vmax=absmax_img)
-        cmap_img = plt.get_cmap("coolwarm")
-    else:
-        vmax_img = float(np.percentile(img_concat, 95)) if img_concat.size else 0.0
-        vmax_img = max(vmax_img, 1e-6)
-        norm_img = Normalize(vmin=0.0, vmax=vmax_img)
-        cmap_img = plt.get_cmap(cmap_name)
+    alpha_overlay = (
+        float(alpha_img)
+        if alpha_img is not None
+        else float(PLOT_ISA_ALPHA_IMG)
+    )
+    alpha_overlay = min(max(alpha_overlay, 0.0), 1.0)
+    coarsen_factor = int(PLOT_ISA_COARSEN_G) if PLOT_ISA_COARSEN_G else 0
+    percentile_img = float(PLOT_ISA_IMG_PERCENTILE)
+    image_overlay_entries = []
+    coarsened_abs_values = []
 
     # --- figura ---
-    fig = plt.figure(figsize=(5 * B, 6))
+    fig = plt.figure(figsize=(5 * B, 6), layout="constrained")
     gs  = fig.add_gridspec(2, B, height_ratios=[4, 1], hspace=0.05, wspace=0.03)
 
     # for measuring token widths to center text row
@@ -380,58 +382,89 @@ def plot_text_image_heatmaps(
         iscore  = float(ia.sum() / tot) if tot > 0 else 0.0
 
         # --- imagen ---
-        px_tensor = inputs["pixel_values"][i].detach().cpu()
-        H = int(px_tensor.shape[-2])
-        W = int(px_tensor.shape[-1])
-        side_h = side_h_base if side_h_base else max(1, int(round(H / float(patch_h))))
-        side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w))))
+        px = inputs["pixel_values"][i].detach().cpu()
+        H = int(px.shape[-2])
+        W = int(px.shape[-1])
 
-        patch_vals = np.asarray(img_slice)
-        expected = max(1, side_h * side_w)
-        actual = patch_vals.size
-        if actual == 0:
-            patch_vals = np.zeros((expected,), dtype=feats.dtype)
-            actual = expected
-        if actual != expected:
-            side_guess = int(round(math.sqrt(actual))) if actual > 0 else 1
-            if side_guess > 0 and side_guess * side_guess == actual:
-                side_h = side_w = side_guess
-                expected = actual
+        patch_h_eff = max(1, int(round(patch_h)))
+        patch_w_eff = max(1, int(round(patch_w)))
+        side_h = side_h_base if side_h_base else max(1, int(round(H / float(patch_h_eff))))
+        side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w_eff))))
+        n_expected = max(1, side_h * side_w)
+
+        full_vec = np.asarray(img_slice).reshape(-1)
+
+        if full_vec.size == 0:
+            pv_clean = np.zeros((n_expected,), dtype=feats.dtype)
+        else:
+            pv = full_vec.reshape(-1)
+            m = int(pv.size)
+            patch_vals = pv[:n_expected] if n_expected > 0 else np.zeros((0,), dtype=pv.dtype)
+
+            if m == n_expected:
+                pv_clean = patch_vals
+            elif n_expected > 0 and m % n_expected == 0:
+                pv_clean = pv.reshape(-1, n_expected).mean(axis=0)
+            elif m > n_expected:
+                pv_clean = patch_vals
+            else:  # m < n_expected
+                pad = n_expected - m
+                if m == 0:
+                    pv_clean = np.zeros((n_expected,), dtype=feats.dtype)
+                else:
+                    pv_clean = np.pad(pv, (0, pad), mode="edge")
+
+        if pv_clean.size != n_expected:
+            if pv_clean.size > n_expected:
+                pv_clean = pv_clean[:n_expected]
             else:
-                side_h = max(1, int(round(H / float(patch_h))))
-                side_w = max(1, int(round(W / float(patch_w))))
-                expected = max(1, side_h * side_w)
-        if actual < expected:
-            patch_vals = np.pad(patch_vals, (0, expected - actual), mode="edge")
-        elif actual > expected:
-            patch_vals = patch_vals[:expected]
+                pv_clean = np.pad(pv_clean, (0, n_expected - pv_clean.size), mode="constant")
 
-        patch_grid = patch_vals.reshape(side_h, side_w)
+        if pv_clean.dtype != feats.dtype:
+            pv_clean = pv_clean.astype(feats.dtype, copy=False)
 
-        mean = _CLIP_MEAN.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
-        std = _CLIP_STD.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
-        img_vis = torch.clamp(px_tensor * std + mean, 0, 1).permute(1, 2, 0).numpy()
+        assert pv_clean.size == n_expected, (
+            f"Tras limpieza, m={pv_clean.size} != side_h*side_w={n_expected}"
+        )
 
-        heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        patch_grid = np.reshape(pv_clean, (side_h, side_w), order="C")
+
+        grid_vis = patch_grid
+        if coarsen_factor and coarsen_factor > 1:
+            sh, sw = grid_vis.shape
+            sh2 = (sh // coarsen_factor) * coarsen_factor
+            sw2 = (sw // coarsen_factor) * coarsen_factor
+            if sh2 >= coarsen_factor and sw2 >= coarsen_factor and sh2 > 0 and sw2 > 0:
+                grid_vis = grid_vis[:sh2, :sw2].reshape(
+                    sh2 // coarsen_factor,
+                    coarsen_factor,
+                    sw2 // coarsen_factor,
+                    coarsen_factor,
+                ).mean(axis=(1, 3))
+
+        grid_abs = np.abs(grid_vis).reshape(-1)
+        if grid_abs.size == 0:
+            grid_abs = np.zeros((1,), dtype=np.float32)
+        else:
+            grid_abs = grid_abs.astype(np.float32, copy=False)
+        coarsened_abs_values.append(grid_abs)
+
+        mean = _CLIP_MEAN.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
+        std = _CLIP_STD.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
+        img_vis = torch.clamp(px * std + mean, 0, 1).permute(1, 2, 0).numpy()
+
+        heat_tensor = torch.as_tensor(grid_vis, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
         heat_up = F.interpolate(heat_tensor, size=(H, W), mode="nearest").squeeze().numpy()
 
         ax_img = fig.add_subplot(gs[0, i])
         ax_img.imshow(img_vis, origin="upper", interpolation="nearest", zorder=0)
-        ax_img.imshow(
-            heat_up,
-            cmap=cmap_img,
-            norm=norm_img,
-            alpha=alpha_img,
-            origin="upper",
-            interpolation="nearest",
-            zorder=1,
-        )
-        ax_img.set_aspect("equal")
-        ax_img.set_xlim(0, W)
-        ax_img.set_ylim(H, 0)
-        ax_img.margins(0)
         ax_img.set_title(f"{texts[i]}\nIScore {iscore:.2%}", fontsize=14, pad=8)
-        ax_img.axis("off")
+        image_overlay_entries.append({
+            "ax": ax_img,
+            "heat": heat_up,
+            "H": H,
+            "W": W,
+        })
 
         # --- texto ---
         toks_vis, text_clean, keep_idx = decoded_info[i]
@@ -481,6 +514,39 @@ def plot_text_image_heatmaps(
                 bbox=dict(facecolor=color, alpha=0.8, edgecolor="white", linewidth=0.5, boxstyle="square,pad=0.2")
             )
             x += w + gap
+
+    if coarsened_abs_values:
+        combined_abs = np.concatenate(coarsened_abs_values)
+    else:
+        combined_abs = np.zeros((1,), dtype=np.float32)
+
+    vmax_img = float(np.percentile(combined_abs, percentile_img)) if combined_abs.size else 0.0
+    if not np.isfinite(vmax_img) or vmax_img <= 0:
+        vmax_img = float(np.max(combined_abs)) if combined_abs.size else 0.0
+    vmax_img = max(vmax_img, 1e-6)
+
+    norm_img = TwoSlopeNorm(vmin=-vmax_img, vcenter=0.0, vmax=vmax_img)
+    cmap_img = plt.get_cmap(cmap_name or "coolwarm")
+
+    for entry in image_overlay_entries:
+        ax = entry["ax"]
+        heat_up = entry["heat"]
+        H = entry["H"]
+        W = entry["W"]
+        ax.imshow(
+            heat_up,
+            cmap=cmap_img,
+            norm=norm_img,
+            alpha=alpha_overlay,
+            origin="upper",
+            interpolation="nearest",
+            zorder=1,
+        )
+        ax.set_aspect("equal")
+        ax.set_xlim(-0.5, W - 0.5)
+        ax.set_ylim(H - 0.5, -0.5)
+        ax.margins(0)
+        ax.axis("off")
 
     # colorbars
     first_pos = fig.axes[0].get_position()
