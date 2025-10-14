@@ -350,7 +350,7 @@ def plot_text_image_heatmaps(
         cmap_img = plt.get_cmap(cmap_name)
 
     # --- figura ---
-    fig = plt.figure(figsize=(5 * B, 6))
+    fig = plt.figure(figsize=(5 * B, 6), layout="constrained")
     gs  = fig.add_gridspec(2, B, height_ratios=[4, 1], hspace=0.05, wspace=0.03)
 
     # for measuring token widths to center text row
@@ -380,37 +380,31 @@ def plot_text_image_heatmaps(
         iscore  = float(ia.sum() / tot) if tot > 0 else 0.0
 
         # --- imagen ---
-        px_tensor = inputs["pixel_values"][i].detach().cpu()
-        H = int(px_tensor.shape[-2])
-        W = int(px_tensor.shape[-1])
-        side_h = side_h_base if side_h_base else max(1, int(round(H / float(patch_h))))
-        side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w))))
+        px = inputs["pixel_values"][i].detach().cpu()
+        H = int(px.shape[-2])
+        W = int(px.shape[-1])
+
+        patch_h_eff = max(1, int(round(patch_h)))
+        patch_w_eff = max(1, int(round(patch_w)))
+        side_h = side_h_base if side_h_base else max(1, int(round(H / float(patch_h_eff))))
+        side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w_eff))))
 
         patch_vals = np.asarray(img_slice)
-        expected = max(1, side_h * side_w)
-        actual = patch_vals.size
-        if actual == 0:
-            patch_vals = np.zeros((expected,), dtype=feats.dtype)
-            actual = expected
-        if actual != expected:
-            side_guess = int(round(math.sqrt(actual))) if actual > 0 else 1
-            if side_guess > 0 and side_guess * side_guess == actual:
-                side_h = side_w = side_guess
-                expected = actual
-            else:
-                side_h = max(1, int(round(H / float(patch_h))))
-                side_w = max(1, int(round(W / float(patch_w))))
-                expected = max(1, side_h * side_w)
-        if actual < expected:
-            patch_vals = np.pad(patch_vals, (0, expected - actual), mode="edge")
-        elif actual > expected:
-            patch_vals = patch_vals[:expected]
+        n_patches = max(1, side_h * side_w)
+        if patch_vals.size == 0:
+            patch_vals = np.zeros((n_patches,), dtype=feats.dtype)
+        if patch_vals.size != n_patches:
+            side = int(round(patch_vals.size ** 0.5)) if patch_vals.size > 0 else 1
+            side = max(1, side)
+            side_h, side_w = side, side
+            n_patches = side_h * side_w
+            assert patch_vals.size == n_patches, "Grid SHAP no coincide con nº de parches"
 
         patch_grid = patch_vals.reshape(side_h, side_w)
 
-        mean = _CLIP_MEAN.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
-        std = _CLIP_STD.to(dtype=px_tensor.dtype, device=px_tensor.device).view(3, 1, 1)
-        img_vis = torch.clamp(px_tensor * std + mean, 0, 1).permute(1, 2, 0).numpy()
+        mean = _CLIP_MEAN.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
+        std = _CLIP_STD.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
+        img_vis = torch.clamp(px * std + mean, 0, 1).permute(1, 2, 0).numpy()
 
         heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
         heat_up = F.interpolate(heat_tensor, size=(H, W), mode="nearest").squeeze().numpy()
@@ -427,8 +421,8 @@ def plot_text_image_heatmaps(
             zorder=1,
         )
         ax_img.set_aspect("equal")
-        ax_img.set_xlim(0, W)
-        ax_img.set_ylim(H, 0)
+        ax_img.set_xlim(-0.5, W - 0.5)
+        ax_img.set_ylim(H - 0.5, -0.5)
         ax_img.margins(0)
         ax_img.set_title(f"{texts[i]}\nIScore {iscore:.2%}", fontsize=14, pad=8)
         ax_img.axis("off")
