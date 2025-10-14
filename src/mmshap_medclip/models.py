@@ -94,7 +94,37 @@ class OpenCLIPWrapper(torch.nn.Module):
         self.model = model.eval()
         self.processor = processor
         self.tokenizer = tokenizer_adapter
-        self.patch_size = getattr(getattr(model, "visual", None), "patch_size", None)
+        visual = getattr(model, "visual", None)
+
+        patch_size = getattr(visual, "patch_size", None)
+        if isinstance(patch_size, (list, tuple)):
+            patch_tuple = tuple(int(p) for p in patch_size)
+        elif patch_size is not None:
+            patch_tuple = (int(patch_size), int(patch_size))
+        else:
+            patch_tuple = None
+
+        image_size = getattr(visual, "image_size", None)
+        if isinstance(image_size, (list, tuple)):
+            image_size = int(image_size[0])
+        elif image_size is not None:
+            image_size = int(image_size)
+        else:
+            proc_image_size = getattr(processor, "image_size", None)
+            if isinstance(proc_image_size, (list, tuple)):
+                image_size = int(proc_image_size[0])
+            else:
+                image_size = proc_image_size
+
+        if patch_tuple is None:
+            # WhyXrayCLIP usa ViT-L/14 @224 por defecto; usa ese fallback.
+            patch_tuple = (14, 14)
+        if image_size is None:
+            image_size = 224
+
+        self.patch_size = patch_tuple
+        self.vision_patch_size = patch_tuple
+        self.vision_input_size = image_size
 
     def forward(self, input_ids=None, pixel_values=None, **_):
         if input_ids is None or pixel_values is None:

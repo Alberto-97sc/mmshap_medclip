@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Optional, Sequence
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.utils.data import Dataset
 
 
 def clean_roco_caption(text: str) -> str:
@@ -24,13 +25,41 @@ def _build_keyword_pattern(keywords: Sequence[str]) -> str:
     return "|".join(escaped) if escaped else ""
 
 
-def pick_chestxray_sample(
-    dataset,
-    keywords: Sequence[str] = ("chest x-ray", "lung"),
-    reproducible: bool = False,
-    seed: int = 42,
-) -> Dict[str, object]:
-    """Selecciona una muestra del dataset ROCO filtrando por keywords médicas."""
+class RocoKeywordSubset(Dataset):
+    """Vista inmutable del dataset ROCO filtrada por keywords de caption."""
+
+    def __init__(self, base_dataset, indices: Sequence[int], keywords: Sequence[str]):
+        if not hasattr(base_dataset, "df"):
+            raise AttributeError("El dataset base debe exponer un DataFrame 'df'.")
+
+        self.base_dataset = base_dataset
+        self.indices = [int(i) for i in indices]
+        self.keywords = tuple(keywords)
+
+        df_filtered = base_dataset.df.iloc[self.indices].copy()
+        df_filtered.reset_index(drop=True, inplace=True)
+        df_filtered["__source_index__"] = self.indices
+
+        self.df = df_filtered
+        self.caption_key = getattr(base_dataset, "caption_key", None)
+        self.image_key = getattr(base_dataset, "image_key", None)
+
+        if self.caption_key is None:
+            raise AttributeError("El dataset base debe exponer 'caption_key'.")
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, idx: int):
+        base_idx = self.indices[int(idx)]
+        sample = self.base_dataset[base_idx]
+        meta = dict(sample.get("meta", {}))
+        meta.setdefault("row_index", base_idx)
+        meta["roco_subset_index"] = int(idx)
+        return {"image": sample["image"], "text": sample["text"], "meta": meta}
+
+
+def _find_keyword_positions(dataset, keywords: Sequence[str]) -> np.ndarray:
     if not hasattr(dataset, "df"):
         raise AttributeError("Se requiere un dataset ROCO con atributo 'df'.")
 
@@ -38,30 +67,74 @@ def pick_chestxray_sample(
     if caption_col is None:
         raise AttributeError("El dataset debe exponer 'caption_key'.")
 
-    df = dataset.df
     pattern = _build_keyword_pattern(keywords)
     if not pattern:
         raise ValueError("Proporciona al menos una keyword para filtrar.")
 
+    df = dataset.df
     captions = df[caption_col].astype(str)
     mask = captions.str.lower().str.contains(pattern, na=False)
-    positions = np.flatnonzero(mask.to_numpy())
+    return np.flatnonzero(mask.to_numpy())
+
+
+def filter_roco_by_keywords(
+    dataset,
+    keywords: Sequence[str] = ("chest x-ray", "lung"),
+) -> RocoKeywordSubset:
+    """Devuelve una vista del dataset ROCO filtrada a captions relevantes."""
+
+    positions = _find_keyword_positions(dataset, keywords)
     if positions.size == 0:
-        raise RuntimeError("No se encontraron captions que coincidieran con las keywords solicitadas.")
+        raise RuntimeError(
+            "No se encontraron captions que coincidieran con las keywords solicitadas."
+        )
+
+    if isinstance(dataset, RocoKeywordSubset):
+        base_dataset = dataset.base_dataset
+        base_indices = [dataset.indices[int(p)] for p in positions]
+    else:
+        base_dataset = dataset
+        base_indices = [int(p) for p in positions]
+
+    # Si el filtrado no reduce el conjunto, evita reconstruir la vista.
+    if isinstance(dataset, RocoKeywordSubset) and len(base_indices) == len(dataset.indices):
+        return dataset
+
+    return RocoKeywordSubset(base_dataset, base_indices, keywords)
+
+
+def pick_chestxray_sample(
+    dataset,
+    keywords: Sequence[str] = ("chest x-ray", "lung"),
+    reproducible: bool = False,
+    seed: int = 42,
+) -> Dict[str, object]:
+    """Selecciona una muestra del dataset ROCO filtrando por keywords médicas."""
+
+    positions = _find_keyword_positions(dataset, keywords)
+    if positions.size == 0:
+        raise RuntimeError(
+            "No se encontraron captions que coincidieran con las keywords solicitadas."
+        )
 
     rng = np.random.default_rng(seed if reproducible else None)
     pos = int(rng.choice(positions))
 
     sample = dataset[pos]
-    row = df.iloc[pos]
-    caption_clean = clean_roco_caption(row[caption_col])
+    row = dataset.df.iloc[pos]
+    caption_raw = row[getattr(dataset, "caption_key")]
+    caption_clean = clean_roco_caption(caption_raw)
+
+    source_index = int(row.get("__source_index__", pos))
+    meta = {**sample.get("meta", {}), "row_index": source_index}
 
     return {
         "index": pos,
+        "source_index": source_index,
         "image": sample["image"],
         "caption_clean": caption_clean,
-        "caption_raw": row[caption_col],
-        "meta": {**sample.get("meta", {}), "row_index": pos},
+        "caption_raw": caption_raw,
+        "meta": meta,
     }
 
 
