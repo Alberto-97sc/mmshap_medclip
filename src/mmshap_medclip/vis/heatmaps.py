@@ -403,11 +403,7 @@ def plot_text_image_heatmaps(
             elif n_expected > 0 and m % n_expected == 0:
                 pv_clean = pv.reshape(-1, n_expected).mean(axis=0)
             elif m > n_expected:
-                extra = m - n_expected
-                if extra <= 2:
-                    pv_clean = pv[-n_expected:]
-                else:
-                    pv_clean = pv[:n_expected]
+                pv_clean = pv[:n_expected]
             else:  # m < n_expected
                 pad = n_expected - m
                 if m == 0:
@@ -428,7 +424,7 @@ def plot_text_image_heatmaps(
             f"Tras limpieza, m={pv_clean.size} != side_h*side_w={n_expected}"
         )
 
-        patch_grid = pv_clean.reshape(side_h, side_w)
+        patch_grid = np.reshape(pv_clean, (side_h, side_w), order="C")
 
         mean = _CLIP_MEAN.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
         std = _CLIP_STD.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
