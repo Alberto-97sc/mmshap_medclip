@@ -286,6 +286,18 @@ def plot_text_image_heatmaps(
             heat[r0:r1, c0:c1] = v
         return heat
 
+    def _format_tokens(tokens: List[str]) -> List[str]:
+        formatted = []
+        for tok in tokens:
+            tok_clean = tok if tok is not None else ""
+            tok_clean = tok_clean.strip()
+            if not tok_clean:
+                tok_clean = "∅"
+            if len(tok_clean) > 19:
+                tok_clean = tok_clean[:18] + "…"
+            formatted.append(tok_clean)
+        return formatted
+
     for i, (tscore, _) in enumerate(mm_scores):
         feats  = vals_all[i]
         tlen   = seq_lens[i]
@@ -312,6 +324,8 @@ def plot_text_image_heatmaps(
         elif len(text_vals) > len(toks_vis):
             text_vals = text_vals[:len(toks_vis)]
 
+        toks_display = _format_tokens(toks_vis)
+
         ax_txt = fig.add_subplot(gs[1, i])
         ax_txt.axis("off")
         ax_txt.set_xlim(0, 1); ax_txt.set_ylim(0, 1)
@@ -319,7 +333,7 @@ def plot_text_image_heatmaps(
         ax_txt.text(0.5, 0.85, f"TScore {tscore:.2%}",
                     ha="center", va="center", transform=ax_txt.transAxes, fontsize=13)
 
-        if len(toks_vis) == 0 or len(text_vals) == 0:
+        if len(toks_display) == 0 or len(text_vals) == 0:
             ax_txt.text(0.5, 0.35, text_clean if text_clean else "(sin tokens)",
                         ha="center", va="center", transform=ax_txt.transAxes, fontsize=12)
             continue
@@ -327,7 +341,7 @@ def plot_text_image_heatmaps(
         # medir ancho de tokens para centrar
         widths = []
         bbox_kw = dict(facecolor="white", pad=0.2, alpha=0)
-        for tok in toks_vis:
+        for tok in toks_display:
             t = ax_txt.text(0, 0, tok, ha="left", va="center", fontsize=14, bbox=bbox_kw)
             bb = t.get_window_extent(renderer=renderer)
             bb_data = ax_txt.transAxes.inverted().transform([[bb.x1, bb.y1], [bb.x0, bb.y0]])
@@ -335,11 +349,11 @@ def plot_text_image_heatmaps(
             t.remove()
 
         gap     = 0.01
-        total_w = sum(widths) + gap * max(0, len(toks_vis)-1)
+        total_w = sum(widths) + gap * max(0, len(toks_display)-1)
         start_x = 0.5 - total_w/2
         x = start_x
 
-        for tok, val, w in zip(toks_vis, text_vals, widths):
+        for tok, val, w in zip(toks_display, text_vals, widths):
             color = cmap_text(norm_text(val))
             ax_txt.text(
                 x, 0.5, tok,
