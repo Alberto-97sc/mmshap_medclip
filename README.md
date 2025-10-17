@@ -80,6 +80,18 @@ else:
 
 > Si además prefieres un `requirements.txt` con versiones fijas, mantenlo en la raíz y ejecútalo **antes** o **después** de `-e` según tu flujo.
 
+### Extras de desarrollo y limpieza automática de notebooks
+
+Para mantener los notebooks sin salidas ejecutadas (evitando diffs ruidosos), instala las dependencias de desarrollo y activa los hooks de `pre-commit`:
+
+```bash
+pip install -e .[dev]
+pre-commit install
+pre-commit run --all-files  # limpia notebooks ya versionados
+```
+
+Cada commit ejecutará `nbstripout` automáticamente sobre los archivos `*.ipynb`, eliminando salidas y metadatos innecesarios.
+
 ---
 
 ## Quickstart (Colab)
