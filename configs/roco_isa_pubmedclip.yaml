@@ -15,5 +15,3 @@ dataset:
 model:
   name: pubmedclip-vit-b32
   params: {}
-
-
