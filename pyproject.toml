@@ -40,4 +40,6 @@ dev = [
   "pytest",
   "black",
   "ruff",
+  "pre-commit",
+  "nbstripout",
 ]
