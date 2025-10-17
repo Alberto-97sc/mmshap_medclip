@@ -170,4 +170,3 @@ Top-5 candidatos por probabilidad:')
         print(f"{p:7.4f} | {short}")
 else:
     print('(Sin negativos adicionales en esta corrida.)')
-

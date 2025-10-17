@@ -196,5 +196,3 @@ def _mk_whyxrayclip(params):
 
     wrapper = OpenCLIPWrapper(model.to(device), processor, tokenizer)
     return wrapper
-
-

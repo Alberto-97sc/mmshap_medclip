@@ -16,8 +16,8 @@
 #
 # Este notebook forma parte del proyecto de tesis sobre **medición del balance multimodal en modelos CLIP aplicados a dominios médicos**.
 #
-# Modelo actual: **PubMedCLIP**  
-# Dataset: **ROCO (Radiology Objects in COntext)**  
+# Modelo actual: **PubMedCLIP**
+# Dataset: **ROCO (Radiology Objects in COntext)**
 # Tarea: **ISA (Image-Sentence Alignment)**
 # ---
 #
@@ -247,4 +247,3 @@ else:
     for lbl, p in pairs_sorted[:5]:
         short = (lbl[:120] + "…") if len(lbl) > 120 else lbl
         print(f"{p:7.4f} | {short}")
-

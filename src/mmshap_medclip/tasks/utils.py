@@ -166,4 +166,3 @@ def concat_text_image_tokens(
     X_clean = torch.cat((input_ids, image_token_ids_expanded), dim=1)
     X_clean = X_clean.to(dtype=dtype).to(device)
     return X_clean, text_seq_len
-
