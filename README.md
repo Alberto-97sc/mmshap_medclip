@@ -10,9 +10,7 @@ Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos ti
 
 ```
 mmshap_medclip/
-├── notebooks/
-│   ├── 01_pubmedclip_roco_isa_formateado.ipynb  # Notebook para pruebas ISA con PubMedCLIP
-│   └── 02_whyxrayclip_roco_isa.ipynb            # Notebook análogo usando WhyXrayCLIP
+
 ├── src/mmshap_medclip/
 │   ├── __init__.py
 │   ├── devices.py                          # manejo de device (CUDA/CPU)
@@ -27,18 +25,48 @@ mmshap_medclip/
 │   ├── tasks/
 │   │   ├── __init__.py
 │   │   ├── isa.py                          # tarea Image-Sentence Alignment
-│   │   └── utils.py                        # prepare_batch, token lengths, etc.
+│   │   ├── utils.py                        # prepare_batch, token lengths, etc.
+│   │   └── whyxrayclip.py                  # utilidades específicas para WhyXrayCLIP
 │   ├── shap_tools/
 │   │   ├── masker.py                       # build_masker (BOS/EOS safe)
 │   │   └── predictor.py                    # Predictor callable para SHAP
 │   └── vis/
 │       └── heatmaps.py                     # mapas de calor imagen+texto
+├── experiments/
+│   ├── pubmedclip_roco_isa.py              # experimento completo PubMedCLIP + ROCO
+│   └── whyxrayclip_roco_isa.py             # experimento completo WhyXrayCLIP + ROCO
 ├── configs/
 │   ├── roco_isa_pubmedclip.yaml            # config de ejemplo para ISA
 │   └── roco_isa_whyxrayclip.yaml           # config equivalente para WhyXrayCLIP
 ├── README.md
 └── pyproject.toml                          # instalación editable
 ```
+
+---
+
+## Experimentos disponibles
+
+El directorio `experiments/` contiene scripts completos listos para ejecutar en **Colab** que implementan experimentos end-to-end:
+
+### 📊 `pubmedclip_roco_isa.py`
+- **Modelo**: PubMedCLIP (ViT-B/32)
+- **Dataset**: ROCO (Radiology Objects in COntext)
+- **Tarea**: Image-Sentence Alignment (ISA)
+- **Configuración**: `configs/roco_isa_pubmedclip.yaml`
+
+### 🩻 `whyxrayclip_roco_isa.py`
+- **Modelo**: WhyXrayCLIP
+- **Dataset**: ROCO (Radiology Objects in COntext)
+- **Tarea**: Image-Sentence Alignment (ISA)
+- **Configuración**: `configs/roco_isa_whyxrayclip.yaml`
+
+Ambos experimentos incluyen:
+- Carga automática del dataset desde Google Drive
+- Evaluación de balance multimodal con SHAP
+- Generación de visualizaciones (heatmaps)
+- Cálculo de métricas (TScore, IScore, MM-Score)
+
+> 💡 **Uso recomendado**: Abre los archivos `.py` como notebooks en Colab usando Jupytext, o conviértelos con `jupytext --to notebook experiments/nombre_experimento.py`.
 
 ---
 
@@ -84,6 +112,23 @@ else:
 
 ## Quickstart (Colab)
 
+### Opción 1: Usar experimentos predefinidos 🚀
+
+La forma más rápida de empezar es usar uno de los experimentos completos:
+
+1) **Clonar y abrir experimento en Colab**
+```python
+# Clona el repo y abre experiments/pubmedclip_roco_isa.py como notebook
+# O usa: experiments/whyxrayclip_roco_isa.py para WhyXrayCLIP
+```
+
+2) **Ejecutar celdas secuencialmente** - cada experimento incluye:
+   - Instalación automática de dependencias
+   - Carga del dataset ROCO desde Google Drive
+   - Evaluación completa con SHAP y visualizaciones
+
+### Opción 2: Uso manual paso a paso 🔧
+
 1) **Montar Google Drive** (para leer ROCO desde ZIP)
 ```python
 from google.colab import drive; drive.mount('/content/drive')
@@ -124,7 +169,7 @@ print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscor
 
 ```
 
-> 💡 Para experimentar con **WhyXrayCLIP** usa el notebook `notebooks/02_whyxrayclip_roco_isa.ipynb` y la configuración `configs/roco_isa_whyxrayclip.yaml`. El wrapper interno se apoya en `open-clip-torch`/`torchvision`, ya incluidos en `pyproject.toml`.
+> 💡 Para experimentar con **WhyXrayCLIP** usa el experimento `experiments/whyxrayclip_roco_isa.py` y la configuración `configs/roco_isa_whyxrayclip.yaml`. El wrapper interno se apoya en `open-clip-torch`/`torchvision`, ya incluidos en `pyproject.toml`.
 
 
 
@@ -153,6 +198,7 @@ model:
 ---
 
 ## Notas y consejos
+- **Experimentos**: Los archivos en `experiments/` están en formato Jupytext (`.py`). Ábrelos directamente en Colab o conviértelos con `jupytext --to notebook archivo.py`.
 - **CUDA**: activa GPU en Colab para acelerar; `get_device()` la detecta solo.
 - **AMP**: el `Predictor` usa `autocast` en CUDA; desactívalo con `use_amp=False` si ves warnings.
 - **`patch_size`**: se infiere de `model.config.vision_config.patch_size`; pásalo manual si tu wrapper no lo expone.
