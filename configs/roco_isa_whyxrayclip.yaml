@@ -1,4 +1,4 @@
-experiment_name: demo_roco_sample
+experiment_name: demo_roco_whyxrayclip
 device: auto
 
 dataset:
@@ -13,5 +13,9 @@ dataset:
       images_subdir: all_data/validation/radiology/images
 
 model:
-  name: pubmedclip-vit-b32
-  params: {}
+  name: whyxrayclip
+  params:
+    model_name: hf-hub:yyupenn/whyxrayclip
+    tokenizer_name: ViT-L-14
+    # Para desarrollo rápido, descomenta la siguiente línea:
+    # shap_call_kwargs: {"max_evals": 100}

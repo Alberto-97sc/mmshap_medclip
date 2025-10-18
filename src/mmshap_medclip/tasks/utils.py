@@ -1,5 +1,6 @@
 # src/mmshap_medclip/tasks/utils.py
-from typing import List, Tuple, Optional, Dict
+from contextlib import nullcontext
+from typing import List, Tuple, Optional, Dict, Union
 import torch
 from mmshap_medclip.devices import move_to_device
 
@@ -77,10 +78,10 @@ def compute_text_token_lengths(
 def make_image_token_ids(
     inputs: dict,
     model_wrapper,
-    patch_size: Optional[int] = None,  # permítele override manual
+    patch_size: Optional[Union[int, Tuple[int, int]]] = None,  # permítele override manual
     strict: bool = True,
     debug: bool = False,
-) -> Tuple[torch.Tensor, Dict[str, int]]:
+) -> Tuple[torch.Tensor, Dict[str, Union[int, Tuple[int, int]]]]:
     """
     Genera IDs de parches 1..N por batch a partir de pixel_values y patch_size del modelo.
     Retorna: (image_token_ids_expanded [B, N], info={patch_size, grid_h, grid_w, num_patches})
@@ -91,11 +92,15 @@ def make_image_token_ids(
     # 1) resolver patch_size
     ps = patch_size
     if ps is None:
+        ps = getattr(model_wrapper, "patch_size", None)
+    if ps is None:
         m = getattr(model_wrapper, "model", model_wrapper)
         # intentos comunes en CLIP
         ps = getattr(getattr(getattr(m, "config", None), "vision_config", None), "patch_size", None)
         if ps is None:
             ps = getattr(getattr(getattr(m, "vision_model", None), "config", None), "patch_size", None)
+        if ps is None:
+            ps = getattr(getattr(m, "visual", None), "patch_size", None)
 
     if ps is None:
         if strict:
@@ -104,19 +109,29 @@ def make_image_token_ids(
         if debug:
             print("[make_image_token_ids] Usando patch_size=32 (fallback).")
 
+    # normaliza patch_size a tuple[int, int]
+    if isinstance(ps, (list, tuple)):
+        if len(ps) != 2:
+            raise ValueError(f"patch_size iterable inesperado: {ps}")
+        ps_h, ps_w = int(ps[0]), int(ps[1])
+    else:
+        ps_h = ps_w = int(ps)
+
     # 2) validaciones y grid
     if strict:
-        assert H % ps == 0 and W % ps == 0, f"Imagen {H}×{W} no divisible por patch_size={ps}"
-    grid_h, grid_w = H // ps, W // ps
+        assert H % ps_h == 0 and W % ps_w == 0, (
+            f"Imagen {H}×{W} no divisible por patch_size={ps}"
+        )
+    grid_h, grid_w = H // ps_h, W // ps_w
     num_patches = grid_h * grid_w
     if debug:
-        print(f"[make_image_token_ids] patch_size={ps} | grid={grid_h}×{grid_w} → N={num_patches}")
+        print(f"[make_image_token_ids] patch_size={(ps_h, ps_w)} | grid={grid_h}×{grid_w} → N={num_patches}")
 
     # 3) IDs 1..N y expandir a batch
     ids = torch.arange(1, num_patches + 1, device=device, dtype=torch.long).unsqueeze(0)  # [1, N]
     image_token_ids_expanded = ids.expand(B, -1)                                           # [B, N]
 
-    info = dict(patch_size=ps, grid_h=grid_h, grid_w=grid_w, num_patches=num_patches)
+    info = dict(patch_size=(ps_h, ps_w), grid_h=grid_h, grid_w=grid_w, num_patches=num_patches)
     return image_token_ids_expanded, info
 
 
@@ -151,4 +166,3 @@ def concat_text_image_tokens(
     X_clean = torch.cat((input_ids, image_token_ids_expanded), dim=1)
     X_clean = X_clean.to(dtype=dtype).to(device)
     return X_clean, text_seq_len
-

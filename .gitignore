@@ -1,37 +1,58 @@
-# Notebooks auto-saves
-.ipynb_checkpoints/
-
-# Python cache
+# Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# System files
-.DS_Store
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
 
-# Resultados y logs
-result_jsons/
-results_txts/
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
 
-# Datos (se mantienen en Drive, no en GitHub)
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data
+data/
 *.zip
 *.csv
-*.json
 *.h5
-*.pt
-*.pth
-*.ckpt
-/content/drive/MyDrive/MAESTRIA-TESIS/datasets/
+*.hdf5
 
+# Kaggle
+.kaggle/
+kaggle.json
 
-__pycache__/
-.ipynb_checkpoints/
-*.pyc
-.env
-.venv/
-dist/
-build/
-*.egg-info/
-outputs/
-result_jsons/
-*.zip
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
