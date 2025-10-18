@@ -27,7 +27,7 @@ def run_isa_one(
     out: Dict[str, Any] = {
         "inputs": inputs,
         "logits": logits,
-        "logit": float(logits.squeeze()),
+        "logit": float(logits.squeeze().item()),
         "image": image,
         "text": caption,
         "model_wrapper": model,

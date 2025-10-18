@@ -4,7 +4,7 @@ device: auto
 dataset:
   name: roco
   params:
-    zip_path: /content/drive/MyDrive/MAESTRIA-TESIS/datasets/ROCO/dataset_roco.zip
+    zip_path: data/dataset_roco.zip
     split: validation
     n_rows: all
     columns:
@@ -17,3 +17,5 @@ model:
   params:
     model_name: hf-hub:yyupenn/whyxrayclip
     tokenizer_name: ViT-L-14
+    # Para desarrollo rápido, descomenta la siguiente línea:
+    # shap_call_kwargs: {"max_evals": 100}

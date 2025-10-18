@@ -130,6 +130,7 @@ class OpenCLIPWrapper(torch.nn.Module):
         if input_ids is None or pixel_values is None:
             raise ValueError("OpenCLIPWrapper requiere 'input_ids' y 'pixel_values'.")
 
+        # Usar el método manual que funciona correctamente
         image_features = self.model.encode_image(pixel_values)
         text_features = self.model.encode_text(input_ids)
 

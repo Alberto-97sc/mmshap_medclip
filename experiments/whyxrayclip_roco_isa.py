@@ -11,62 +11,40 @@
 #     name: python3
 # ---
 
-# %% [markdown] id="9b467b94"
+# %% [markdown]
 # # 📑 Evaluación de WhyXrayCLIP en ROCO
 #
 # Este notebook forma parte del proyecto de tesis sobre **medición del balance multimodal en modelos CLIP aplicados a dominios médicos**.
 #
-# Modelo actual: **WhyXrayCLIP**
-# Dataset: **ROCO (Radiology Objects in COntext)**
-# Tarea: **ISA (Image-Sentence Alignment)**
+# **Modelo**: WhyXrayCLIP  
+# **Dataset**: ROCO (Radiology Objects in COntext)  
+# **Tarea**: ISA (Image-Sentence Alignment)
+#
+# ⚡ Frontend optimizado para máximo rendimiento
+#
 # ---
-#
-#
 
-# %% [markdown] id="10c7622f"
-# ## Clonar repositorio
-
-# %% id="87c53e96"
-# 📌 Código
-REPO_URL  = "https://github.com/Alberto-97sc/mmshap_medclip.git"
-LOCAL_DIR = "/content/mmshap_medclip"
-BRANCH    = "codex/adaptar-modelo-whyxrayclip-al-repositorio"
-
-# %cd /content
-import os, shutil, subprocess, sys
-
-if not os.path.isdir(f"{LOCAL_DIR}/.git"):
-    # No está clonado aún
-    # !git clone $REPO_URL $LOCAL_DIR
-else:
-    # Ya existe: actualiza a la última versión del remoto
-    # %cd $LOCAL_DIR
-    # !git fetch origin
-    # !git checkout $BRANCH
-    # !git reset --hard origin/$BRANCH
-# %cd $LOCAL_DIR
-# !git rev-parse --short HEAD
-
-
-# %% [markdown] id="0efe36cb"
-# ## Instalar dependencias y montar google drive
-
-# %% id="35d8329f"
-from google.colab import drive; drive.mount('/content/drive')
-
-# === Instalar en modo editable (pyproject.toml) ===
-# %pip install -e /content/mmshap_medclip
-
-# %% id="adb0cf00"
-# 📌 Código
-from google.colab import drive; drive.mount('/content/drive')
-
-# %% [markdown] id="6f4ab762"
+# %% [markdown]
 # ## Cargar modelos y datos
 
-# %% id="b6485339"
-# 📌 Código
-CFG_PATH="/content/mmshap_medclip/configs/roco_isa_whyxrayclip.yaml"
+# %%
+import os
+from pathlib import Path
+
+# 📌 Configuración - Asegurar que estamos en el directorio correcto
+# Funciona tanto en scripts como en notebooks
+try:
+    # En scripts Python
+    PROJECT_ROOT = Path(__file__).parent.parent
+except NameError:
+    # En notebooks de Jupyter
+    PROJECT_ROOT = Path.cwd()
+    # Si estamos en experiments/, subir un nivel
+    if PROJECT_ROOT.name == "experiments":
+        PROJECT_ROOT = PROJECT_ROOT.parent
+
+os.chdir(PROJECT_ROOT)
+CFG_PATH = "configs/roco_isa_whyxrayclip.yaml"
 
 from mmshap_medclip.tasks.whyxrayclip import filter_roco_by_keywords
 
@@ -79,28 +57,25 @@ if not all(k in globals() for k in ("cfg", "device", "dataset", "model")):
     from mmshap_medclip.devices import get_device
 
     cfg = load_config(CFG_PATH)
-    device  = get_device(cfg.get("device", "auto"))
+    device = get_device(cfg.get("device", "auto"))
     dataset = build_dataset(cfg["dataset"])
-    model   = build_model(cfg["model"], device=device)
+    model = build_model(cfg["model"], device=device)
 
 # Filtra a radiografías de tórax/pulmón
 dataset = filter_roco_by_keywords(dataset, keywords=CHESTXRAY_KEYWORDS)
 
 print("OK → len(dataset) =", len(dataset), "(subset radiografías)", "| device =", device)
 
-
-# %% [markdown] id="55231ba0"
+# %% [markdown]
 # ## Ejecutar SHAP en una muestra
 
-# %% id="0d06718a"
+# %%
 # 📌 Código
 from mmshap_medclip.tasks.isa import run_isa_one
 
 muestra = 154
-sample  = dataset[muestra]
+sample = dataset[muestra]
 image, caption = sample['image'], sample['text']
 
 res = run_isa_one(model, image, caption, device, explain=True, plot=True)
 print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscore']:.2%}")
-
-

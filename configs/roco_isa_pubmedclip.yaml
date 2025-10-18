@@ -4,7 +4,7 @@ device: auto
 dataset:
   name: roco
   params:
-    zip_path: /content/drive/MyDrive/MAESTRIA-TESIS/datasets/ROCO/dataset_roco.zip
+    zip_path: data/dataset_roco.zip
     split: validation
     n_rows: all
     columns:

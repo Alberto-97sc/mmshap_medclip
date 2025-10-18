@@ -1,12 +1,24 @@
 # mmshap_medclip
 
-Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP) sobre datasets médicos (p. ej., ROCO). Diseñado para ejecutarse en **Colab + Google Drive**, versionar en **GitHub**, y escalar a más modelos/datasets/tareas.
+Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP y WhyXrayCLIP) sobre datasets médicos (p. ej., ROCO). Diseñado para **ejecución local** con datasets descargados desde **Google Drive**.
 
-> Esta versión asume **instalación con `pyproject.toml`** y uso de **`pip install -e .`**.
+> Esta versión utiliza **instalación con `pyproject.toml`** y uso de **`pip install -e .`**.
 
 ---
 
-## Estructura del repo
+## 📋 Tabla de Contenidos
+
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Experimentos disponibles](#experimentos-disponibles)
+- [Instalación](#instalación)
+- [Descarga del dataset](#descarga-del-dataset)
+- [Conversión de scripts a notebooks](#conversión-de-scripts-a-notebooks)
+- [Uso rápido](#uso-rápido)
+- [Configuración de ejemplo](#configuración-de-ejemplo)
+
+---
+
+## 📁 Estructura del repositorio
 
 ```
 mmshap_medclip/
@@ -21,32 +33,35 @@ mmshap_medclip/
 │   ├── datasets/
 │   │   ├── __init__.py
 │   │   ├── base.py                         # interfaz DatasetBase
-│   │   └── roco.py                         # loader ROCO (lee ZIP en Drive)
+│   │   └── roco.py                         # loader ROCO (lee ZIP local)
 │   ├── tasks/
 │   │   ├── __init__.py
 │   │   ├── isa.py                          # tarea Image-Sentence Alignment
 │   │   ├── utils.py                        # prepare_batch, token lengths, etc.
-│   │   └── whyxrayclip.py                  # utilidades específicas para WhyXrayCLIP
+│   │   └── whyxrayclip.py                  # utilidades específicas WhyXrayCLIP
 │   ├── shap_tools/
 │   │   ├── masker.py                       # build_masker (BOS/EOS safe)
 │   │   └── predictor.py                    # Predictor callable para SHAP
 │   └── vis/
 │       └── heatmaps.py                     # mapas de calor imagen+texto
 ├── experiments/
-│   ├── pubmedclip_roco_isa.py              # experimento completo PubMedCLIP + ROCO
-│   └── whyxrayclip_roco_isa.py             # experimento completo WhyXrayCLIP + ROCO
+│   ├── pubmedclip_roco_isa.py              # experimento PubMedCLIP + ROCO
+│   └── whyxrayclip_roco_isa.py             # experimento WhyXrayCLIP + ROCO
 ├── configs/
-│   ├── roco_isa_pubmedclip.yaml            # config de ejemplo para ISA
-│   └── roco_isa_whyxrayclip.yaml           # config equivalente para WhyXrayCLIP
-├── README.md
-└── pyproject.toml                          # instalación editable
+│   ├── roco_isa_pubmedclip.yaml            # config ISA para PubMedCLIP
+│   └── roco_isa_whyxrayclip.yaml           # config ISA para WhyXrayCLIP
+├── scripts/
+│   └── download_dataset.py                 # script para descargar dataset
+├── data/                                    # carpeta para datasets (no versionada)
+├── pyproject.toml                          # configuración del proyecto y dependencias
+└── README.md
 ```
 
 ---
 
-## Experimentos disponibles
+## 🧪 Experimentos disponibles
 
-El directorio `experiments/` contiene scripts completos listos para ejecutar en **Colab** que implementan experimentos end-to-end:
+El directorio `experiments/` contiene scripts completos listos para ejecutar localmente o convertir a notebooks:
 
 ### 📊 `pubmedclip_roco_isa.py`
 - **Modelo**: PubMedCLIP (ViT-B/32)
@@ -60,120 +75,190 @@ El directorio `experiments/` contiene scripts completos listos para ejecutar en 
 - **Tarea**: Image-Sentence Alignment (ISA)
 - **Configuración**: `configs/roco_isa_whyxrayclip.yaml`
 
-Ambos experimentos incluyen:
-- Carga automática del dataset desde Google Drive
+**Ambos experimentos incluyen**:
+- Carga automática del dataset desde archivo local
 - Evaluación de balance multimodal con SHAP
 - Generación de visualizaciones (heatmaps)
 - Cálculo de métricas (TScore, IScore, MM-Score)
 
-> 💡 **Uso recomendado**: Abre los archivos `.py` como notebooks en Colab usando Jupytext, o conviértelos con `jupytext --to notebook experiments/nombre_experimento.py`.
+---
+
+## 🚀 Instalación
+
+### 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/Alberto-97sc/mmshap_medclip.git
+cd mmshap_medclip
+```
+
+### 2. Crear entorno virtual (recomendado)
+
+```bash
+python -m venv venv
+source venv/bin/activate  # En Linux/Mac
+# o en Windows:
+# venv\Scripts\activate
+```
+
+### 3. Instalar dependencias
+
+**Instalación básica**:
+```bash
+pip install -e .
+```
+
+> 💡 Esto instala las dependencias incluyendo `gdown`, pero **NO descarga el dataset**. El dataset se descarga en el paso siguiente.
+
+**Instalación con soporte para notebooks** (recomendado):
+```bash
+pip install -e ".[notebooks]"
+```
+
+**Instalación con herramientas de desarrollo** (opcional):
+```bash
+pip install -e ".[dev]"
+```
+
+**Instalación completa** (notebooks + dev):
+```bash
+pip install -e ".[notebooks,dev]"
+```
+
+> 💡 Poola opción `-e` instala el paquete en modo editable, permitiendo que cualquier cambio en `src/` se refleje inmediatamente sin necesidad de reinstalar.
 
 ---
 
-## Instalación (editable) con `pyproject.toml`
+## 📦 Descarga del dataset
 
-En **Colab** o local, tras clonar el repo:
+### Descargar dataset ROCO desde Google Drive
 
-```bash
-REPO_URL  = "https://github.com/Alberto-97sc/mmshap_medclip.git"
-LOCAL_DIR = "/content/mmshap_medclip"
-BRANCH    = "main"
+El repositorio incluye scripts automáticos para descargar el dataset desde Google Drive:
 
-%cd /content
-import os, shutil, subprocess, sys
-
-if not os.path.isdir(f"{LOCAL_DIR}/.git"):
-    # No está clonado aún
-    !git clone $REPO_URL $LOCAL_DIR
-else:
-    # Ya existe: actualiza a la última versión del remoto
-    %cd $LOCAL_DIR
-    !git fetch origin
-    !git checkout $BRANCH
-    !git reset --hard origin/$BRANCH
-%cd $LOCAL_DIR
-!git rev-parse --short HEAD
-
-```
+#### Opción 1: Script automático (RECOMENDADA)
 
 ```bash
-# === Instalar en modo editable (pyproject.toml) ===
-%pip install -e /content/mmshap_medclip
-
+# Descargar dataset usando gdown (más confiable)
+python scripts/download_dataset.py
 ```
 
+Este script:
+1. ✅ Crea el directorio `data/` si no existe
+2. 📥 Descarga el dataset ROCO desde Google Drive usando `gdown`
+3. 📁 Lo guarda en `data/dataset_roco.zip`
+4. ✅ Verifica que la descarga sea exitosa
 
-- `-e` instala el paquete en **modo editable**: puedes hacer `from mmshap_medclip...` y cualquier cambio en `src/` se refleja sin reinstalar.
-- Las **dependencias** se resuelven automáticamente desde `pyproject.toml` (`[project].dependencies`).
+#### Opción 2: Descarga manual
 
-> Si además prefieres un `requirements.txt` con versiones fijas, mantenlo en la raíz y ejecútalo **antes** o **después** de `-e` según tu flujo.
+Si el script automático no funciona, puedes descargar manualmente:
+
+1. **Ir al enlace**: [Dataset ROCO en Google Drive](https://drive.google.com/file/d/1eRUC8F8PtXffa9iArJnyB8AMqlPNoSwc/view?usp=sharing)
+2. **Hacer clic en "Descargar"**
+3. **Mover el archivo** a `data/dataset_roco.zip`
+
+#### Opción 3: Usando gdown directamente
+
+```bash
+# Instalar gdown si no está instalado
+pip install gdown
+
+# Descargar directamente
+gdown 1eRUC8F8PtXffa9iArJnyB8AMqlPNoSwc -O data/dataset_roco.zip
+```
 
 ---
 
-## Quickstart (Colab)
+## 📓 Conversión de scripts a notebooks
 
-### Opción 1: Usar experimentos predefinidos 🚀
+Los scripts en `experiments/` están en formato Jupytext (`.py`), lo que permite versionarlos fácilmente y convertirlos a notebooks Jupyter.
 
-La forma más rápida de empezar es usar uno de los experimentos completos:
+### Convertir un script a notebook
 
-1) **Clonar y abrir experimento en Colab**
-```python
-# Clona el repo y abre experiments/pubmedclip_roco_isa.py como notebook
-# O usa: experiments/whyxrayclip_roco_isa.py para WhyXrayCLIP
+```bash
+# Convertir un script específico
+jupytext --to notebook experiments/pubmedclip_roco_isa.py
+
+# Convertir todos los scripts
+jupytext --to notebook experiments/*.py
 ```
 
-2) **Ejecutar celdas secuencialmente** - cada experimento incluye:
-   - Instalación automática de dependencias
-   - Carga del dataset ROCO desde Google Drive
-   - Evaluación completa con SHAP y visualizaciones
+Esto generará archivos `.ipynb` que puedes abrir con Jupyter Notebook o JupyterLab.
 
-### Opción 2: Uso manual paso a paso 🔧
+### Actualizar notebook desde script modificado
 
-1) **Montar Google Drive** (para leer ROCO desde ZIP)
-```python
-from google.colab import drive; drive.mount('/content/drive')
+```bash
+jupytext --sync experiments/pubmedclip_roco_isa.py
 ```
 
-2) **Imports y carga de config/dataset/modelo**
-```python
+### Convertir notebook de vuelta a script
 
-CFG_PATH="/content/mmshap_medclip/configs/roco_isa_pubmedclip.yaml"
-
-# Asegura que cfg, device, dataset y model estén listos en esta sesión
-if not all(k in globals() for k in ("cfg", "device", "dataset", "model")):
-    from mmshap_medclip.io_utils import load_config
-    from mmshap_medclip.devices import get_device
-    from mmshap_medclip.registry import build_dataset, build_model
-
-    cfg = load_config(CFG_PATH)
-    device  = get_device()
-    dataset = build_dataset(cfg["dataset"])
-    model   = build_model(cfg["model"], device=device)
-
-print("OK → len(dataset) =", len(dataset), "| device =", device)
-
+```bash
+jupytext --to py:percent experiments/pubmedclip_roco_isa.ipynb
 ```
-3) **Imprimir muestra**
+
+---
+
+## 🎯 Uso rápido
+
+### Opción 1: Ejecutar scripts directamente
+
+```bash
+# 1. Descargar dataset
+python scripts/download_dataset.py
+
+# 2. Ejecutar experimento con PubMedCLIP
+python experiments/pubmedclip_roco_isa.py
+
+# 3. Ejecutar experimento con WhyXrayCLIP
+python experiments/whyxrayclip_roco_isa.py
+```
+
+### Opción 2: Usar notebooks
+
+```bash
+# 1. Convertir script a notebook
+jupytext --to notebook experiments/pubmedclip_roco_isa.py
+
+# 2. Iniciar Jupyter
+jupyter notebook
+
+# 3. Abrir experiments/pubmedclip_roco_isa.ipynb y ejecutar celdas
+```
+
+### Opción 3: Uso manual paso a paso
 
 ```python
+from mmshap_medclip.io_utils import load_config
+from mmshap_medclip.devices import get_device
+from mmshap_medclip.registry import build_dataset, build_model
 from mmshap_medclip.tasks.isa import run_isa_one
 
-muestra = 266
-sample  = dataset[muestra]
+# Cargar configuración
+cfg = load_config("configs/roco_isa_pubmedclip.yaml")
+
+# Obtener device (CUDA si está disponible)
+device = get_device()
+
+# Cargar dataset y modelo
+dataset = build_dataset(cfg["dataset"])
+model = build_model(cfg["model"], device=device)
+
+print(f"Dataset cargado: {len(dataset)} muestras")
+print(f"Device: {device}")
+
+# Ejecutar evaluación en una muestra
+sample = dataset[154]
 image, caption = sample['image'], sample['text']
 
 res = run_isa_one(model, image, caption, device, explain=True, plot=True)
 print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscore']:.2%}")
-# Si quieres la figura:
-# display(res['fig'])
-
 ```
 
-> 💡 Para experimentar con **WhyXrayCLIP** usa el experimento `experiments/whyxrayclip_roco_isa.py` y la configuración `configs/roco_isa_whyxrayclip.yaml`. El wrapper interno se apoya en `open-clip-torch`/`torchvision`, ya incluidos en `pyproject.toml`.
+---
 
+## ⚙️ Configuración de ejemplo
 
-
-## Config de ejemplo (`configs/roco_isa_pubmedclip.yaml`)
+### `configs/roco_isa_pubmedclip.yaml`
 
 ```yaml
 experiment_name: demo_roco_sample
@@ -182,7 +267,7 @@ device: auto
 dataset:
   name: roco
   params:
-    zip_path: /content/drive/MyDrive/MAESTRIA-TESIS/datasets/ROCO/dataset_roco.zip
+    zip_path: data/dataset_roco.zip
     split: validation
     n_rows: all
     columns:
@@ -195,26 +280,36 @@ model:
   params: {}
 ```
 
+### `configs/roco_isa_whyxrayclip.yaml`
+
+```yaml
+experiment_name: demo_roco_whyxrayclip
+device: auto
+
+dataset:
+  name: roco
+  params:
+    zip_path: data/dataset_roco.zip
+    split: validation
+    n_rows: all
+    columns:
+      image_key: name
+      caption_key: caption
+      images_subdir: all_data/validation/radiology/images
+
+model:
+  name: whyxrayclip
+  params:
+    model_name: hf-hub:yyupenn/whyxrayclip
+    tokenizer_name: ViT-L-14
+```
+
 ---
 
-## Notas y consejos
-- **Experimentos**: Los archivos en `experiments/` están en formato Jupytext (`.py`). Ábrelos directamente en Colab o conviértelos con `jupytext --to notebook archivo.py`.
-- **CUDA**: activa GPU en Colab para acelerar; `get_device()` la detecta solo.
-- **AMP**: el `Predictor` usa `autocast` en CUDA; desactívalo con `use_amp=False` si ves warnings.
-- **`patch_size`**: se infiere de `model.config.vision_config.patch_size`; pásalo manual si tu wrapper no lo expone.
-- **Batch B>1**: todas las utilidades (masker/predictor/concat) están vectorizadas para B≥1.
+## 📄 Licencia
 
----
-
-## Troubleshooting
-- **`ModuleNotFoundError: mmshap_medclip`** → asegúrate de haber corrido `pip install -e .` en la raíz del repo.
-- **`patch_size` no detectado** → `Predictor(..., patch_size=32)`.
-- **SHAP muy lento** → trabaja con B=1 y/o menos muestras; SHAP es costoso por diseño.
-
----
-
-## Licencia
 MIT
 
-## Créditos
-Proyecto de tesis: **Medición del balance multimodal con SHAP en CLIP médico**.
+## 👨‍💻 Autor
+
+Proyecto de tesis: **Medición del balance multimodal con SHAP en CLIP médico**

@@ -26,6 +26,7 @@ dependencies = [
   "pyyaml",
   "tqdm",
   "open-clip-torch",
+  "gdown",
 ]
 
 [tool.setuptools]
@@ -40,4 +41,9 @@ dev = [
   "pytest",
   "black",
   "ruff",
+]
+notebooks = [
+  "jupytext>=1.14.0",
+  "notebook>=6.5.0",
+  "ipykernel>=6.22.0",
 ]
