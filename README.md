@@ -2,19 +2,202 @@
 
 Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP y WhyXrayCLIP) sobre datasets médicos (p. ej., ROCO). Diseñado para **ejecución local** con datasets descargados desde **Google Drive**.
 
+> 🚀 **Instalación en un solo click**: Ejecuta `./setup.sh` y tendrás todo listo automáticamente. Ver [Instalación Rápida](#-instalación-rápida-un-solo-click).
+
 > Esta versión utiliza **instalación con `pyproject.toml`** y uso de **`pip install -e .`**.
 
 ---
 
 ## 📋 Tabla de Contenidos
 
+- [Instalación Rápida (Un Solo Click)](#-instalación-rápida-un-solo-click)
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Experimentos disponibles](#experimentos-disponibles)
-- [Instalación](#instalación)
+- [Instalación Manual](#instalación-manual)
 - [Descarga del dataset](#descarga-del-dataset)
 - [Conversión de scripts a notebooks](#conversión-de-scripts-a-notebooks)
 - [Uso rápido](#uso-rápido)
 - [Configuración de ejemplo](#configuración-de-ejemplo)
+
+---
+
+## ⚡ Instalación Rápida (Un Solo Click)
+
+### 🎯 Opción Recomendada: Script Automático
+
+Si quieres configurar **todo el entorno en un solo comando**, usa el script de instalación automática:
+
+```bash
+git clone https://github.com/Alberto-97sc/mmshap_medclip.git
+cd mmshap_medclip
+./setup.sh
+```
+
+### ✨ ¿Qué hace el script automático?
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     ./setup.sh                          │
+└─────────────────────────────────────────────────────────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+  [Verificar Python]  [Configurar Git]  [Crear venv]
+        │                   │                   │
+        └───────────────────┼───────────────────┘
+                            ▼
+                  [Instalar dependencias]
+                            │
+                            ▼
+                   [Descargar dataset]
+                            │
+                            ▼
+                  [Convertir a notebooks]
+                            │
+                            ▼
+                     ✅ ¡LISTO!
+```
+
+El script `setup.sh` automatiza completamente la configuración del proyecto en **5 pasos**:
+
+1. **🐍 Verifica e instala Python3** (si no está presente en el sistema)
+   - Detecta automáticamente el sistema operativo (Debian/Ubuntu/RedHat/CentOS)
+   - Instala Python3, pip y venv usando el gestor de paquetes apropiado
+   - Muestra la versión de Python instalada
+
+2. **📝 Configura Git** con las credenciales del proyecto
+   - `user.name`: Alberto-97sc
+   - `user.email`: alberthg.ramos@gmail.com
+
+3. **📦 Instala todas las dependencias**
+   - Actualiza pip a la última versión
+   - Instala el paquete en modo editable (`pip install -e .`)
+   - Incluye soporte para Jupyter notebooks (jupytext, jupyter)
+   - Instala todas las librerías necesarias (SHAP, transformers, torch, etc.)
+
+4. **📥 Descarga el dataset ROCO** desde Google Drive
+   - Descarga automáticamente usando `gdown`
+   - Lo guarda en `data/dataset_roco.zip`
+   - Si ya existe, pregunta si deseas volver a descargarlo
+
+5. **📓 Convierte scripts a notebooks** Jupyter
+   - Genera archivos `.ipynb` en el directorio `experiments/`
+   - Crea notebooks listos para usar en Jupyter
+
+### 📺 Salida del script
+
+Cuando ejecutes `./setup.sh`, verás algo similar a esto:
+
+```
+╔════════════════════════════════════════════════════════════════╗
+║   Inicializando proyecto mmshap_medclip                        ║
+╚════════════════════════════════════════════════════════════════╝
+
+🐍 [1/6] Verificando instalación de Python...
+   ✅ Python ya está instalado (versión 3.12.12)
+
+📝 [2/6] Configurando Git...
+   ✅ Git configurado correctamente
+      Usuario: Alberto-97sc
+      Email: alberthg.ramos@gmail.com
+
+🔧 [3/6] Creando entorno virtual...
+   ✅ Entorno virtual creado
+
+📦 [4/6] Instalando dependencias...
+   → Actualizando pip...
+   → Instalando mmshap_medclip con soporte para notebooks...
+   ✅ Dependencias instaladas correctamente
+
+📥 [5/6] Descargando dataset ROCO desde Google Drive...
+   ✅ Dataset descargado correctamente
+
+📓 [6/7] Convirtiendo scripts a notebooks Jupyter...
+   ✅ Notebooks creados en experiments/
+      - experiments/pubmedclip_roco_isa.ipynb
+      - experiments/whyxrayclip_roco_isa.ipynb
+
+🔧 [7/7] Configurando kernel de Jupyter...
+   ✅ Kernel de Jupyter configurado
+      Nombre: 'Python (mmshap_medclip)'
+      Ubicación: /root/mmshap_medclip/venv/bin/python
+
+╔════════════════════════════════════════════════════════════════╗
+║   ✅ INSTALACIÓN COMPLETADA EXITOSAMENTE                       ║
+╚════════════════════════════════════════════════════════════════╝
+```
+
+### 🚀 Después de ejecutar el script
+
+Una vez completada la instalación, solo necesitas:
+
+```bash
+# Activar el entorno virtual
+source venv/bin/activate
+
+# Ejecutar un experimento
+python experiments/pubmedclip_roco_isa.py
+```
+
+O usar los notebooks generados:
+
+```bash
+# Activar el entorno virtual
+source venv/bin/activate
+
+# Iniciar Jupyter Notebook
+jupyter notebook
+
+# Luego abrir: experiments/pubmedclip_roco_isa.ipynb
+# Seleccionar kernel: "Python (mmshap_medclip)"
+```
+
+### 📋 Requisitos previos
+
+- **Sistema operativo**: Linux (Debian/Ubuntu/RedHat/CentOS) o Mac
+- **Permisos**: Puede requerir `sudo` si Python no está instalado
+- **Conexión a internet**: Para descargar dependencias y dataset
+
+### 🔧 Personalización del script
+
+Si deseas modificar la configuración de Git, edita las siguientes líneas en `setup.sh`:
+
+```bash
+git config user.name "TuUsuario"
+git config user.email "tu.email@example.com"
+```
+
+### ⚠️ Solución de problemas
+
+**Error: Permission denied al ejecutar ./setup.sh**
+```bash
+# Dar permisos de ejecución al script
+chmod +x setup.sh
+./setup.sh
+```
+
+**Error: Python no se instaló automáticamente**
+- El script requiere `sudo` para instalar Python
+- Asegúrate de tener permisos de administrador
+- Alternativamente, instala Python manualmente:
+  ```bash
+  sudo apt-get install python3 python3-pip python3-venv  # Debian/Ubuntu
+  # o
+  sudo yum install python3 python3-pip  # RedHat/CentOS
+  ```
+
+**Error al descargar el dataset**
+- Verifica tu conexión a internet
+- Intenta descargar manualmente desde el [enlace de Google Drive](https://drive.google.com/file/d/1eRUC8F8PtXffa9iArJnyB8AMqlPNoSwc/view?usp=sharing)
+- Coloca el archivo en `data/dataset_roco.zip`
+
+**Quiero ejecutar solo partes del script**
+```bash
+# Ver el contenido del script para ejecutar pasos individuales
+cat setup.sh
+
+# Luego puedes copiar y ejecutar las secciones que necesites
+```
 
 ---
 
@@ -53,6 +236,7 @@ mmshap_medclip/
 ├── scripts/
 │   └── download_dataset.py                 # script para descargar dataset
 ├── data/                                    # carpeta para datasets (no versionada)
+├── setup.sh                                 # script de instalación automática (un solo click)
 ├── pyproject.toml                          # configuración del proyecto y dependencias
 └── README.md
 ```
@@ -83,7 +267,11 @@ El directorio `experiments/` contiene scripts completos listos para ejecutar loc
 
 ---
 
-## 🚀 Instalación
+## 🚀 Instalación Manual
+
+> 💡 **Recomendación**: Si prefieres configurar todo automáticamente, usa el [script de instalación rápida](#-instalación-rápida-un-solo-click) en su lugar.
+
+Esta sección describe cómo instalar manualmente el proyecto paso a paso. Útil si quieres tener más control sobre cada etapa o si el script automático no funciona en tu sistema.
 
 ### 1. Clonar el repositorio
 
@@ -200,7 +388,22 @@ jupytext --to py:percent experiments/pubmedclip_roco_isa.ipynb
 
 ## 🎯 Uso rápido
 
-### Opción 1: Ejecutar scripts directamente
+### Opción 1: Instalación automática + ejecución (RECOMENDADA)
+
+```bash
+# 1. Clonar y configurar todo automáticamente
+git clone https://github.com/Alberto-97sc/mmshap_medclip.git
+cd mmshap_medclip
+./setup.sh
+
+# 2. Activar entorno virtual
+source venv/bin/activate
+
+# 3. Ejecutar experimento
+python experiments/pubmedclip_roco_isa.py
+```
+
+### Opción 2: Ejecutar scripts directamente (manual)
 
 ```bash
 # 1. Descargar dataset
@@ -213,19 +416,20 @@ python experiments/pubmedclip_roco_isa.py
 python experiments/whyxrayclip_roco_isa.py
 ```
 
-### Opción 2: Usar notebooks
+### Opción 3: Usar notebooks
 
 ```bash
-# 1. Convertir script a notebook
-jupytext --to notebook experiments/pubmedclip_roco_isa.py
-
-# 2. Iniciar Jupyter
+# Si usaste setup.sh, los notebooks ya están creados:
+source venv/bin/activate
 jupyter notebook
+# Abrir: experiments/pubmedclip_roco_isa.ipynb
 
-# 3. Abrir experiments/pubmedclip_roco_isa.ipynb y ejecutar celdas
+# Si instalaste manualmente, convierte primero:
+jupytext --to notebook experiments/pubmedclip_roco_isa.py
+jupyter notebook
 ```
 
-### Opción 3: Uso manual paso a paso
+### Opción 4: Uso programático paso a paso
 
 ```python
 from mmshap_medclip.io_utils import load_config
