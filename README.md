@@ -42,7 +42,7 @@ cd mmshap_medclip
                             │
         ┌───────────────────┼───────────────────┐
         ▼                   ▼                   ▼
-  [Verificar Python]  [Configurar Git]  [Crear venv]
+  [Verificar Python]  [Configurar Git]  [Instalar deps]
         │                   │                   │
         └───────────────────┼───────────────────┘
                             ▼
@@ -62,7 +62,7 @@ El script `setup.sh` automatiza completamente la configuración del proyecto en 
 
 1. **🐍 Verifica e instala Python3** (si no está presente en el sistema)
    - Detecta automáticamente el sistema operativo (Debian/Ubuntu/RedHat/CentOS)
-   - Instala Python3, pip y venv usando el gestor de paquetes apropiado
+   - Instala Python3 y pip usando el gestor de paquetes apropiado
    - Muestra la versión de Python instalada
 
 2. **📝 Configura Git** con las credenciales del proyecto
@@ -93,34 +93,28 @@ Cuando ejecutes `./setup.sh`, verás algo similar a esto:
 ║   Inicializando proyecto mmshap_medclip                        ║
 ╚════════════════════════════════════════════════════════════════╝
 
-🐍 [1/6] Verificando instalación de Python...
+🐍 [1/5] Verificando instalación de Python...
    ✅ Python ya está instalado (versión 3.12.12)
 
-📝 [2/6] Configurando Git...
+📝 [2/5] Configurando Git...
    ✅ Git configurado correctamente
       Usuario: Alberto-97sc
       Email: alberthg.ramos@gmail.com
 
-🔧 [3/6] Creando entorno virtual...
-   ✅ Entorno virtual creado
-
-📦 [4/6] Instalando dependencias...
+📦 [3/5] Instalando dependencias...
    → Actualizando pip...
    → Instalando mmshap_medclip con soporte para notebooks...
    ✅ Dependencias instaladas correctamente
+      ✓ Paquete mmshap_medclip en modo editable
+      ✓ Dependencias para notebooks (jupytext, jupyter)
 
-📥 [5/6] Descargando dataset ROCO desde Google Drive...
+📥 [4/5] Descargando dataset ROCO desde Google Drive...
    ✅ Dataset descargado correctamente
 
-📓 [6/7] Convirtiendo scripts a notebooks Jupyter...
+📓 [5/5] Convirtiendo scripts a notebooks Jupyter...
    ✅ Notebooks creados en experiments/
       - experiments/pubmedclip_roco_isa.ipynb
       - experiments/whyxrayclip_roco_isa.ipynb
-
-🔧 [7/7] Configurando kernel de Jupyter...
-   ✅ Kernel de Jupyter configurado
-      Nombre: 'Python (mmshap_medclip)'
-      Ubicación: /root/mmshap_medclip/venv/bin/python
 
 ╔════════════════════════════════════════════════════════════════╗
 ║   ✅ INSTALACIÓN COMPLETADA EXITOSAMENTE                       ║
@@ -132,24 +126,19 @@ Cuando ejecutes `./setup.sh`, verás algo similar a esto:
 Una vez completada la instalación, solo necesitas:
 
 ```bash
-# Activar el entorno virtual
-source venv/bin/activate
-
-# Ejecutar un experimento
-python experiments/pubmedclip_roco_isa.py
+# Ejecutar un experimento directamente
+python3 experiments/pubmedclip_roco_isa.py
+python3 experiments/whyxrayclip_roco_isa.py
 ```
 
 O usar los notebooks generados:
 
 ```bash
-# Activar el entorno virtual
-source venv/bin/activate
-
 # Iniciar Jupyter Notebook
 jupyter notebook
 
 # Luego abrir: experiments/pubmedclip_roco_isa.ipynb
-# Seleccionar kernel: "Python (mmshap_medclip)"
+# Seleccionar cualquier kernel de Python 3.12
 ```
 
 ### 📋 Requisitos previos
@@ -181,7 +170,7 @@ chmod +x setup.sh
 - Asegúrate de tener permisos de administrador
 - Alternativamente, instala Python manualmente:
   ```bash
-  sudo apt-get install python3 python3-pip python3-venv  # Debian/Ubuntu
+  sudo apt-get install python3 python3-pip  # Debian/Ubuntu
   # o
   sudo yum install python3 python3-pip  # RedHat/CentOS
   ```
@@ -191,13 +180,10 @@ chmod +x setup.sh
 - Intenta descargar manualmente desde el [enlace de Google Drive](https://drive.google.com/file/d/1eRUC8F8PtXffa9iArJnyB8AMqlPNoSwc/view?usp=sharing)
 - Coloca el archivo en `data/dataset_roco.zip`
 
-**Quiero ejecutar solo partes del script**
-```bash
-# Ver el contenido del script para ejecutar pasos individuales
-cat setup.sh
-
-# Luego puedes copiar y ejecutar las secciones que necesites
-```
+**Error de importación en notebooks**
+- Asegúrate de seleccionar un kernel de Python 3.12
+- El paquete se instala directamente en el sistema Python
+- No necesitas activar ningún entorno virtual
 
 ---
 
@@ -280,16 +266,7 @@ git clone https://github.com/Alberto-97sc/mmshap_medclip.git
 cd mmshap_medclip
 ```
 
-### 2. Crear entorno virtual (recomendado)
-
-```bash
-python -m venv venv
-source venv/bin/activate  # En Linux/Mac
-# o en Windows:
-# venv\Scripts\activate
-```
-
-### 3. Instalar dependencias
+### 2. Instalar dependencias
 
 **Instalación básica**:
 ```bash
@@ -396,33 +373,30 @@ git clone https://github.com/Alberto-97sc/mmshap_medclip.git
 cd mmshap_medclip
 ./setup.sh
 
-# 2. Activar entorno virtual
-source venv/bin/activate
-
-# 3. Ejecutar experimento
-python experiments/pubmedclip_roco_isa.py
+# 2. Ejecutar experimento directamente
+python3 experiments/pubmedclip_roco_isa.py
 ```
 
 ### Opción 2: Ejecutar scripts directamente (manual)
 
 ```bash
 # 1. Descargar dataset
-python scripts/download_dataset.py
+python3 scripts/download_dataset.py
 
 # 2. Ejecutar experimento con PubMedCLIP
-python experiments/pubmedclip_roco_isa.py
+python3 experiments/pubmedclip_roco_isa.py
 
 # 3. Ejecutar experimento con WhyXrayCLIP
-python experiments/whyxrayclip_roco_isa.py
+python3 experiments/whyxrayclip_roco_isa.py
 ```
 
 ### Opción 3: Usar notebooks
 
 ```bash
 # Si usaste setup.sh, los notebooks ya están creados:
-source venv/bin/activate
 jupyter notebook
 # Abrir: experiments/pubmedclip_roco_isa.ipynb
+# Seleccionar cualquier kernel de Python 3.12
 
 # Si instalaste manualmente, convierte primero:
 jupytext --to notebook experiments/pubmedclip_roco_isa.py
