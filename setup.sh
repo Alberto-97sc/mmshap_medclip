@@ -29,7 +29,7 @@ show_progress() {
     local percentage=$((current * 100 / total))
     local completed=$((width * current / total))
     local remaining=$((width - completed))
-    
+
     printf "\r   Progreso: ["
     printf "%${completed}s" | tr ' ' '█'
     printf "%${remaining}s" | tr ' ' '░'
@@ -42,7 +42,7 @@ show_spinner() {
     local message=$2
     local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     local i=0
-    
+
     while kill -0 $pid 2>/dev/null; do
         i=$(((i + 1) % 10))
         printf "\r   ${spin:$i:1} $message..."
@@ -77,7 +77,7 @@ if command -v python3 &> /dev/null; then
     echo "   ✅ Python ya está instalado (versión $PYTHON_VERSION)"
 else
     echo "   ⚠️  Python no encontrado. Instalando Python3..."
-    
+
     # Detectar sistema operativo
     if [ -f /etc/debian_version ]; then
         # Debian/Ubuntu
@@ -93,7 +93,7 @@ else
         echo "      Por favor, instala Python3 manualmente y vuelve a ejecutar este script"
         exit 1
     fi
-    
+
     PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
     echo "      Versión instalada: $PYTHON_VERSION"
 fi
@@ -275,4 +275,3 @@ echo "      Seleccionar cualquier kernel de Python 3.12"
 echo ""
 echo "📚 Para más información, consulta el README.md"
 echo ""
-
