@@ -1,6 +1,6 @@
 # mmshap_medclip
 
-Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP y WhyXrayCLIP) sobre datasets médicos (p. ej., ROCO). Diseñado para **ejecución local** con datasets descargados desde **Google Drive**.
+Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP, WhyXrayCLIP y Rclip) sobre datasets médicos (p. ej., ROCO). Diseñado para **ejecución local** con datasets descargados desde **Google Drive**.
 
 > 🚀 **Instalación en un solo click**: Ejecuta `./setup.sh` y tendrás todo listo automáticamente. Ver [Instalación Rápida](#-instalación-rápida-un-solo-click).
 
@@ -115,6 +115,7 @@ Cuando ejecutes `./setup.sh`, verás algo similar a esto:
    ✅ Notebooks creados en experiments/
       - experiments/pubmedclip_roco_isa.ipynb
       - experiments/whyxrayclip_roco_isa.ipynb
+      - experiments/rclip_roco_isa.ipynb
 
 ╔════════════════════════════════════════════════════════════════╗
 ║   ✅ INSTALACIÓN COMPLETADA EXITOSAMENTE                       ║
@@ -129,6 +130,7 @@ Una vez completada la instalación, solo necesitas:
 # Ejecutar un experimento directamente
 python3 experiments/pubmedclip_roco_isa.py
 python3 experiments/whyxrayclip_roco_isa.py
+python3 experiments/rclip_roco_isa.py
 ```
 
 O usar los notebooks generados:
@@ -196,7 +198,7 @@ mmshap_medclip/
 │   ├── __init__.py
 │   ├── devices.py                          # manejo de device (CUDA/CPU)
 │   ├── registry.py                         # registro de modelos y datasets
-│   ├── models.py                           # wrappers de CLIP (openai/pubmed…)
+│   ├── models.py                           # wrappers de CLIP (PubMedCLIP, WhyXrayCLIP, Rclip)
 │   ├── io_utils.py                         # cargar configs YAML
 │   ├── metrics.py                          # MM-score, IScore
 │   ├── datasets/
@@ -215,10 +217,12 @@ mmshap_medclip/
 │       └── heatmaps.py                     # mapas de calor imagen+texto
 ├── experiments/
 │   ├── pubmedclip_roco_isa.py              # experimento PubMedCLIP + ROCO
-│   └── whyxrayclip_roco_isa.py             # experimento WhyXrayCLIP + ROCO
+│   ├── whyxrayclip_roco_isa.py             # experimento WhyXrayCLIP + ROCO
+│   └── rclip_roco_isa.py                   # experimento Rclip + ROCO
 ├── configs/
 │   ├── roco_isa_pubmedclip.yaml            # config ISA para PubMedCLIP
-│   └── roco_isa_whyxrayclip.yaml           # config ISA para WhyXrayCLIP
+│   ├── roco_isa_whyxrayclip.yaml           # config ISA para WhyXrayCLIP
+│   └── roco_isa_rclip.yaml                 # config ISA para Rclip
 ├── scripts/
 │   └── download_dataset.py                 # script para descargar dataset
 ├── data/                                    # carpeta para datasets (no versionada)
@@ -245,7 +249,13 @@ El directorio `experiments/` contiene scripts completos listos para ejecutar loc
 - **Tarea**: Image-Sentence Alignment (ISA)
 - **Configuración**: `configs/roco_isa_whyxrayclip.yaml`
 
-**Ambos experimentos incluyen**:
+### 🔬 `rclip_roco_isa.py`
+- **Modelo**: Rclip (entrenado en ROCO con radiología)
+- **Dataset**: ROCO (Radiology Objects in COntext)
+- **Tarea**: Image-Sentence Alignment (ISA)
+- **Configuración**: `configs/roco_isa_rclip.yaml`
+
+**Todos los experimentos incluyen**:
 - Carga automática del dataset desde archivo local
 - Evaluación de balance multimodal con SHAP
 - Generación de visualizaciones (heatmaps)
@@ -340,8 +350,11 @@ Los scripts en `experiments/` están en formato Jupytext (`.py`), lo que permite
 ### Convertir un script a notebook
 
 ```bash
-# Convertir un script específico
+# Convertir un script específico (ejemplo con PubMedCLIP)
 jupytext --to notebook experiments/pubmedclip_roco_isa.py
+
+# Convertir otro script (ejemplo con Rclip)
+jupytext --to notebook experiments/rclip_roco_isa.py
 
 # Convertir todos los scripts
 jupytext --to notebook experiments/*.py
@@ -352,13 +365,20 @@ Esto generará archivos `.ipynb` que puedes abrir con Jupyter Notebook o Jupyter
 ### Actualizar notebook desde script modificado
 
 ```bash
+# Actualizar un notebook específico
 jupytext --sync experiments/pubmedclip_roco_isa.py
+jupytext --sync experiments/rclip_roco_isa.py
+
+# O actualizar todos
+jupytext --sync experiments/*.py
 ```
 
 ### Convertir notebook de vuelta a script
 
 ```bash
+# Convertir un notebook específico de vuelta a script
 jupytext --to py:percent experiments/pubmedclip_roco_isa.ipynb
+jupytext --to py:percent experiments/rclip_roco_isa.ipynb
 ```
 
 ---
@@ -373,8 +393,10 @@ git clone https://github.com/Alberto-97sc/mmshap_medclip.git
 cd mmshap_medclip
 ./setup.sh
 
-# 2. Ejecutar experimento directamente
+# 2. Ejecutar cualquier experimento directamente
 python3 experiments/pubmedclip_roco_isa.py
+python3 experiments/whyxrayclip_roco_isa.py
+python3 experiments/rclip_roco_isa.py
 ```
 
 ### Opción 2: Ejecutar scripts directamente (manual)
@@ -388,6 +410,9 @@ python3 experiments/pubmedclip_roco_isa.py
 
 # 3. Ejecutar experimento con WhyXrayCLIP
 python3 experiments/whyxrayclip_roco_isa.py
+
+# 4. Ejecutar experimento con Rclip
+python3 experiments/rclip_roco_isa.py
 ```
 
 ### Opción 3: Usar notebooks
@@ -395,15 +420,20 @@ python3 experiments/whyxrayclip_roco_isa.py
 ```bash
 # Si usaste setup.sh, los notebooks ya están creados:
 jupyter notebook
-# Abrir: experiments/pubmedclip_roco_isa.ipynb
+# Abrir cualquiera de los notebooks disponibles:
+# - experiments/pubmedclip_roco_isa.ipynb
+# - experiments/whyxrayclip_roco_isa.ipynb
+# - experiments/rclip_roco_isa.ipynb
 # Seleccionar cualquier kernel de Python 3.12
 
 # Si instalaste manualmente, convierte primero:
-jupytext --to notebook experiments/pubmedclip_roco_isa.py
+jupytext --to notebook experiments/*.py
 jupyter notebook
 ```
 
 ### Opción 4: Uso programático paso a paso
+
+Ejemplo con PubMedCLIP:
 
 ```python
 from mmshap_medclip.io_utils import load_config
@@ -413,6 +443,35 @@ from mmshap_medclip.tasks.isa import run_isa_one
 
 # Cargar configuración
 cfg = load_config("configs/roco_isa_pubmedclip.yaml")
+
+# Obtener device (CUDA si está disponible)
+device = get_device()
+
+# Cargar dataset y modelo
+dataset = build_dataset(cfg["dataset"])
+model = build_model(cfg["model"], device=device)
+
+print(f"Dataset cargado: {len(dataset)} muestras")
+print(f"Device: {device}")
+
+# Ejecutar evaluación en una muestra
+sample = dataset[154]
+image, caption = sample['image'], sample['text']
+
+res = run_isa_one(model, image, caption, device, explain=True, plot=True)
+print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscore']:.2%}")
+```
+
+Ejemplo con Rclip (similar para WhyXrayCLIP):
+
+```python
+from mmshap_medclip.io_utils import load_config
+from mmshap_medclip.devices import get_device
+from mmshap_medclip.registry import build_dataset, build_model
+from mmshap_medclip.tasks.isa import run_isa_one
+
+# Cargar configuración de Rclip
+cfg = load_config("configs/roco_isa_rclip.yaml")
 
 # Obtener device (CUDA si está disponible)
 device = get_device()
@@ -480,6 +539,29 @@ model:
   params:
     model_name: hf-hub:yyupenn/whyxrayclip
     tokenizer_name: ViT-L-14
+```
+
+### `configs/roco_isa_rclip.yaml`
+
+```yaml
+experiment_name: demo_roco_rclip
+device: auto
+
+dataset:
+  name: roco
+  params:
+    zip_path: data/dataset_roco.zip
+    split: validation
+    n_rows: all
+    columns:
+      image_key: name
+      caption_key: caption
+      images_subdir: all_data/validation/radiology/images
+
+model:
+  name: rclip
+  params:
+    model_name: kaveh/rclip
 ```
 
 ---

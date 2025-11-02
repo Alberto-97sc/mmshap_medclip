@@ -76,10 +76,32 @@ def build_masker(
             else:
                 nt_dev = nt_dev[:B]
 
-        masked_X[:, 0] = bos_id
+        # Obtener vocab_size si está disponible del tokenizer
+        vocab_size = None
+        if tokenizer is not None:
+            vocab_size = getattr(tokenizer, "vocab_size", None)
+            if vocab_size is None:
+                # Intentar desde config del modelo si el tokenizer lo tiene
+                if hasattr(tokenizer, "model_max_length"):
+                    # Algunos tokenizers exponen esto, pero si no hay vocab_size usar valor seguro
+                    vocab_size = None
+        
+        # Validar y clamp BOS/EOS IDs al rango válido (usar variables locales)
+        valid_bos_id = bos_id
+        valid_eos_id = eos_id
+        if vocab_size is not None:
+            valid_bos_id = max(0, min(bos_id, vocab_size - 1))
+            valid_eos_id = max(0, min(eos_id, vocab_size - 1))
+        
+        # Asegurar que los valores estén en rango válido antes de asignar
+        masked_X[:, 0] = valid_bos_id
         eos_idx = (nt_dev - 1).clamp(min=0, max=L - 1)
         rows = torch.arange(B, device=masked_X.device)
-        masked_X[rows, eos_idx] = eos_id
+        masked_X[rows, eos_idx] = valid_eos_id
+        
+        # Validación final: clamp todos los valores al rango válido si tenemos vocab_size
+        if vocab_size is not None:
+            masked_X = masked_X.clamp(min=0, max=vocab_size - 1)
 
         return masked_X
 

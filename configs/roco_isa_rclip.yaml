@@ -1,0 +1,19 @@
+experiment_name: demo_roco_rclip
+device: auto
+
+dataset:
+  name: roco
+  params:
+    zip_path: data/dataset_roco.zip
+    split: validation
+    n_rows: all
+    columns:
+      image_key: name
+      caption_key: caption
+      images_subdir: all_data/validation/radiology/images
+
+model:
+  name: rclip
+  params:
+    model_name: kaveh/rclip
+

@@ -65,6 +65,49 @@ class Predictor:
         # Longitud de texto (para el split)
         self.text_len = self.base_inputs["input_ids"].shape[1]
 
+        # Obtener vocab_size del tokenizer para validar input_ids
+        tokenizer = getattr(model_wrapper, "tokenizer", None)
+        self.vocab_size = None
+        
+        if tokenizer is not None:
+            # Intentar obtener vocab_size de diferentes formas
+            self.vocab_size = getattr(tokenizer, "vocab_size", None)
+            
+            # Si el tokenizer tiene un atributo len() o __len__, usarlo
+            if self.vocab_size is None:
+                try:
+                    if hasattr(tokenizer, "__len__"):
+                        self.vocab_size = len(tokenizer)
+                except (TypeError, AttributeError):
+                    pass
+            
+            # Intentar desde el modelo/config
+            if self.vocab_size is None:
+                model_config = getattr(self.model, "config", None)
+                if model_config is not None:
+                    # Para VisionTextDualEncoderModel, buscar en text_config
+                    text_config = getattr(model_config, "text_config", None)
+                    if text_config is not None:
+                        self.vocab_size = getattr(text_config, "vocab_size", None)
+                    # Fallback a vocab_size directo en config
+                    if self.vocab_size is None:
+                        self.vocab_size = getattr(model_config, "vocab_size", None)
+        
+        # Si aún no lo encontramos, calcular desde los input_ids base
+        if self.vocab_size is None:
+            max_id_in_base = self.base_inputs["input_ids"].max().item()
+            # Usar el máximo encontrado + margen seguro, pero con un límite razonable
+            self.vocab_size = max(max_id_in_base + 100, 30522)  # BERT base usa 30522
+        
+        # Fallback final seguro
+        if self.vocab_size is None or self.vocab_size <= 0:
+            self.vocab_size = 50257  # Tamaño común de vocabularios grandes
+        
+        # Obtener pad_token_id para usarlo en lugar de valores inválidos
+        self.pad_token_id = 0
+        if tokenizer is not None:
+            self.pad_token_id = getattr(tokenizer, "pad_token_id", None) or 0
+
         self.use_amp = bool(use_amp and self.device.type == "cuda")
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
@@ -83,6 +126,10 @@ class Predictor:
 
         input_ids = x[:, :self.text_len]      # [B, L_txt]
         patch_mask_ids = x[:, self.text_len:] # [B, N]
+
+        # Validar y clamp input_ids al rango válido del vocabulario
+        # Esto previene errores de CUDA "device-side assert triggered"
+        input_ids = input_ids.clamp(min=0, max=self.vocab_size - 1)
 
         out = torch.empty(B, dtype=torch.float32, device=self.device)
 
