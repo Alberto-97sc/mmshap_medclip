@@ -238,11 +238,14 @@ def _compute_isa_shap(
     max_evals = max(int(desired), int(min_needed))
     call_kwargs["max_evals"] = max_evals
 
+    print(f"[ISA DEBUG] Llamando a SHAP con X_clean.shape={X_clean.shape}, max_evals={max_evals}")
     explainer = shap.Explainer(predict_fn, masker, silent=True)
     shap_values = explainer(X_clean.cpu(), **call_kwargs)
+    print(f"[ISA DEBUG] SHAP terminó. Tipo: {type(shap_values)}")
     
     # Debug: verificar los valores SHAP inmediatamente después de calcular
     vals = shap_values.values if hasattr(shap_values, "values") else shap_values
+    print(f"[ISA DEBUG] vals tipo: {type(vals)}, dtype: {vals.dtype if hasattr(vals, 'dtype') else 'N/A'}")
     print(f"[SHAP DEBUG] shap_values.shape: {vals.shape}")
     print(f"[SHAP DEBUG] shap_values: min={vals.min():.6f}, max={vals.max():.6f}, "
           f"mean={vals.mean():.6f}, std={vals.std():.6f}")
