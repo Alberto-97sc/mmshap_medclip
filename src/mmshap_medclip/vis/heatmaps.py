@@ -1,6 +1,6 @@
 # src/mmshap_medclip/vis/heatmaps.py
 import math
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -230,17 +230,19 @@ def plot_text_image_heatmaps(
     cmap_name: str = "coolwarm",
     alpha_img: float = None,
     return_fig: bool = False,
+    text_len: Optional[int] = None,
 ):
     """
     Dibuja, por muestra del batch, el heatmap de parches de imagen usando valores SHAP
     y un renglón de tokens coloreado por la contribución SHAP (con signo) a nivel token.
     - Soporta shap_values con formas (B, L), (B,1,L) o (L,).
-    - Usa attention_mask por muestra para el # de tokens de texto.
+    - Usa text_len si se proporciona, o attention_mask por muestra para el # de tokens de texto.
 
     Params:
       images: PIL o lista de PILs (si pasas una sola, se replica para todo el batch)
       texts:  lista de strings (títulos)
       mm_scores: lista [(tscore, word_shap_dict_con_signo), ...] por muestra
+      text_len: longitud de la secuencia de texto (si None, usa attention_mask)
     """
     # --- normalizar inputs ---
     B = inputs["input_ids"].shape[0]
@@ -316,8 +318,14 @@ def plot_text_image_heatmaps(
         raise ValueError(f"Forma inesperada de shap_values: {vals.shape}")
 
     # --- longitudes de texto por muestra ---
-    seq_lens = [int(inputs["attention_mask"][i].sum().item()) if "attention_mask" in inputs
-                else int(inputs["input_ids"][i].shape[0]) for i in range(B)]
+    # Si text_len está disponible (de _compute_isa_shap), usarlo para todas las muestras
+    # Esto es crítico para modelos con tokenizadores de longitud fija (OpenCLIP con BERT)
+    if text_len is not None:
+        seq_lens = [text_len] * B
+    else:
+        # Fallback: usar attention_mask por muestra
+        seq_lens = [int(inputs["attention_mask"][i].sum().item()) if "attention_mask" in inputs
+                    else int(inputs["input_ids"][i].shape[0]) for i in range(B)]
 
     decoded_info = []
     all_text_values = []
