@@ -458,6 +458,11 @@ def plot_text_image_heatmaps(
 
         heat_tensor = torch.as_tensor(grid_vis, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
         heat_up = F.interpolate(heat_tensor, size=(H, W), mode="nearest").squeeze().numpy()
+        
+        # Debug: imprimir estadísticas del heatmap
+        print(f"[DEBUG] Muestra {i}: min={grid_vis.min():.6f}, max={grid_vis.max():.6f}, "
+              f"mean={grid_vis.mean():.6f}, std={grid_vis.std():.6f}")
+        print(f"[DEBUG] Valores no-cero: {np.count_nonzero(grid_vis)}/{grid_vis.size}")
 
         ax_img = fig.add_subplot(gs[0, i])
         ax_img.imshow(img_vis, origin="upper", interpolation="nearest", zorder=0)
@@ -543,24 +548,36 @@ def plot_text_image_heatmaps(
             vmax_img = max(abs(float(np.percentile(img_vals_concat, 95))), 
                           abs(float(np.percentile(img_vals_concat, 5))))
             vmax_img = max(vmax_img, 1e-8)
+    
+    print(f"[DEBUG] Normalización imagen: vmax_img={vmax_img:.6e}")
+    print(f"[DEBUG] Rango normalización: [{-vmax_img:.6e}, {vmax_img:.6e}]")
 
     norm_img = TwoSlopeNorm(vmin=-vmax_img, vcenter=0.0, vmax=vmax_img)
     cmap_img = plt.get_cmap(cmap_name or "coolwarm")
 
-    for entry in image_overlay_entries:
+    for idx, entry in enumerate(image_overlay_entries):
         ax = entry["ax"]
         heat_up = entry["heat"]
         H = entry["H"]
         W = entry["W"]
-        ax.imshow(
+        
+        print(f"[DEBUG] Dibujando overlay {idx}: shape={heat_up.shape}, "
+              f"min={heat_up.min():.6e}, max={heat_up.max():.6e}, alpha={alpha_overlay}")
+        
+        # Aumentar alpha si los valores son muy pequeños para mejorar visibilidad
+        alpha_to_use = min(alpha_overlay * 1.5, 0.8) if vmax_img < 1.0 else alpha_overlay
+        
+        im = ax.imshow(
             heat_up,
             cmap=cmap_img,
             norm=norm_img,
-            alpha=alpha_overlay,
+            alpha=alpha_to_use,
             origin="upper",
             interpolation="nearest",
             zorder=1,
         )
+        print(f"[DEBUG] Overlay dibujado con alpha={alpha_to_use}")
+        
         ax.set_aspect("equal")
         ax.set_xlim(-0.5, W - 0.5)
         ax.set_ylim(H - 0.5, -0.5)
