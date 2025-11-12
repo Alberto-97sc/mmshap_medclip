@@ -147,16 +147,24 @@ class Predictor:
                     am = masked["attention_mask"]
                     masked["attention_mask"] = (am[i] if am.shape[0] > i else am[0]).unsqueeze(0)
 
-                # Poner en cero los parches donde patch_mask_ids == 0
+                # Enmascarar los parches donde patch_mask_ids == 0
                 mid = patch_mask_ids[i]              # [N]
                 pix = masked["pixel_values"]         # [1, 3, H, W]
+                
+                # Usar una máscara muy distintiva para que afecte significativamente al modelo
+                # En espacio normalizado CLIP, usar un valor extremo
+                # mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711]
+                # Negro (0.0) normalizado = (0 - mean) / std ≈ -1.8
+                # Usar valores muy negativos para hacer la máscara más obvia al modelo
+                mask_value = -2.0  # Valor muy bajo en espacio normalizado
+                
                 for k in range(self.num_patches):
                     if mid[k].item() == 0:
                         r = k // self.grid_w
                         c = k %  self.grid_w
                         r0, r1 = r * self.patch_h, (r + 1) * self.patch_h
                         c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
-                        pix[:, :, r0:r1, c0:c1] = 0
+                        pix[:, :, r0:r1, c0:c1] = mask_value
 
                 outputs = self.wrapper(**masked)     # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()

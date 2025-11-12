@@ -526,7 +526,23 @@ def plot_text_image_heatmaps(
     vmax_img = float(np.percentile(combined_abs, percentile_img)) if combined_abs.size else 0.0
     if not np.isfinite(vmax_img) or vmax_img <= 0:
         vmax_img = float(np.max(combined_abs)) if combined_abs.size else 0.0
-    vmax_img = max(vmax_img, 1e-6)
+    
+    # Si los valores son extremadamente pequeños, usar el máximo absoluto
+    # en lugar del percentil para hacer la visualización más visible
+    if vmax_img < 1e-3:
+        vmax_img = float(np.max(combined_abs)) if combined_abs.size else 0.0
+    
+    # Asegurar un mínimo razonable para la normalización
+    vmax_img = max(vmax_img, 1e-8)
+    
+    # Calcular los valores originales (con signo) para la normalización
+    if all_image_values:
+        img_vals_concat = np.concatenate([v for v in all_image_values if v.size > 0])
+        if img_vals_concat.size > 0 and np.any(img_vals_concat != 0):
+            # Usar el rango real de los valores
+            vmax_img = max(abs(float(np.percentile(img_vals_concat, 95))), 
+                          abs(float(np.percentile(img_vals_concat, 5))))
+            vmax_img = max(vmax_img, 1e-8)
 
     norm_img = TwoSlopeNorm(vmin=-vmax_img, vcenter=0.0, vmax=vmax_img)
     cmap_img = plt.get_cmap(cmap_name or "coolwarm")
