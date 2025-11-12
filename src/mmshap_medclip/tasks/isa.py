@@ -77,7 +77,7 @@ def run_isa_batch(
     if not explain:
         return result
 
-    shap_values, mm_scores, iscores = _compute_isa_shap(
+    shap_values, mm_scores, iscores, text_len = _compute_isa_shap(
         model,
         inputs,
         device=device,
@@ -88,6 +88,7 @@ def run_isa_batch(
         "shap_values": shap_values,
         "mm_scores": mm_scores,
         "iscores": [float(s) for s in iscores],
+        "text_len": text_len,
     })
     return result
 
@@ -99,7 +100,7 @@ def explain_isa(
     amp_if_cuda: bool = True,
 ) -> Dict[str, Any]:
     """Calcula explicaciones ISA para un batch preparado."""
-    shap_values, mm_scores, iscores = _compute_isa_shap(
+    shap_values, mm_scores, iscores, text_len = _compute_isa_shap(
         model,
         inputs,
         device=device,
@@ -110,6 +111,7 @@ def explain_isa(
         "shap_values": shap_values,
         "mm_scores": mm_scores,
         "iscores": [float(s) for s in iscores],
+        "text_len": text_len,
     }
 
     if len(mm_scores) == 1:
@@ -140,6 +142,7 @@ def plot_isa(
     shap_values = isa_output.get("shap_values")
     mm_scores = isa_output.get("mm_scores")
     inputs = isa_output.get("inputs")
+    text_len = isa_output.get("text_len")  # Puede ser None si no está disponible
     if shap_values is None or mm_scores is None or inputs is None:
         raise ValueError("plot_isa necesita 'shap_values', 'mm_scores' e 'inputs' en isa_output.")
 
@@ -152,6 +155,7 @@ def plot_isa(
         mm_scores=mm_scores,
         model_wrapper=model_wrapper,
         return_fig=True,
+        text_len=text_len,
     )
 
     if display_plot:
@@ -165,11 +169,17 @@ def _compute_isa_shap(
     inputs: Dict[str, Any],
     device,
     amp_if_cuda: bool = True,
-) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float]]:
-    """Aplica SHAP al batch dado y retorna valores por muestra."""
+) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float], int]:
+    """Aplica SHAP al batch dado y retorna valores por muestra y text_len."""
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
     image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
-    X_clean, _ = concat_text_image_tokens(inputs, image_token_ids_expanded, device=device)
+    
+    # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
+    # Solo para tokenizadores flexibles (BERT). OpenCLIP tradicional necesita longitud fija
+    X_clean, text_len = concat_text_image_tokens(
+        inputs, image_token_ids_expanded, device=device, 
+        nb_text_tokens=nb_text_tokens_tensor, tokenizer=model.tokenizer
+    )
 
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
     predict_fn = Predictor(
@@ -178,6 +188,7 @@ def _compute_isa_shap(
         patch_size=imginfo["patch_size"],
         device=device,
         use_amp=amp_if_cuda,
+        text_len=text_len,  # Pasar la longitud real de texto (sin padding)
     )
 
     # --- Ajuste automático del presupuesto para el Permutation explainer ---
@@ -242,7 +253,8 @@ def _compute_isa_shap(
     shap_values = explainer(X_clean.cpu(), **call_kwargs)
 
     batch_size = inputs["input_ids"].shape[0]
-    mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(batch_size)]
-    iscores = [compute_iscore(shap_values, inputs, i=i) for i in range(batch_size)]
+    # Pasar text_len para que compute_mm_score use la misma longitud que el Predictor
+    mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i, text_length=text_len) for i in range(batch_size)]
+    iscores = [compute_iscore(shap_values, inputs, i=i, text_length=text_len) for i in range(batch_size)]
 
-    return shap_values, mm_scores, iscores
+    return shap_values, mm_scores, iscores, text_len

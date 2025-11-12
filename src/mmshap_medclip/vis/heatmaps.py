@@ -1,6 +1,6 @@
 # src/mmshap_medclip/vis/heatmaps.py
 import math
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,7 +15,7 @@ _CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float
 _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32)
 
 PLOT_ISA_IMG_PERCENTILE = 90   # escala robusta al percentil 90
-PLOT_ISA_ALPHA_IMG = 0.50      # opacidad del overlay
+PLOT_ISA_ALPHA_IMG = 0.30      # opacidad del overlay (reducida para mejor visibilidad)
 PLOT_ISA_COARSEN_G = 2        # tamaño de super-parches (3x3)
 
 def _infer_patch_size(model_wrapper, inputs, shap_values):
@@ -97,7 +97,10 @@ def _get_special_ids(tokenizer) -> set:
         if val is not None:
             special.add(int(val))
 
-    special.update({49406, 49407, 0})
+    # IDs comunes de tokens especiales en diferentes tokenizadores
+    # OpenCLIP: 49406 (SOT), 49407 (EOT), 0 (PAD)
+    # BERT/PubMedBERT: 101 (CLS), 102 (SEP), 0 (PAD)
+    special.update({49406, 49407, 0, 101, 102})
     return special
 
 
@@ -183,22 +186,41 @@ def _decode_tokens_for_plot(tokenizer, input_ids):
     else:
         text_clean = ""
 
+    # Decodificar tokens
     tokens_vis = []
     for tid in kept_ids:
         decoded_tok = _decode_single_token(tokenizer, tid)
         tokens_vis.append(decoded_tok if decoded_tok else str(tid))
 
-    if not any(tok.strip() for tok in tokens_vis) and text_clean:
-        tokens_vis = text_clean.split()
+    # Filtrar tokens especiales que puedan haberse colado por nombre
+    # (algunos tokenizadores devuelven "[CLS]", "[SEP]", etc como strings)
+    special_token_strings = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "[UNK]", 
+                             "<s>", "</s>", "<pad>", "<unk>", "<mask>",
+                             "<|startoftext|>", "<|endoftext|>"}
+    
+    # Filtrar tokens y sus índices
+    filtered_tokens = []
+    filtered_keep_idx = []
+    for tok, idx in zip(tokens_vis, keep_idx):
+        if tok.strip() not in special_token_strings:
+            filtered_tokens.append(tok)
+            filtered_keep_idx.append(idx)
+    
+    # Si todos fueron filtrados, usar el texto limpio
+    if not filtered_tokens and text_clean:
+        filtered_tokens = text_clean.split()
+        # En este caso, keep_idx ya no es preciso, pero mantener consistencia
+        filtered_keep_idx = list(range(len(filtered_tokens)))
 
-    if not tokens_vis and kept_ids:
-        tokens_vis = [str(t) for t in kept_ids]
+    if not filtered_tokens and kept_ids:
+        filtered_tokens = [str(t) for t in kept_ids]
+        filtered_keep_idx = keep_idx
 
-    return tokens_vis, text_clean, keep_idx
+    return filtered_tokens, text_clean, filtered_keep_idx
 
 
 def plot_text_image_heatmaps(
-    shap_values: Union[np.ndarray, "shap._explanation.Explanation"],
+    shap_values,  # Union[np.ndarray, shap._explanation.Explanation]
     inputs: dict,
     tokenizer,
     images: Union[Image.Image, List[Image.Image]],
@@ -208,17 +230,19 @@ def plot_text_image_heatmaps(
     cmap_name: str = "coolwarm",
     alpha_img: float = None,
     return_fig: bool = False,
+    text_len: Optional[int] = None,
 ):
     """
     Dibuja, por muestra del batch, el heatmap de parches de imagen usando valores SHAP
     y un renglón de tokens coloreado por la contribución SHAP (con signo) a nivel token.
     - Soporta shap_values con formas (B, L), (B,1,L) o (L,).
-    - Usa attention_mask por muestra para el # de tokens de texto.
+    - Usa text_len si se proporciona, o attention_mask por muestra para el # de tokens de texto.
 
     Params:
       images: PIL o lista de PILs (si pasas una sola, se replica para todo el batch)
       texts:  lista de strings (títulos)
       mm_scores: lista [(tscore, word_shap_dict_con_signo), ...] por muestra
+      text_len: longitud de la secuencia de texto (si None, usa attention_mask)
     """
     # --- normalizar inputs ---
     B = inputs["input_ids"].shape[0]
@@ -294,8 +318,14 @@ def plot_text_image_heatmaps(
         raise ValueError(f"Forma inesperada de shap_values: {vals.shape}")
 
     # --- longitudes de texto por muestra ---
-    seq_lens = [int(inputs["attention_mask"][i].sum().item()) if "attention_mask" in inputs
-                else int(inputs["input_ids"][i].shape[0]) for i in range(B)]
+    # Si text_len está disponible (de _compute_isa_shap), usarlo para todas las muestras
+    # Esto es crítico para modelos con tokenizadores de longitud fija (OpenCLIP con BERT)
+    if text_len is not None:
+        seq_lens = [text_len] * B
+    else:
+        # Fallback: usar attention_mask por muestra
+        seq_lens = [int(inputs["attention_mask"][i].sum().item()) if "attention_mask" in inputs
+                    else int(inputs["input_ids"][i].shape[0]) for i in range(B)]
 
     decoded_info = []
     all_text_values = []
@@ -523,25 +553,46 @@ def plot_text_image_heatmaps(
     vmax_img = float(np.percentile(combined_abs, percentile_img)) if combined_abs.size else 0.0
     if not np.isfinite(vmax_img) or vmax_img <= 0:
         vmax_img = float(np.max(combined_abs)) if combined_abs.size else 0.0
-    vmax_img = max(vmax_img, 1e-6)
+    
+    # Si los valores son extremadamente pequeños, usar el máximo absoluto
+    # en lugar del percentil para hacer la visualización más visible
+    if vmax_img < 1e-3:
+        vmax_img = float(np.max(combined_abs)) if combined_abs.size else 0.0
+    
+    # Asegurar un mínimo razonable para la normalización
+    vmax_img = max(vmax_img, 1e-8)
+    
+    # Calcular los valores originales (con signo) para la normalización
+    if all_image_values:
+        img_vals_concat = np.concatenate([v for v in all_image_values if v.size > 0])
+        if img_vals_concat.size > 0 and np.any(img_vals_concat != 0):
+            # Usar el rango real de los valores
+            vmax_img = max(abs(float(np.percentile(img_vals_concat, 95))), 
+                          abs(float(np.percentile(img_vals_concat, 5))))
+            vmax_img = max(vmax_img, 1e-8)
 
     norm_img = TwoSlopeNorm(vmin=-vmax_img, vcenter=0.0, vmax=vmax_img)
     cmap_img = plt.get_cmap(cmap_name or "coolwarm")
 
-    for entry in image_overlay_entries:
+    for idx, entry in enumerate(image_overlay_entries):
         ax = entry["ax"]
         heat_up = entry["heat"]
         H = entry["H"]
         W = entry["W"]
+        
+        # Aumentar alpha ligeramente si los valores son muy pequeños para mejorar visibilidad
+        alpha_to_use = min(alpha_overlay * 1.3, 0.6) if vmax_img < 1.0 else alpha_overlay
+        
         ax.imshow(
             heat_up,
             cmap=cmap_img,
             norm=norm_img,
-            alpha=alpha_overlay,
+            alpha=alpha_to_use,
             origin="upper",
             interpolation="nearest",
             zorder=1,
         )
+        
         ax.set_aspect("equal")
         ax.set_xlim(-0.5, W - 0.5)
         ax.set_ylim(H - 0.5, -0.5)

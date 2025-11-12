@@ -1,6 +1,6 @@
 # mmshap_medclip
 
-Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP, WhyXrayCLIP y Rclip) sobre datasets médicos (p. ej., ROCO). Diseñado para **ejecución local** con datasets descargados desde **Google Drive**.
+Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP, WhyXrayCLIP, Rclip y BiomedCLIP) sobre datasets médicos (p. ej., ROCO). Diseñado para **ejecución local** con datasets descargados desde **Google Drive**.
 
 > 🚀 **Instalación en un solo click**: Ejecuta `./setup.sh` y tendrás todo listo automáticamente. Ver [Instalación Rápida](#-instalación-rápida-un-solo-click).
 
@@ -116,6 +116,7 @@ Cuando ejecutes `./setup.sh`, verás algo similar a esto:
       - experiments/pubmedclip_roco_isa.ipynb
       - experiments/whyxrayclip_roco_isa.ipynb
       - experiments/rclip_roco_isa.ipynb
+      - experiments/biomedclip_roco_isa.ipynb
 
 ╔════════════════════════════════════════════════════════════════╗
 ║   ✅ INSTALACIÓN COMPLETADA EXITOSAMENTE                       ║
@@ -218,11 +219,13 @@ mmshap_medclip/
 ├── experiments/
 │   ├── pubmedclip_roco_isa.py              # experimento PubMedCLIP + ROCO
 │   ├── whyxrayclip_roco_isa.py             # experimento WhyXrayCLIP + ROCO
-│   └── rclip_roco_isa.py                   # experimento Rclip + ROCO
+│   ├── rclip_roco_isa.py                   # experimento Rclip + ROCO
+│   └── biomedclip_roco_isa.py              # experimento BiomedCLIP + ROCO
 ├── configs/
 │   ├── roco_isa_pubmedclip.yaml            # config ISA para PubMedCLIP
 │   ├── roco_isa_whyxrayclip.yaml           # config ISA para WhyXrayCLIP
-│   └── roco_isa_rclip.yaml                 # config ISA para Rclip
+│   ├── roco_isa_rclip.yaml                 # config ISA para Rclip
+│   └── roco_isa_biomedclip.yaml            # config ISA para BiomedCLIP
 ├── scripts/
 │   └── download_dataset.py                 # script para descargar dataset
 ├── data/                                    # carpeta para datasets (no versionada)
@@ -254,6 +257,12 @@ El directorio `experiments/` contiene scripts completos listos para ejecutar loc
 - **Dataset**: ROCO (Radiology Objects in COntext)
 - **Tarea**: Image-Sentence Alignment (ISA)
 - **Configuración**: `configs/roco_isa_rclip.yaml`
+
+### 🧬 `biomedclip_roco_isa.py`
+- **Modelo**: BiomedCLIP (Microsoft - PubMedBERT + ViT-B/16)
+- **Dataset**: ROCO (Radiology Objects in COntext)
+- **Tarea**: Image-Sentence Alignment (ISA)
+- **Configuración**: `configs/roco_isa_biomedclip.yaml`
 
 **Todos los experimentos incluyen**:
 - Carga automática del dataset desde archivo local
@@ -397,6 +406,7 @@ cd mmshap_medclip
 python3 experiments/pubmedclip_roco_isa.py
 python3 experiments/whyxrayclip_roco_isa.py
 python3 experiments/rclip_roco_isa.py
+python3 experiments/biomedclip_roco_isa.py
 ```
 
 ### Opción 2: Ejecutar scripts directamente (manual)
@@ -413,6 +423,9 @@ python3 experiments/whyxrayclip_roco_isa.py
 
 # 4. Ejecutar experimento con Rclip
 python3 experiments/rclip_roco_isa.py
+
+# 5. Ejecutar experimento con BiomedCLIP
+python3 experiments/biomedclip_roco_isa.py
 ```
 
 ### Opción 3: Usar notebooks
@@ -424,6 +437,7 @@ jupyter notebook
 # - experiments/pubmedclip_roco_isa.ipynb
 # - experiments/whyxrayclip_roco_isa.ipynb
 # - experiments/rclip_roco_isa.ipynb
+# - experiments/biomedclip_roco_isa.ipynb
 # Seleccionar cualquier kernel de Python 3.12
 
 # Si instalaste manualmente, convierte primero:
@@ -562,6 +576,29 @@ model:
   name: rclip
   params:
     model_name: kaveh/rclip
+```
+
+### `configs/roco_isa_biomedclip.yaml`
+
+```yaml
+experiment_name: demo_roco_biomedclip
+device: auto
+
+dataset:
+  name: roco
+  params:
+    zip_path: data/dataset_roco.zip
+    split: validation
+    n_rows: all
+    columns:
+      image_key: name
+      caption_key: caption
+      images_subdir: all_data/validation/radiology/images
+
+model:
+  name: biomedclip
+  params:
+    model_name: hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
 ```
 
 ---

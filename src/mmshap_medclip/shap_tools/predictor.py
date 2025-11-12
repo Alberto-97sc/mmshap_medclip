@@ -19,6 +19,7 @@ class Predictor:
         patch_size: Optional[Union[int, Tuple[int, int]]] = None,  # si None se infiere del modelo
         device: Optional[torch.device] = None,
         use_amp: bool = True,                  # AMP en CUDA
+        text_len: Optional[int] = None,        # longitud real de texto (sin padding)
     ):
         self.wrapper = model_wrapper
         self.model = getattr(model_wrapper, "model", model_wrapper).eval()
@@ -63,7 +64,8 @@ class Predictor:
         self.num_patches = self.grid_h * self.grid_w
 
         # Longitud de texto (para el split)
-        self.text_len = self.base_inputs["input_ids"].shape[1]
+        # Usar text_len proporcionado (tokens reales) o fallback al tamaño completo
+        self.text_len = text_len if text_len is not None else self.base_inputs["input_ids"].shape[1]
 
         # Obtener vocab_size del tokenizer para validar input_ids
         tokenizer = getattr(model_wrapper, "tokenizer", None)
@@ -147,16 +149,23 @@ class Predictor:
                     am = masked["attention_mask"]
                     masked["attention_mask"] = (am[i] if am.shape[0] > i else am[0]).unsqueeze(0)
 
-                # Poner en cero los parches donde patch_mask_ids == 0
+                # Enmascarar los parches donde patch_mask_ids == 0
                 mid = patch_mask_ids[i]              # [N]
                 pix = masked["pixel_values"]         # [1, 3, H, W]
+                
+                # Estrategia de enmascaramiento: usar valor constante neutral
+                # En espacio normalizado CLIP, usar gris oscuro (0.0, 0.0, 0.0)
+                mask_value = torch.tensor([0.0, 0.0, 0.0], 
+                                         dtype=pix.dtype, 
+                                         device=pix.device).view(1, 3, 1, 1)
+                
                 for k in range(self.num_patches):
                     if mid[k].item() == 0:
                         r = k // self.grid_w
                         c = k %  self.grid_w
                         r0, r1 = r * self.patch_h, (r + 1) * self.patch_h
                         c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
-                        pix[:, :, r0:r1, c0:c1] = 0
+                        pix[:, :, r0:r1, c0:c1] = mask_value
 
                 outputs = self.wrapper(**masked)     # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()
