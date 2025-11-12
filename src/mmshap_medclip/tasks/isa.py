@@ -175,7 +175,10 @@ def _compute_isa_shap(
     print(f"[ISA DEBUG] image_token_ids_expanded.shape: {image_token_ids_expanded.shape}")
     print(f"[ISA DEBUG] imginfo: {imginfo}")
     
-    X_clean, text_len = concat_text_image_tokens(inputs, image_token_ids_expanded, device=device)
+    # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
+    X_clean, text_len = concat_text_image_tokens(
+        inputs, image_token_ids_expanded, device=device, nb_text_tokens=nb_text_tokens_tensor
+    )
     print(f"[ISA DEBUG] X_clean.shape: {X_clean.shape}, text_len: {text_len}")
 
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
@@ -185,6 +188,7 @@ def _compute_isa_shap(
         patch_size=imginfo["patch_size"],
         device=device,
         use_amp=amp_if_cuda,
+        text_len=text_len,  # Pasar la longitud real de texto (sin padding)
     )
 
     # --- Ajuste automático del presupuesto para el Permutation explainer ---

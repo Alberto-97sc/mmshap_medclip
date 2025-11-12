@@ -141,14 +141,16 @@ def concat_text_image_tokens(
     image_token_ids_expanded: torch.Tensor,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.long,
+    nb_text_tokens: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, int]:
     """
     Concatena [texto | parches] para SHAP.
-    - inputs["input_ids"]: [B, T_text]
+    - inputs["input_ids"]: [B, T_text_padded]
     - image_token_ids_expanded: [B, N_patches]  (salida de make_image_token_ids)
+    - nb_text_tokens: [B] número de tokens reales por muestra (sin padding)
     Retorna:
-      X_clean: [B, T_text + N_patches] (dtype long, en 'device')
-      text_seq_len: T_text
+      X_clean: [B, T_text_real + N_patches] (dtype long, en 'device')
+      text_seq_len: T_text_real (promedio si hay batch)
     """
     input_ids = inputs["input_ids"]
     if image_token_ids_expanded.dim() == 1:
@@ -158,11 +160,30 @@ def concat_text_image_tokens(
     B_img = image_token_ids_expanded.shape[0]
     assert B_txt == B_img, f"Batch mismatch: texto={B_txt}, imagen={B_img}"
 
-    text_seq_len = input_ids.shape[1]
-
     if device is None:
         device = input_ids.device
 
-    X_clean = torch.cat((input_ids, image_token_ids_expanded), dim=1)
+    # Si tenemos nb_text_tokens, usar solo los tokens reales (sin padding)
+    if nb_text_tokens is not None:
+        # Tomar solo los tokens reales de cada muestra
+        X_clean_list = []
+        max_real_tokens = int(nb_text_tokens.max().item())
+        
+        for i in range(B_txt):
+            n_real = int(nb_text_tokens[i].item())
+            # Solo los tokens reales (sin padding)
+            real_tokens = input_ids[i, :n_real]
+            # Concatenar con parches de imagen
+            x_sample = torch.cat([real_tokens, image_token_ids_expanded[i]], dim=0)
+            X_clean_list.append(x_sample)
+        
+        # Pad todas las muestras al mismo tamaño
+        X_clean = torch.nn.utils.rnn.pad_sequence(X_clean_list, batch_first=True, padding_value=0)
+        text_seq_len = max_real_tokens
+    else:
+        # Fallback: usar todo input_ids (con padding)
+        text_seq_len = input_ids.shape[1]
+        X_clean = torch.cat((input_ids, image_token_ids_expanded), dim=1)
+    
     X_clean = X_clean.to(dtype=dtype).to(device)
     return X_clean, text_seq_len

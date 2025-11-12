@@ -19,6 +19,7 @@ class Predictor:
         patch_size: Optional[Union[int, Tuple[int, int]]] = None,  # si None se infiere del modelo
         device: Optional[torch.device] = None,
         use_amp: bool = True,                  # AMP en CUDA
+        text_len: Optional[int] = None,        # longitud real de texto (sin padding)
     ):
         self.wrapper = model_wrapper
         self.model = getattr(model_wrapper, "model", model_wrapper).eval()
@@ -66,7 +67,9 @@ class Predictor:
               f"Grid: {self.grid_h}x{self.grid_w}, Total patches: {self.num_patches}")
 
         # Longitud de texto (para el split)
-        self.text_len = self.base_inputs["input_ids"].shape[1]
+        # Usar text_len proporcionado (tokens reales) o fallback al tamaño completo
+        self.text_len = text_len if text_len is not None else self.base_inputs["input_ids"].shape[1]
+        print(f"[PREDICTOR INIT] text_len: {self.text_len} (input_ids.shape[1]={self.base_inputs['input_ids'].shape[1]})")
 
         # Obtener vocab_size del tokenizer para validar input_ids
         tokenizer = getattr(model_wrapper, "tokenizer", None)
