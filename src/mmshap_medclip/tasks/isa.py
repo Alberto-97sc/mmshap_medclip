@@ -167,19 +167,13 @@ def _compute_isa_shap(
     amp_if_cuda: bool = True,
 ) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float]]:
     """Aplica SHAP al batch dado y retorna valores por muestra."""
-    print(f"[ISA DEBUG] inputs['input_ids'].shape: {inputs['input_ids'].shape}")
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
-    print(f"[ISA DEBUG] nb_text_tokens_tensor: {nb_text_tokens_tensor}")
-    
-    image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model, debug=True)
-    print(f"[ISA DEBUG] image_token_ids_expanded.shape: {image_token_ids_expanded.shape}")
-    print(f"[ISA DEBUG] imginfo: {imginfo}")
+    image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
     
     # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
     X_clean, text_len = concat_text_image_tokens(
         inputs, image_token_ids_expanded, device=device, nb_text_tokens=nb_text_tokens_tensor
     )
-    print(f"[ISA DEBUG] X_clean.shape: {X_clean.shape}, text_len: {text_len}")
 
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
     predict_fn = Predictor(
@@ -249,27 +243,10 @@ def _compute_isa_shap(
     max_evals = max(int(desired), int(min_needed))
     call_kwargs["max_evals"] = max_evals
 
-    print(f"[ISA DEBUG] Llamando a SHAP con X_clean.shape={X_clean.shape}, max_evals={max_evals}")
     explainer = shap.Explainer(predict_fn, masker, silent=True)
     shap_values = explainer(X_clean.cpu(), **call_kwargs)
-    print(f"[ISA DEBUG] SHAP terminó. Tipo: {type(shap_values)}")
-    
-    # Debug: verificar los valores SHAP inmediatamente después de calcular
-    vals = shap_values.values if hasattr(shap_values, "values") else shap_values
-    print(f"[ISA DEBUG] vals tipo: {type(vals)}, dtype: {vals.dtype if hasattr(vals, 'dtype') else 'N/A'}")
-    print(f"[SHAP DEBUG] shap_values.shape: {vals.shape}")
-    print(f"[SHAP DEBUG] shap_values: min={vals.min():.6f}, max={vals.max():.6f}, "
-          f"mean={vals.mean():.6f}, std={vals.std():.6f}")
-    print(f"[SHAP DEBUG] Valores no-cero: {np.count_nonzero(vals)}/{vals.size}")
-    
-    # Separar texto e imagen manualmente para debug
-    batch_size = inputs["input_ids"].shape[0]
-    if batch_size > 0:
-        # Usar text_len real (sin padding) en lugar de input_ids.shape[1]
-        img_vals = vals[0, text_len:] if vals.ndim >= 2 else vals[text_len:]
-        print(f"[SHAP DEBUG] Valores IMAGEN (muestra 0): min={img_vals.min():.6f}, max={img_vals.max():.6f}")
-        print(f"[SHAP DEBUG] No-cero en imagen: {np.count_nonzero(img_vals)}/{img_vals.size}")
 
+    batch_size = inputs["input_ids"].shape[0]
     mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(batch_size)]
     iscores = [compute_iscore(shap_values, inputs, i=i) for i in range(batch_size)]
 
