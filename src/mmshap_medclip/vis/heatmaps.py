@@ -379,6 +379,13 @@ def plot_text_image_heatmaps(
         tlen = seq_lens[i]
         text_slice = feats[:tlen]
         img_slice = feats[tlen:]
+        
+        # Debug: ver los valores SHAP crudos
+        print(f"[DEBUG RAW] Muestra {i}: tlen={tlen}, img_slice.shape={img_slice.shape}")
+        print(f"[DEBUG RAW] img_slice: min={img_slice.min():.6f}, max={img_slice.max():.6f}, "
+              f"mean={img_slice.mean():.6f}, std={img_slice.std():.6f}")
+        print(f"[DEBUG RAW] Valores no-cero en img_slice: {np.count_nonzero(img_slice)}/{img_slice.size}")
+        
         ta = np.abs(text_slice)
         ia = np.abs(img_slice)
         tot = ta.sum() + ia.sum()

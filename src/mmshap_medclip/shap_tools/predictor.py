@@ -163,12 +163,14 @@ class Predictor:
                 # IMPORTANTE: Asegurar que estamos modificando el tensor clonado
                 pix = masked["pixel_values"]         # [1, 3, H, W]
                 
-                # Estrategia de enmascaramiento: usar la media de la imagen completa
-                # Esto es más efectivo que valores constantes porque:
-                # 1. Simula "ausencia de información" sin ser un valor extremo artificial
-                # 2. Es la estrategia estándar en explicabilidad (baseline = mean)
-                # 3. Funciona bien con normalización de diferentes modelos
-                image_mean = pix.mean(dim=(2, 3), keepdim=True)  # [1, 3, 1, 1]
+                # Estrategia de enmascaramiento: usar gris medio en espacio normalizado
+                # Gris medio (0.5, 0.5, 0.5) normalizado con CLIP mean/std
+                # mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711]
+                # gris_normalizado = (0.5 - mean) / std ≈ [0.07, 0.16, 0.33]
+                # Usar un valor neutral que no sea extremo pero sí distintivo
+                mask_value = torch.tensor([0.0, 0.0, 0.0], 
+                                         dtype=pix.dtype, 
+                                         device=pix.device).view(1, 3, 1, 1)
                 
                 # Debug: verificar valores antes del masking
                 if n_masked_patches > 0:
@@ -180,15 +182,18 @@ class Predictor:
                         c = k %  self.grid_w
                         r0, r1 = r * self.patch_h, (r + 1) * self.patch_h
                         c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
-                        # Usar la media de la imagen como valor de referencia
-                        pix[:, :, r0:r1, c0:c1] = image_mean
+                        # Reemplazar con valor de máscara constante
+                        pix[:, :, r0:r1, c0:c1] = mask_value
                 
                 # Debug: verificar que el masking tuvo efecto
                 if n_masked_patches > 0:
                     pix_mean_after = pix.mean().item()
-                    if abs(pix_mean_before - pix_mean_after) < 1e-6:
+                    change = abs(pix_mean_before - pix_mean_after)
+                    if change < 1e-6:
                         print(f"[PREDICTOR WARNING] Masking no tuvo efecto! "
                               f"Before={pix_mean_before:.6f}, After={pix_mean_after:.6f}")
+                    elif n_masked_patches == 1:  # Solo debug para el primer caso
+                        print(f"[PREDICTOR OK] Masking efectivo: cambió {change:.6f}")
 
                 outputs = self.wrapper(**masked)     # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()

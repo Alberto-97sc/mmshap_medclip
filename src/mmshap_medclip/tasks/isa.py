@@ -240,8 +240,22 @@ def _compute_isa_shap(
 
     explainer = shap.Explainer(predict_fn, masker, silent=True)
     shap_values = explainer(X_clean.cpu(), **call_kwargs)
-
+    
+    # Debug: verificar los valores SHAP inmediatamente después de calcular
+    vals = shap_values.values if hasattr(shap_values, "values") else shap_values
+    print(f"[SHAP DEBUG] shap_values.shape: {vals.shape}")
+    print(f"[SHAP DEBUG] shap_values: min={vals.min():.6f}, max={vals.max():.6f}, "
+          f"mean={vals.mean():.6f}, std={vals.std():.6f}")
+    print(f"[SHAP DEBUG] Valores no-cero: {np.count_nonzero(vals)}/{vals.size}")
+    
+    # Separar texto e imagen manualmente para debug
     batch_size = inputs["input_ids"].shape[0]
+    if batch_size > 0:
+        tlen = int(inputs["input_ids"].shape[1])
+        img_vals = vals[0, tlen:] if vals.ndim >= 2 else vals[tlen:]
+        print(f"[SHAP DEBUG] Valores IMAGEN (muestra 0): min={img_vals.min():.6f}, max={img_vals.max():.6f}")
+        print(f"[SHAP DEBUG] No-cero en imagen: {np.count_nonzero(img_vals)}/{img_vals.size}")
+
     mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i) for i in range(batch_size)]
     iscores = [compute_iscore(shap_values, inputs, i=i) for i in range(batch_size)]
 
