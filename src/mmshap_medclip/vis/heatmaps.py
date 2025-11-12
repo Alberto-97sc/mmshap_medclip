@@ -97,7 +97,10 @@ def _get_special_ids(tokenizer) -> set:
         if val is not None:
             special.add(int(val))
 
-    special.update({49406, 49407, 0})
+    # IDs comunes de tokens especiales en diferentes tokenizadores
+    # OpenCLIP: 49406 (SOT), 49407 (EOT), 0 (PAD)
+    # BERT/PubMedBERT: 101 (CLS), 102 (SEP), 0 (PAD)
+    special.update({49406, 49407, 0, 101, 102})
     return special
 
 
@@ -198,7 +201,7 @@ def _decode_tokens_for_plot(tokenizer, input_ids):
 
 
 def plot_text_image_heatmaps(
-    shap_values: Union[np.ndarray, "shap._explanation.Explanation"],
+    shap_values,  # Union[np.ndarray, shap._explanation.Explanation]
     inputs: dict,
     tokenizer,
     images: Union[Image.Image, List[Image.Image]],

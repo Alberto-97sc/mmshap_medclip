@@ -33,10 +33,25 @@ class OpenCLIPTokenizerAdapter:
         return self._tokenizer(texts, **kwargs)
 
     def convert_ids_to_tokens(self, ids: Iterable[int]):
-        decoder = getattr(getattr(self._tokenizer, "tokenizer", None), "decoder", None)
-        if decoder is None:
-            return [str(int(i)) for i in ids]
-        return [decoder.get(int(i), "") for i in ids]
+        # Intentar usar el método nativo del tokenizador si existe
+        inner_tokenizer = getattr(self._tokenizer, "tokenizer", None)
+        if inner_tokenizer is not None and hasattr(inner_tokenizer, "convert_ids_to_tokens"):
+            return inner_tokenizer.convert_ids_to_tokens(ids)
+        
+        # Intentar usar el vocab si existe (para tokenizadores tipo HuggingFace)
+        vocab = getattr(inner_tokenizer, "vocab", None)
+        if vocab is not None:
+            # Crear vocab inverso
+            id_to_token = {v: k for k, v in vocab.items()}
+            return [id_to_token.get(int(i), "[UNK]") for i in ids]
+        
+        # Intentar usar decoder como diccionario (para algunos modelos OpenCLIP)
+        decoder = getattr(inner_tokenizer, "decoder", None)
+        if decoder is not None and hasattr(decoder, "get"):
+            return [decoder.get(int(i), "") for i in ids]
+        
+        # Fallback: convertir IDs a strings
+        return [str(int(i)) for i in ids]
 
     def __getattr__(self, item):
         return getattr(self._tokenizer, item)
@@ -104,6 +119,24 @@ class OpenCLIPWrapper(torch.nn.Module):
         else:
             patch_tuple = None
 
+        # Intentar detectar patch_size desde conv1 (la capa de patchify)
+        if patch_tuple is None and visual is not None:
+            conv1 = getattr(visual, "conv1", None)
+            if conv1 is not None:
+                kernel_size = getattr(conv1, "kernel_size", None)
+                stride = getattr(conv1, "stride", None)
+                # En ViT, el patch_size es el stride de la primera conv
+                if stride is not None:
+                    if isinstance(stride, (list, tuple)):
+                        patch_tuple = tuple(int(s) for s in stride)
+                    else:
+                        patch_tuple = (int(stride), int(stride))
+                elif kernel_size is not None:
+                    if isinstance(kernel_size, (list, tuple)):
+                        patch_tuple = tuple(int(k) for k in kernel_size)
+                    else:
+                        patch_tuple = (int(kernel_size), int(kernel_size))
+
         image_size = getattr(visual, "image_size", None)
         if isinstance(image_size, (list, tuple)):
             image_size = int(image_size[0])
@@ -117,8 +150,8 @@ class OpenCLIPWrapper(torch.nn.Module):
                 image_size = proc_image_size
 
         if patch_tuple is None:
-            # WhyXrayCLIP usa ViT-L/14 @224 por defecto; usa ese fallback.
-            patch_tuple = (14, 14)
+            # Fallback: si no se detectó, usar 16 (más común en modelos modernos)
+            patch_tuple = (16, 16)
         if image_size is None:
             image_size = 224
 
