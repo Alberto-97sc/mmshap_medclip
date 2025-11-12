@@ -61,6 +61,9 @@ class Predictor:
         self.grid_h = H // self.patch_h
         self.grid_w = W // self.patch_w
         self.num_patches = self.grid_h * self.grid_w
+        
+        print(f"[PREDICTOR INIT] Imagen: {H}x{W}, Patch: {patch_h}x{patch_w}, "
+              f"Grid: {self.grid_h}x{self.grid_w}, Total patches: {self.num_patches}")
 
         # Longitud de texto (para el split)
         self.text_len = self.base_inputs["input_ids"].shape[1]
@@ -132,6 +135,12 @@ class Predictor:
         input_ids = input_ids.clamp(min=0, max=self.vocab_size - 1)
 
         out = torch.empty(B, dtype=torch.float32, device=self.device)
+        
+        # Debug: contar cuántos parches están enmascarados en esta llamada
+        if B > 0:
+            n_masked = (patch_mask_ids[0] == 0).sum().item()
+            if n_masked > 0 and n_masked < self.num_patches:
+                print(f"[PREDICTOR DEBUG] Enmascarando {n_masked}/{self.num_patches} parches")
 
         # Contexto AMP (API nueva de PyTorch)
         amp_ctx = torch.amp.autocast("cuda") if self.use_amp else nullcontext()
@@ -149,6 +158,9 @@ class Predictor:
 
                 # Enmascarar los parches donde patch_mask_ids == 0
                 mid = patch_mask_ids[i]              # [N]
+                n_masked_patches = (mid == 0).sum().item()
+                
+                # IMPORTANTE: Asegurar que estamos modificando el tensor clonado
                 pix = masked["pixel_values"]         # [1, 3, H, W]
                 
                 # Estrategia de enmascaramiento: usar la media de la imagen completa
@@ -158,6 +170,10 @@ class Predictor:
                 # 3. Funciona bien con normalización de diferentes modelos
                 image_mean = pix.mean(dim=(2, 3), keepdim=True)  # [1, 3, 1, 1]
                 
+                # Debug: verificar valores antes del masking
+                if n_masked_patches > 0:
+                    pix_mean_before = pix.mean().item()
+                
                 for k in range(self.num_patches):
                     if mid[k].item() == 0:
                         r = k // self.grid_w
@@ -166,8 +182,21 @@ class Predictor:
                         c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
                         # Usar la media de la imagen como valor de referencia
                         pix[:, :, r0:r1, c0:c1] = image_mean
+                
+                # Debug: verificar que el masking tuvo efecto
+                if n_masked_patches > 0:
+                    pix_mean_after = pix.mean().item()
+                    if abs(pix_mean_before - pix_mean_after) < 1e-6:
+                        print(f"[PREDICTOR WARNING] Masking no tuvo efecto! "
+                              f"Before={pix_mean_before:.6f}, After={pix_mean_after:.6f}")
 
                 outputs = self.wrapper(**masked)     # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()
+        
+        # Debug: mostrar rango de logits
+        if B > 0:
+            logits_np = out.detach().cpu().numpy()
+            print(f"[PREDICTOR DEBUG] Logits: min={logits_np.min():.2f}, max={logits_np.max():.2f}, "
+                  f"mean={logits_np.mean():.2f}, std={logits_np.std():.4f}")
 
         return out.detach().cpu().numpy()
