@@ -151,12 +151,12 @@ class Predictor:
                 mid = patch_mask_ids[i]              # [N]
                 pix = masked["pixel_values"]         # [1, 3, H, W]
                 
-                # Usar una máscara muy distintiva para que afecte significativamente al modelo
-                # En espacio normalizado CLIP, usar un valor extremo
-                # mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711]
-                # Negro (0.0) normalizado = (0 - mean) / std ≈ -1.8
-                # Usar valores muy negativos para hacer la máscara más obvia al modelo
-                mask_value = -2.0  # Valor muy bajo en espacio normalizado
+                # Estrategia de enmascaramiento: usar la media de la imagen completa
+                # Esto es más efectivo que valores constantes porque:
+                # 1. Simula "ausencia de información" sin ser un valor extremo artificial
+                # 2. Es la estrategia estándar en explicabilidad (baseline = mean)
+                # 3. Funciona bien con normalización de diferentes modelos
+                image_mean = pix.mean(dim=(2, 3), keepdim=True)  # [1, 3, 1, 1]
                 
                 for k in range(self.num_patches):
                     if mid[k].item() == 0:
@@ -164,7 +164,8 @@ class Predictor:
                         c = k %  self.grid_w
                         r0, r1 = r * self.patch_h, (r + 1) * self.patch_h
                         c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
-                        pix[:, :, r0:r1, c0:c1] = mask_value
+                        # Usar la media de la imagen como valor de referencia
+                        pix[:, :, r0:r1, c0:c1] = image_mean
 
                 outputs = self.wrapper(**masked)     # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()
