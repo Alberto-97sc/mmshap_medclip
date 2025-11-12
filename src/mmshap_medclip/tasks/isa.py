@@ -265,8 +265,8 @@ def _compute_isa_shap(
     # Separar texto e imagen manualmente para debug
     batch_size = inputs["input_ids"].shape[0]
     if batch_size > 0:
-        tlen = int(inputs["input_ids"].shape[1])
-        img_vals = vals[0, tlen:] if vals.ndim >= 2 else vals[tlen:]
+        # Usar text_len real (sin padding) en lugar de input_ids.shape[1]
+        img_vals = vals[0, text_len:] if vals.ndim >= 2 else vals[text_len:]
         print(f"[SHAP DEBUG] Valores IMAGEN (muestra 0): min={img_vals.min():.6f}, max={img_vals.max():.6f}")
         print(f"[SHAP DEBUG] No-cero en imagen: {np.count_nonzero(img_vals)}/{img_vals.size}")
 
