@@ -186,18 +186,37 @@ def _decode_tokens_for_plot(tokenizer, input_ids):
     else:
         text_clean = ""
 
+    # Decodificar tokens
     tokens_vis = []
     for tid in kept_ids:
         decoded_tok = _decode_single_token(tokenizer, tid)
         tokens_vis.append(decoded_tok if decoded_tok else str(tid))
 
-    if not any(tok.strip() for tok in tokens_vis) and text_clean:
-        tokens_vis = text_clean.split()
+    # Filtrar tokens especiales que puedan haberse colado por nombre
+    # (algunos tokenizadores devuelven "[CLS]", "[SEP]", etc como strings)
+    special_token_strings = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "[UNK]", 
+                             "<s>", "</s>", "<pad>", "<unk>", "<mask>",
+                             "<|startoftext|>", "<|endoftext|>"}
+    
+    # Filtrar tokens y sus índices
+    filtered_tokens = []
+    filtered_keep_idx = []
+    for tok, idx in zip(tokens_vis, keep_idx):
+        if tok.strip() not in special_token_strings:
+            filtered_tokens.append(tok)
+            filtered_keep_idx.append(idx)
+    
+    # Si todos fueron filtrados, usar el texto limpio
+    if not filtered_tokens and text_clean:
+        filtered_tokens = text_clean.split()
+        # En este caso, keep_idx ya no es preciso, pero mantener consistencia
+        filtered_keep_idx = list(range(len(filtered_tokens)))
 
-    if not tokens_vis and kept_ids:
-        tokens_vis = [str(t) for t in kept_ids]
+    if not filtered_tokens and kept_ids:
+        filtered_tokens = [str(t) for t in kept_ids]
+        filtered_keep_idx = keep_idx
 
-    return tokens_vis, text_clean, keep_idx
+    return filtered_tokens, text_clean, filtered_keep_idx
 
 
 def plot_text_image_heatmaps(
