@@ -280,3 +280,18 @@ def _mk_rclip(params):
 
     wrapper = RclipWrapper(model, processor)
     return wrapper
+
+@register_model("biomedclip")
+def _mk_biomedclip(params):
+    device = params.get("_device", torch.device("cpu"))
+    model_name = params.get("model_name", "hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224")
+    
+    # BiomedCLIP usa create_model_from_pretrained de open_clip
+    model, preprocess = open_clip.create_model_from_pretrained(model_name)
+    
+    tokenizer_name = params.get("tokenizer_name", model_name)
+    tokenizer = OpenCLIPTokenizerAdapter(open_clip.get_tokenizer(tokenizer_name))
+    processor = OpenCLIPProcessor(preprocess, tokenizer)
+    
+    wrapper = OpenCLIPWrapper(model.to(device), processor, tokenizer)
+    return wrapper
