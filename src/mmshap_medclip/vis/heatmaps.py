@@ -234,14 +234,16 @@ def plot_text_image_heatmaps(
 ):
     """
     Dibuja, por muestra del batch, el heatmap de parches de imagen usando valores SHAP
-    y un renglón de tokens coloreado por la contribución SHAP (con signo) a nivel token.
+    y un renglón de palabras coloreado por la contribución SHAP (con signo) a nivel palabra.
+    - Cada palabra recibe un parche con su valor SHAP agregado (suma de subtokens).
     - Soporta shap_values con formas (B, L), (B,1,L) o (L,).
     - Usa text_len si se proporciona, o attention_mask por muestra para el # de tokens de texto.
 
     Params:
       images: PIL o lista de PILs (si pasas una sola, se replica para todo el batch)
       texts:  lista de strings (títulos)
-      mm_scores: lista [(tscore, word_shap_dict_con_signo), ...] por muestra
+      mm_scores: lista [(tscore, word_shap_dict_con_signo), ...] por muestra donde
+                 word_shap_dict es OrderedDict[str, float] con palabra→valor SHAP
       text_len: longitud de la secuencia de texto (si None, usa attention_mask)
     """
     # --- normalizar inputs ---
@@ -327,23 +329,20 @@ def plot_text_image_heatmaps(
         seq_lens = [int(inputs["attention_mask"][i].sum().item()) if "attention_mask" in inputs
                     else int(inputs["input_ids"][i].shape[0]) for i in range(B)]
 
-    decoded_info = []
+    # Extraer valores de texto e imagen para normalización
     all_text_values = []
     all_image_values = []
     for i in range(B):
         seq_len = seq_lens[i]
-        token_ids = inputs["input_ids"][i][:seq_len]
-        tokens_vis, text_clean, keep_idx = _decode_tokens_for_plot(tokenizer, token_ids)
-        decoded_info.append((tokens_vis, text_clean, keep_idx))
-
         feats = vals_all[i]
-        text_raw = feats[:seq_len]
-        valid_idx = [idx for idx in keep_idx if idx < len(text_raw)]
-        if valid_idx:
-            text_vals = text_raw[valid_idx]
+        
+        # Para normalización de colores, usar los valores de palabras de mm_scores
+        _, word_shap_dict = mm_scores[i]
+        if word_shap_dict:
+            word_vals = np.array([word_shap_dict[w] for w in word_shap_dict.keys()])
+            all_text_values.append(word_vals)
         else:
-            text_vals = np.zeros((0,), dtype=feats.dtype)
-        all_text_values.append(text_vals)
+            all_text_values.append(np.zeros((0,), dtype=feats.dtype))
 
         image_vals = feats[seq_len:]
         all_image_values.append(image_vals)
@@ -497,16 +496,11 @@ def plot_text_image_heatmaps(
         })
 
         # --- texto ---
-        toks_vis, text_clean, keep_idx = decoded_info[i]
-        text_raw = feats[:tlen]
-        valid_idx = [idx for idx in keep_idx if idx < len(text_raw)]
-        text_vals = text_raw[valid_idx] if valid_idx else np.zeros((0,), dtype=text_raw.dtype)
-        if len(toks_vis) > len(text_vals):
-            toks_vis = toks_vis[:len(text_vals)]
-        elif len(text_vals) > len(toks_vis):
-            text_vals = text_vals[:len(toks_vis)]
-
-        toks_display = _format_tokens(toks_vis)
+        # Usar las palabras y sus valores SHAP directamente de mm_scores
+        # para que haya un parche por palabra, no por subtoken
+        _, word_shap_dict = mm_scores[i]
+        words = list(word_shap_dict.keys())
+        word_vals = np.array([word_shap_dict[w] for w in words])
 
         ax_txt = fig.add_subplot(gs[1, i])
         ax_txt.axis("off")
@@ -515,30 +509,37 @@ def plot_text_image_heatmaps(
         ax_txt.text(0.5, 0.85, f"TScore {tscore:.2%}",
                     ha="center", va="center", transform=ax_txt.transAxes, fontsize=13)
 
-        if len(toks_display) == 0 or len(text_vals) == 0:
+        if len(words) == 0 or len(word_vals) == 0:
+            # Fallback: decodificar tokens para mostrar el texto limpio
+            token_ids = inputs["input_ids"][i][:seq_lens[i]]
+            _, text_clean, _ = _decode_tokens_for_plot(tokenizer, token_ids)
             ax_txt.text(0.5, 0.35, text_clean if text_clean else "(sin tokens)",
                         ha="center", va="center", transform=ax_txt.transAxes, fontsize=12)
             continue
 
-        # medir ancho de tokens para centrar
+        # Formatear palabras para mostrar
+        words_display = _format_tokens(words)
+
+        # Medir ancho de palabras para centrar, incluyendo espacios
         widths = []
         bbox_kw = dict(facecolor="white", pad=0.2, alpha=0)
-        for tok in toks_display:
-            t = ax_txt.text(0, 0, tok, ha="left", va="center", fontsize=14, bbox=bbox_kw)
+        for word in words_display:
+            t = ax_txt.text(0, 0, word, ha="left", va="center", fontsize=14, bbox=bbox_kw)
             bb = t.get_window_extent(renderer=renderer)
             bb_data = ax_txt.transAxes.inverted().transform([[bb.x1, bb.y1], [bb.x0, bb.y0]])
             widths.append(bb_data[0,0] - bb_data[1,0])
             t.remove()
 
-        gap     = 0.01
-        total_w = sum(widths) + gap * max(0, len(toks_display)-1)
+        # Agregar espacio entre palabras para que no se sobrepongan los parches
+        gap = 0.02  # Espacio mayor entre palabras
+        total_w = sum(widths) + gap * max(0, len(words_display)-1)
         start_x = 0.5 - total_w/2
         x = start_x
 
-        for tok, val, w in zip(toks_display, text_vals, widths):
+        for word, val, w in zip(words_display, word_vals, widths):
             color = cmap_text(norm_text(val))
             ax_txt.text(
-                x, 0.5, tok,
+                x, 0.5, word,
                 ha="left", va="center", fontsize=14, color="black",
                 transform=ax_txt.transAxes,
                 bbox=dict(facecolor=color, alpha=0.8, edgecolor="white", linewidth=0.5, boxstyle="square,pad=0.2")
@@ -606,7 +607,7 @@ def plot_text_image_heatmaps(
 
     cax_t = fig.add_axes([0.05, 0.03, 0.9, 0.02])
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_text, norm=norm_text),
-                 cax=cax_t, orientation="horizontal", label="Valor SHAP por token")
+                 cax=cax_t, orientation="horizontal", label="Valor SHAP por palabra")
 
     if return_fig:
         return fig
