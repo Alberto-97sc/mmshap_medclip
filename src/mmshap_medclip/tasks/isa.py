@@ -171,8 +171,10 @@ def _compute_isa_shap(
     image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
     
     # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
+    # Solo para tokenizadores flexibles (BERT). OpenCLIP tradicional necesita longitud fija
     X_clean, text_len = concat_text_image_tokens(
-        inputs, image_token_ids_expanded, device=device, nb_text_tokens=nb_text_tokens_tensor
+        inputs, image_token_ids_expanded, device=device, 
+        nb_text_tokens=nb_text_tokens_tensor, tokenizer=model.tokenizer
     )
 
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
