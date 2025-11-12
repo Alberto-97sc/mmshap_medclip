@@ -16,8 +16,8 @@
 #
 # Este notebook forma parte del proyecto de tesis sobre **medición del balance multimodal en modelos CLIP aplicados a dominios médicos**.
 #
-# **Modelo**: PubMedCLIP  
-# **Dataset**: ROCO (Radiology Objects in COntext)  
+# **Modelo**: PubMedCLIP
+# **Dataset**: ROCO (Radiology Objects in COntext)
 # **Tarea**: ISA (Image-Sentence Alignment)
 #
 # ---

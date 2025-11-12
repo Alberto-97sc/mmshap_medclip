@@ -12,15 +12,15 @@
 # ---
 
 # %% [markdown]
-# # 📑 Evaluación de WhyXrayCLIP en ROCO
+# # 📑 Evaluación de Rclip en ROCO
 #
 # Este notebook forma parte del proyecto de tesis sobre **medición del balance multimodal en modelos CLIP aplicados a dominios médicos**.
 #
-# **Modelo**: WhyXrayCLIP
+# **Modelo**: Rclip
 # **Dataset**: ROCO (Radiology Objects in COntext)
 # **Tarea**: ISA (Image-Sentence Alignment)
 #
-# ⚡ Frontend optimizado para máximo rendimiento
+# El modelo Rclip fue entrenado en ROCO con radiología.
 #
 # ---
 
@@ -44,27 +44,20 @@ except NameError:
         PROJECT_ROOT = PROJECT_ROOT.parent
 
 os.chdir(PROJECT_ROOT)
-CFG_PATH = "configs/roco_isa_whyxrayclip.yaml"
-
-from mmshap_medclip.tasks.whyxrayclip import filter_roco_by_keywords
-
-CHESTXRAY_KEYWORDS = ("chest x-ray", "lung")
+CFG_PATH = "configs/roco_isa_rclip.yaml"
 
 # Asegura que cfg, device, dataset y model estén listos en esta sesión
 if not all(k in globals() for k in ("cfg", "device", "dataset", "model")):
     from mmshap_medclip.io_utils import load_config
-    from mmshap_medclip.registry import build_dataset, build_model
     from mmshap_medclip.devices import get_device
+    from mmshap_medclip.registry import build_dataset, build_model
 
     cfg = load_config(CFG_PATH)
-    device = get_device(cfg.get("device", "auto"))
+    device = get_device()
     dataset = build_dataset(cfg["dataset"])
     model = build_model(cfg["model"], device=device)
 
-# Filtra a radiografías de tórax/pulmón
-dataset = filter_roco_by_keywords(dataset, keywords=CHESTXRAY_KEYWORDS)
-
-print("OK → len(dataset) =", len(dataset), "(subset radiografías)", "| device =", device)
+print("OK → len(dataset) =", len(dataset), "| device =", device)
 
 # %% [markdown]
 # ## Ejecutar SHAP en una muestra

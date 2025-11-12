@@ -1,4 +1,4 @@
-experiment_name: demo_roco_sample
+experiment_name: demo_roco_rclip
 device: auto
 
 dataset:
@@ -13,5 +13,6 @@ dataset:
       images_subdir: all_data/validation/radiology/images
 
 model:
-  name: pubmedclip-vit-b32
-  params: {}
+  name: rclip
+  params:
+    model_name: kaveh/rclip
