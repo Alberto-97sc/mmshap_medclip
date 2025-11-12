@@ -167,9 +167,16 @@ def _compute_isa_shap(
     amp_if_cuda: bool = True,
 ) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float]]:
     """Aplica SHAP al batch dado y retorna valores por muestra."""
+    print(f"[ISA DEBUG] inputs['input_ids'].shape: {inputs['input_ids'].shape}")
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
-    image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
-    X_clean, _ = concat_text_image_tokens(inputs, image_token_ids_expanded, device=device)
+    print(f"[ISA DEBUG] nb_text_tokens_tensor: {nb_text_tokens_tensor}")
+    
+    image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model, debug=True)
+    print(f"[ISA DEBUG] image_token_ids_expanded.shape: {image_token_ids_expanded.shape}")
+    print(f"[ISA DEBUG] imginfo: {imginfo}")
+    
+    X_clean, text_len = concat_text_image_tokens(inputs, image_token_ids_expanded, device=device)
+    print(f"[ISA DEBUG] X_clean.shape: {X_clean.shape}, text_len: {text_len}")
 
     masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
     predict_fn = Predictor(
