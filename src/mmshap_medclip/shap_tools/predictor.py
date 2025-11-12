@@ -68,11 +68,11 @@ class Predictor:
         # Obtener vocab_size del tokenizer para validar input_ids
         tokenizer = getattr(model_wrapper, "tokenizer", None)
         self.vocab_size = None
-        
+
         if tokenizer is not None:
             # Intentar obtener vocab_size de diferentes formas
             self.vocab_size = getattr(tokenizer, "vocab_size", None)
-            
+
             # Si el tokenizer tiene un atributo len() o __len__, usarlo
             if self.vocab_size is None:
                 try:
@@ -80,7 +80,7 @@ class Predictor:
                         self.vocab_size = len(tokenizer)
                 except (TypeError, AttributeError):
                     pass
-            
+
             # Intentar desde el modelo/config
             if self.vocab_size is None:
                 model_config = getattr(self.model, "config", None)
@@ -92,17 +92,17 @@ class Predictor:
                     # Fallback a vocab_size directo en config
                     if self.vocab_size is None:
                         self.vocab_size = getattr(model_config, "vocab_size", None)
-        
+
         # Si aún no lo encontramos, calcular desde los input_ids base
         if self.vocab_size is None:
             max_id_in_base = self.base_inputs["input_ids"].max().item()
             # Usar el máximo encontrado + margen seguro, pero con un límite razonable
             self.vocab_size = max(max_id_in_base + 100, 30522)  # BERT base usa 30522
-        
+
         # Fallback final seguro
         if self.vocab_size is None or self.vocab_size <= 0:
             self.vocab_size = 50257  # Tamaño común de vocabularios grandes
-        
+
         # Obtener pad_token_id para usarlo en lugar de valores inválidos
         self.pad_token_id = 0
         if tokenizer is not None:

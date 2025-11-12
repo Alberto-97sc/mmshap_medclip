@@ -16,4 +16,3 @@ model:
   name: rclip
   params:
     model_name: kaveh/rclip
-

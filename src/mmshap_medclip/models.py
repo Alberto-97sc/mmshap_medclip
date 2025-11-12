@@ -200,13 +200,13 @@ def _mk_whyxrayclip(params):
 
 class RclipWrapper(torch.nn.Module):
     """Wrapper para VisionTextDualEncoderModel (Rclip) compatible con el pipeline ISA."""
-    
+
     def __init__(self, model, processor):
         super().__init__()
         self.model = model.eval()
         self.processor = processor
         self.tokenizer = processor.tokenizer
-        
+
         # Extraer patch_size del modelo para SHAP
         vision_config = getattr(model.config, "vision_config", None)
         if vision_config is None:
@@ -214,57 +214,57 @@ class RclipWrapper(torch.nn.Module):
         patch_size = None
         if vision_config:
             patch_size = getattr(vision_config, "patch_size", None)
-        
+
         # Si no se encuentra patch_size, usar un valor por defecto razonable
         if patch_size is None:
             patch_size = 32  # Valor por defecto común para modelos ViT
-        
+
         self.patch_size = (patch_size, patch_size) if isinstance(patch_size, int) else patch_size
         self.vision_patch_size = self.patch_size
-        
+
         # Verificar si el modelo tiene logit_scale
         self.logit_scale = getattr(model, "logit_scale", None)
-    
+
     def forward(self, **inputs):
         """Forward que devuelve logits_per_image compatible con el pipeline."""
         # VisionTextDualEncoderModel puede devolver diferentes estructuras
         # Calculamos los logits manualmente para asegurar compatibilidad
         outputs = self.model(**inputs)
-        
+
         # Si ya tiene logits_per_image, usarlo directamente
         if hasattr(outputs, "logits_per_image"):
             return outputs
-        
+
         # Si no, calcular manualmente usando get_image_features y get_text_features
         pixel_values = inputs.get("pixel_values")
         input_ids = inputs.get("input_ids")
         attention_mask = inputs.get("attention_mask")
-        
+
         if pixel_values is None or input_ids is None:
             # Intentar usar el forward normal si los métodos no están disponibles
             return outputs
-        
+
         with torch.no_grad():
             img_emb = self.model.get_image_features(pixel_values=pixel_values)
             txt_emb = self.model.get_text_features(
                 input_ids=input_ids,
                 attention_mask=attention_mask
             )
-        
+
         # Normalizar embeddings
         img_emb = img_emb / img_emb.norm(dim=-1, keepdim=True)
         txt_emb = txt_emb / txt_emb.norm(dim=-1, keepdim=True)
-        
+
         # Calcular similitud coseno
         logits_per_image = img_emb @ txt_emb.T
-        
+
         # Aplicar logit_scale si existe
         if self.logit_scale is not None:
             scale = self.logit_scale.exp() if hasattr(self.logit_scale, "exp") else self.logit_scale
             logits_per_image = scale * logits_per_image
-        
+
         logits_per_text = logits_per_image.T
-        
+
         # Retornar en formato compatible
         return SimpleNamespace(
             logits_per_image=logits_per_image,
@@ -277,6 +277,6 @@ def _mk_rclip(params):
     model_name = params.get("model_name", "kaveh/rclip")
     model = VisionTextDualEncoderModel.from_pretrained(model_name).to(device).eval()
     processor = VisionTextDualEncoderProcessor.from_pretrained(model_name)
-    
+
     wrapper = RclipWrapper(model, processor)
     return wrapper

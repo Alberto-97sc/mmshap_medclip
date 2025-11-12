@@ -16,8 +16,8 @@
 #
 # Este notebook forma parte del proyecto de tesis sobre **medición del balance multimodal en modelos CLIP aplicados a dominios médicos**.
 #
-# **Modelo**: Rclip  
-# **Dataset**: ROCO (Radiology Objects in COntext)  
+# **Modelo**: Rclip
+# **Dataset**: ROCO (Radiology Objects in COntext)
 # **Tarea**: ISA (Image-Sentence Alignment)
 #
 # El modelo Rclip fue entrenado en ROCO con radiología.
@@ -72,4 +72,3 @@ image, caption = sample['image'], sample['text']
 
 res = run_isa_one(model, image, caption, device, explain=True, plot=True)
 print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscore']:.2%}")
-
