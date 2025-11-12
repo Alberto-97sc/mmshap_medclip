@@ -15,7 +15,7 @@ _CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float
 _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32)
 
 PLOT_ISA_IMG_PERCENTILE = 90   # escala robusta al percentil 90
-PLOT_ISA_ALPHA_IMG = 0.50      # opacidad del overlay
+PLOT_ISA_ALPHA_IMG = 0.30      # opacidad del overlay (reducida para mejor visibilidad)
 PLOT_ISA_COARSEN_G = 2        # tamaño de super-parches (3x3)
 
 def _infer_patch_size(model_wrapper, inputs, shap_values):
@@ -580,8 +580,8 @@ def plot_text_image_heatmaps(
         H = entry["H"]
         W = entry["W"]
         
-        # Aumentar alpha si los valores son muy pequeños para mejorar visibilidad
-        alpha_to_use = min(alpha_overlay * 1.5, 0.8) if vmax_img < 1.0 else alpha_overlay
+        # Aumentar alpha ligeramente si los valores son muy pequeños para mejorar visibilidad
+        alpha_to_use = min(alpha_overlay * 1.3, 0.6) if vmax_img < 1.0 else alpha_overlay
         
         ax.imshow(
             heat_up,
