@@ -39,18 +39,23 @@ class OpenCLIPTokenizerAdapter:
             return inner_tokenizer.convert_ids_to_tokens(ids)
         
         # Intentar usar el vocab si existe (para tokenizadores tipo HuggingFace)
-        vocab = getattr(inner_tokenizer, "vocab", None)
+        vocab = getattr(inner_tokenizer, "vocab", None) if inner_tokenizer else None
         if vocab is not None:
             # Crear vocab inverso
             id_to_token = {v: k for k, v in vocab.items()}
             return [id_to_token.get(int(i), "[UNK]") for i in ids]
         
-        # Intentar usar decoder como diccionario (para algunos modelos OpenCLIP)
-        decoder = getattr(inner_tokenizer, "decoder", None)
+        # Intentar usar decoder directamente en _tokenizer (SimpleTokenizer)
+        decoder = getattr(self._tokenizer, "decoder", None)
         if decoder is not None and hasattr(decoder, "get"):
-            return [decoder.get(int(i), "") for i in ids]
+            return [decoder.get(int(i), f"[ID:{i}]") for i in ids]
         
-        # Fallback: convertir IDs a strings
+        # Intentar usar decoder en inner_tokenizer
+        decoder = getattr(inner_tokenizer, "decoder", None) if inner_tokenizer else None
+        if decoder is not None and hasattr(decoder, "get"):
+            return [decoder.get(int(i), f"[ID:{i}]") for i in ids]
+        
+        # Fallback: convertir IDs a strings (último recurso)
         return [str(int(i)) for i in ids]
 
     def __getattr__(self, item):
