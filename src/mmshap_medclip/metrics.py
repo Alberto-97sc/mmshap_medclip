@@ -94,12 +94,25 @@ def compute_mm_score(
         # 4. Verificar si la primera palabra es sospechosamente larga
         first_word_too_long = len(words) > 0 and len(words[0]) > 15
         
+        # 5. NUEVO: Contar espacios en el texto original
+        # Si el texto tiene muy pocos espacios, probablemente no se decodificó bien
+        space_count = text_decoded.count(' ')
+        min_expected_spaces = max(3, len(token_ids_list) // 4)
+        has_too_few_spaces = space_count < min_expected_spaces
+        
+        # 6. NUEVO: Ratio caracteres/palabras (detecta palabras pegadas)
+        # Si el promedio de caracteres por palabra es muy alto, hay problema
+        avg_word_length = len(text_decoded.replace(' ', '')) / max(len(words), 1)
+        avg_word_too_long = avg_word_length > 12
+        
         # Si alguna validación falla, usar método de subtokens
         decode_is_valid = (
             len(words) >= min_expected_words and
             not has_very_long_words and
             not has_too_few_words and
-            not first_word_too_long
+            not first_word_too_long and
+            not has_too_few_spaces and
+            not avg_word_too_long
         )
         
         if (decode_is_valid or len(token_ids_list) <= 5):
