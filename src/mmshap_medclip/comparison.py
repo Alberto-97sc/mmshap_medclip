@@ -433,23 +433,23 @@ def plot_individual_heatmaps(results: Dict[str, Any], image, caption: str):
             continue
         
         try:
+            # Modificar el texto para incluir el nombre del modelo
+            text_with_model = f"[{model_name}] {caption}"
+            
             fig = plot_text_image_heatmaps(
                 shap_values=shap_values,
                 inputs=inputs,
                 tokenizer=model_wrapper.tokenizer,
                 images=image,
-                texts=[caption],
+                texts=[text_with_model],
                 mm_scores=mm_scores,
                 model_wrapper=model_wrapper,
                 return_fig=True,
                 text_len=text_len,
             )
             
-            # Agregar título del modelo
-            fig.suptitle(
-                f"{model_name} - Análisis SHAP Detallado\n{caption[:80]}...", 
-                fontsize=14, fontweight='bold', y=0.98
-            )
+            # Ajustar el layout para evitar superposición
+            fig.tight_layout()
             
             plt.show()
             
@@ -457,7 +457,7 @@ def plot_individual_heatmaps(results: Dict[str, Any], image, caption: str):
             tscore = result.get('tscore', 0.0)
             iscore = result.get('iscore', 0.0)
             logit = result.get('logit', 0.0)
-            print(f"Logit: {logit:.4f} | TScore: {tscore:.2%} | IScore: {iscore:.2%}\n")
+            print(f"📊 {model_name} - Logit: {logit:.4f} | TScore: {tscore:.2%} | IScore: {iscore:.2%}\n")
             
         except Exception as e:
             print(f"❌ Error generando heatmap para {model_name}: {e}\n")
