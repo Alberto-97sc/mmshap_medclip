@@ -433,27 +433,22 @@ def plot_individual_heatmaps(results: Dict[str, Any], image, caption: str):
             continue
         
         try:
-            # Modificar el texto para incluir el nombre del modelo
-            text_with_model = f"[{model_name}] {caption}"
-            
+            # Generar heatmap individual sin modificaciones
             fig = plot_text_image_heatmaps(
                 shap_values=shap_values,
                 inputs=inputs,
                 tokenizer=model_wrapper.tokenizer,
                 images=image,
-                texts=[text_with_model],
+                texts=[caption],
                 mm_scores=mm_scores,
                 model_wrapper=model_wrapper,
                 return_fig=True,
                 text_len=text_len,
             )
             
-            # Ajustar el layout para evitar superposición
-            fig.tight_layout()
-            
             plt.show()
             
-            # Imprimir métricas
+            # Imprimir métricas en consola
             tscore = result.get('tscore', 0.0)
             iscore = result.get('iscore', 0.0)
             logit = result.get('logit', 0.0)
