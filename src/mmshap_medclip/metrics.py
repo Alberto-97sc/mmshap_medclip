@@ -253,21 +253,43 @@ def compute_mm_score(
             if is_special:
                 continue
             
-            # heurísticas de segmentación
-            start_of_word = tok.startswith("Ġ") or tok.startswith("▁")
-            end_of_word = tok.endswith("</w>")
+            # Heurísticas de segmentación para diferentes tipos de tokenizadores
+            tok_str_original = str(tok)
             
-            piece = str(tok)
+            # WordPiece (BERT, PubMedBERT): tokens que continúan empiezan con ##
+            is_continuation = tok_str_original.startswith("##")
+            
+            # SentencePiece: tokens que empiezan palabra tienen Ġ o ▁
+            start_of_word = tok_str_original.startswith("Ġ") or tok_str_original.startswith("▁")
+            
+            # BPE: tokens que terminan palabra tienen </w>
+            end_of_word = tok_str_original.endswith("</w>")
+            
+            # Limpiar el token
+            piece = tok_str_original
             piece = piece.lstrip("Ġ").lstrip("▁")
             piece = piece.replace("</w>", "")
-            piece = piece.lstrip("#")  # WordPiece
+            piece = piece.lstrip("#")  # Remover ## de WordPiece
+            
+            # Lógica de agrupación:
+            # - Si NO es continuación y NO empieza con Ġ/▁ → nueva palabra (WordPiece)
+            # - Si empieza con Ġ/▁ → nueva palabra (SentencePiece)
+            # - Si es continuación (##) → agregar a palabra actual
             
             if start_of_word and cur_word:
+                # SentencePiece: Ġ o ▁ indica nueva palabra
                 flush()
+            elif not is_continuation and cur_word and not start_of_word:
+                # WordPiece: si NO tiene ## y ya hay palabra, es nueva palabra
+                flush()
+            
             cur_word += piece
             cur_score += float(score)
+            
             if end_of_word:
                 flush()
+        
+        # Flush final para la última palabra
         flush()
 
     return tscore, word_shap
