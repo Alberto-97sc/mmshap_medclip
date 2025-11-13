@@ -53,47 +53,49 @@ os.chdir(PROJECT_ROOT)
 print(f"📂 Directorio de trabajo: {PROJECT_ROOT}")
 
 # %% [markdown]
-# ## 🎯 Cargar dataset y dispositivo
+# ## 🚀 Ejecutar análisis completo de los 4 modelos
+#
+# Este bloque carga el dataset, los modelos, ejecuta SHAP y muestra los resultados.
 
 # %%
 from mmshap_medclip.io_utils import load_config
 from mmshap_medclip.devices import get_device
 from mmshap_medclip.registry import build_dataset
+from mmshap_medclip.comparison import (
+    load_all_models,
+    run_shap_on_all_models,
+    print_summary,
+    plot_individual_heatmaps
+)
 
+# 🎯 CONFIGURACIÓN: Cambiar este número para probar diferentes muestras
+MUESTRA_A_ANALIZAR = 154
+
+# ─────────────────────────────────────────────────────────────────
+# 1. CARGAR DATASET Y DISPOSITIVO
+# ─────────────────────────────────────────────────────────────────
 print("🔄 Cargando configuración y dataset...")
 cfg = load_config("configs/roco_isa_pubmedclip.yaml")
 device = get_device()
 dataset = build_dataset(cfg["dataset"])
 
 print(f"✅ Dataset cargado: {len(dataset)} muestras")
-print(f"💻 Dispositivo: {device}")
+print(f"💻 Dispositivo: {device}\n")
 
-# %% [markdown]
-# ## 🤖 Cargar los 4 modelos
-
-# %%
-from mmshap_medclip.comparison import load_all_models
-
+# ─────────────────────────────────────────────────────────────────
+# 2. CARGAR LOS 4 MODELOS
+# ─────────────────────────────────────────────────────────────────
 models = load_all_models(device)
-
-# Filtrar solo los modelos que se cargaron correctamente
 loaded_models = {k: v for k, v in models.items() if v is not None}
-print(f"\n📊 Modelos cargados: {len(loaded_models)}/{len(models)}")
+print(f"\n📊 Modelos cargados: {len(loaded_models)}/{len(models)}\n")
 
-# %% [markdown]
-# ## 🚀 Ejecutar comparación en una muestra
-
-# %%
-from mmshap_medclip.comparison import run_shap_on_all_models
-
-# 🎯 CONFIGURACIÓN: Cambiar este número para probar diferentes muestras
-MUESTRA_A_ANALIZAR = 154
-
+# ─────────────────────────────────────────────────────────────────
+# 3. EJECUTAR SHAP EN TODOS LOS MODELOS
+# ─────────────────────────────────────────────────────────────────
 print("="*80)
 print("🚀 INICIANDO ANÁLISIS COMPARATIVO")
 print("="*80)
 
-# Ejecutar SHAP en todos los modelos
 results, image, caption = run_shap_on_all_models(
     models=loaded_models,
     sample_idx=MUESTRA_A_ANALIZAR,
@@ -102,23 +104,18 @@ results, image, caption = run_shap_on_all_models(
     verbose=True
 )
 
-# %% [markdown]
-# ## 📈 Resumen de resultados
-
-# %%
-from mmshap_medclip.comparison import print_summary
-
+# ─────────────────────────────────────────────────────────────────
+# 4. MOSTRAR RESUMEN DE RESULTADOS
+# ─────────────────────────────────────────────────────────────────
 print_summary(results)
 
-# %% [markdown]
-# ## 🔍 Visualizar heatmaps individuales detallados
-#
-# Esta sección muestra los heatmaps completos con las palabras coloreadas para cada modelo.
+# ─────────────────────────────────────────────────────────────────
+# 5. VISUALIZAR HEATMAPS INDIVIDUALES DETALLADOS
+# ─────────────────────────────────────────────────────────────────
+print("\n" + "="*80)
+print("🔍 GENERANDO HEATMAPS INDIVIDUALES DETALLADOS")
+print("="*80 + "\n")
 
-# %%
-from mmshap_medclip.comparison import plot_individual_heatmaps
-
-# Generar heatmaps individuales para cada modelo
 plot_individual_heatmaps(results, image, caption)
 
 # %% [markdown]
