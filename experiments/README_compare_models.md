@@ -40,7 +40,9 @@ python experiments/compare_all_models.py
 
 El script ejecuta SHAP en todos los modelos y genera:
 
-1. **Visualización comparativa** - Grid 2x2 con los 4 heatmaps
+1. **Visualización comparativa** - Grid 2x2 con los 4 modelos
+   - Heatmap de imagen con overlay SHAP
+   - Heatmap de texto con palabras coloreadas según importancia
 2. **Tabla de métricas** - Logit, TScore, IScore para cada modelo
 3. **Análisis de balance** - Identificación del modelo más balanceado
 

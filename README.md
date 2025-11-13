@@ -461,7 +461,9 @@ jupyter notebook experiments/compare_all_models.ipynb
 **Características:**
 - ✅ Carga los 4 modelos automáticamente
 - ✅ Ejecuta SHAP en todos con la misma muestra
-- ✅ Visualización comparativa en grid 2x2
+- ✅ Visualización comparativa en grid 2x2 con:
+  - Heatmap de imagen (overlay SHAP)
+  - Heatmap de texto (palabras coloreadas)
 - ✅ Resumen de métricas (Logit, TScore, IScore)
 - ✅ Identifica el modelo más balanceado
 

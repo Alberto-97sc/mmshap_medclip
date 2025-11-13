@@ -150,7 +150,7 @@ def plot_comparison_simple(
     sample_idx: int
 ):
     """
-    Crea una visualización simplificada con las 4 imágenes con overlays.
+    Crea una visualización completa con imagen + texto para los 4 modelos.
     
     Args:
         results: Diccionario con resultados de cada modelo
@@ -161,6 +161,8 @@ def plot_comparison_simple(
     Returns:
         Figura de matplotlib
     """
+    from matplotlib.colors import Normalize
+    
     # Constantes de normalización CLIP
     CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float32)
     CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32)
@@ -173,41 +175,115 @@ def plot_comparison_simple(
         print("❌ No hay resultados válidos para mostrar")
         return None
     
-    # Organizar en grid
+    # Organizar en grid de columnas
     if n_models <= 2:
-        rows, cols = 1, n_models
+        cols = n_models
     else:
-        rows = 2
         cols = 2
-    
-    # Crear figura
-    fig, axes = plt.subplots(rows, cols, figsize=(8 * cols, 8 * rows))
-    if n_models == 1:
-        axes = np.array([axes])
-    axes = axes.flatten() if n_models > 1 else axes
-    
-    fig.suptitle(
-        f"🔬 Comparación de Modelos CLIP Médicos - Muestra #{sample_idx}\n\"{caption[:100]}...\"", 
-        fontsize=16, fontweight='bold', y=0.98
-    )
     
     model_names = list(valid_results.keys())
     
-    for idx, (model_name, ax) in enumerate(zip(model_names, axes)):
+    # Crear figura con GridSpec para tener imagen + texto por modelo
+    # Cada modelo tiene 2 filas: imagen (más grande) y texto (más pequeña)
+    fig = plt.figure(figsize=(12 * cols, 7 * ((n_models + cols - 1) // cols)))
+    
+    fig.suptitle(
+        f"🔬 Comparación de Modelos CLIP Médicos - Muestra #{sample_idx}\n\"{caption[:100]}...\"", 
+        fontsize=16, fontweight='bold', y=0.99
+    )
+    
+    # Calcular valores de texto e imagen para normalización global
+    all_text_values = []
+    all_image_values = []
+    
+    for model_name in model_names:
         result = valid_results[model_name]
+        mm_scores = result.get("mm_scores")
+        shap_values = result.get("shap_values")
+        inputs = result.get("inputs")
+        text_len = result.get("text_len")
+        
+        if mm_scores and shap_values is not None and inputs is not None:
+            # Valores de texto
+            _, word_shap_dict = mm_scores[0]
+            if word_shap_dict:
+                word_vals = np.array([word_shap_dict[w] for w in word_shap_dict.keys()])
+                all_text_values.append(word_vals)
+            
+            # Valores de imagen
+            vals = shap_values.values if hasattr(shap_values, "values") else shap_values
+            if vals.ndim == 1:
+                vals = vals[None, :]
+            elif vals.ndim == 3:
+                vals = vals[:, 0, :]
+            
+            if text_len is not None:
+                seq_len = text_len
+            else:
+                if "attention_mask" in inputs:
+                    seq_len = int(inputs["attention_mask"][0].sum().item())
+                else:
+                    seq_len = vals.shape[1] // 2
+            
+            img_vals = vals[0, seq_len:]
+            all_image_values.append(img_vals)
+    
+    # Normalización global para texto
+    text_concat = np.concatenate(all_text_values) if all_text_values else np.zeros((1,))
+    if np.any(text_concat < 0):
+        absmax_text = float(np.percentile(np.abs(text_concat), 95))
+        if absmax_text <= 0:
+            absmax_text = float(np.max(np.abs(text_concat))) if text_concat.size else 1e-6
+        absmax_text = max(absmax_text, 1e-6)
+        norm_text = TwoSlopeNorm(vmin=-absmax_text, vcenter=0.0, vmax=absmax_text)
+        cmap_text = plt.get_cmap("coolwarm")
+    else:
+        vmax_text = float(np.percentile(text_concat, 95)) if text_concat.size else 1e-6
+        vmax_text = max(vmax_text, 1e-6)
+        norm_text = Normalize(vmin=0.0, vmax=vmax_text)
+        cmap_text = plt.get_cmap("Reds")
+    
+    # Crear GridSpec UNA VEZ para todos los modelos
+    # Cada modelo ocupa 2 filas (imagen + texto)
+    num_rows_total = ((n_models + cols - 1) // cols) * 2
+    height_ratios = [4, 1] * ((n_models + cols - 1) // cols)
+    
+    gs = GridSpec(
+        num_rows_total, cols, 
+        figure=fig, 
+        hspace=0.35, 
+        wspace=0.15,
+        height_ratios=height_ratios,
+        top=0.94,
+        bottom=0.03
+    )
+    
+    # Crear subplots para cada modelo
+    for idx, model_name in enumerate(model_names):
+        result = valid_results[model_name]
+        
+        # Posición en el grid
+        col = idx % cols
+        row = idx // cols
+        
+        # Cada modelo usa 2 filas consecutivas (imagen y texto)
+        ax_img = fig.add_subplot(gs[row * 2, col])
+        ax_txt = fig.add_subplot(gs[row * 2 + 1, col])
         
         # Obtener datos
         shap_values = result.get("shap_values")
         inputs = result.get("inputs")
         text_len = result.get("text_len")
         mm_scores = result.get("mm_scores")
+        model_wrapper = result.get("model_wrapper")
         
-        if shap_values is None or inputs is None:
-            ax.text(
+        if shap_values is None or inputs is None or mm_scores is None:
+            ax_img.text(
                 0.5, 0.5, f"{model_name}\n(Error en procesamiento)", 
                 ha='center', va='center', fontsize=14
             )
-            ax.axis('off')
+            ax_img.axis('off')
+            ax_txt.axis('off')
             continue
         
         # Extraer valores SHAP
@@ -234,7 +310,7 @@ def plot_comparison_simple(
         iscore = result.get('iscore', 0.0)
         logit = result.get('logit', 0.0)
         
-        # Obtener imagen
+        # ===== IMAGEN CON HEATMAP =====
         px = inputs["pixel_values"][0].detach().cpu()
         H, W = int(px.shape[-2]), int(px.shape[-1])
         
@@ -243,7 +319,7 @@ def plot_comparison_simple(
         std = CLIP_STD.to(dtype=px.dtype, device=px.device).view(3, 1, 1)
         img_vis = torch.clamp(px * std + mean, 0, 1).permute(1, 2, 0).numpy()
         
-        # Crear heatmap
+        # Crear heatmap de imagen
         n_patches = len(img_vals)
         side = int(np.sqrt(n_patches))
         
@@ -253,39 +329,78 @@ def plot_comparison_simple(
             grid_h = int(np.sqrt(n_patches))
             grid_w = n_patches // grid_h
         
-        # Reshape a grid
         patch_grid = img_vals[:grid_h * grid_w].reshape(grid_h, grid_w)
-        
-        # Interpolar a tamaño de imagen
         heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
         heat_up = F.interpolate(heat_tensor, size=(H, W), mode='nearest').squeeze().numpy()
         
         # Normalización del heatmap
         vmax = np.percentile(np.abs(heat_up), 95)
         vmax = max(vmax, 1e-6)
-        norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+        norm_img = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
         
-        # Mostrar imagen
-        ax.imshow(img_vis, origin='upper', interpolation='nearest')
-        
-        # Overlay del heatmap
-        ax.imshow(
-            heat_up, cmap='coolwarm', norm=norm, alpha=0.4, 
+        # Mostrar imagen con overlay
+        ax_img.imshow(img_vis, origin='upper', interpolation='nearest')
+        ax_img.imshow(
+            heat_up, cmap='coolwarm', norm=norm_img, alpha=0.4, 
             origin='upper', interpolation='nearest'
         )
         
         # Título con métricas
-        ax.set_title(
+        ax_img.set_title(
             f"{model_name}\nLogit: {logit:.4f} | TScore: {tscore:.2%} | IScore: {iscore:.2%}", 
             fontsize=13, fontweight='bold', pad=10
         )
-        ax.axis('off')
+        ax_img.axis('off')
+        
+        # ===== TEXTO CON PALABRAS COLOREADAS =====
+        ax_txt.axis('off')
+        ax_txt.set_xlim(0, 1)
+        ax_txt.set_ylim(0, 1)
+        
+        _, word_shap_dict = mm_scores[0]
+        words = list(word_shap_dict.keys())
+        word_vals = np.array([word_shap_dict[w] for w in words])
+        
+        if len(words) == 0:
+            ax_txt.text(0.5, 0.5, "(sin palabras detectadas)", 
+                       ha='center', va='center', fontsize=10)
+            continue
+        
+        # Formatear palabras
+        def format_word(w):
+            w = w.strip() if w else ""
+            if len(w) > 15:
+                w = w[:14] + "…"
+            return w if w else "∅"
+        
+        words_display = [format_word(w) for w in words]
+        
+        # Calcular anchos aproximados
+        char_width = 0.012  # ancho aproximado por caracter
+        widths = [len(w) * char_width for w in words_display]
+        gap = 0.015
+        
+        total_w = sum(widths) + gap * max(0, len(words_display) - 1)
+        start_x = max(0, 0.5 - total_w / 2)
+        x = start_x
+        
+        # Dibujar palabras coloreadas
+        for word, val, w in zip(words_display, word_vals, widths):
+            color = cmap_text(norm_text(val))
+            ax_txt.text(
+                x, 0.5, word,
+                ha="left", va="center", fontsize=11, color="black",
+                transform=ax_txt.transAxes,
+                bbox=dict(
+                    facecolor=color, 
+                    alpha=0.8, 
+                    edgecolor="white", 
+                    linewidth=0.5, 
+                    boxstyle="square,pad=0.3"
+                )
+            )
+            x += w + gap
     
-    # Ocultar axes no usados
-    for idx in range(len(model_names), len(axes)):
-        axes[idx].axis('off')
-    
-    plt.tight_layout()
     return fig
 
 
