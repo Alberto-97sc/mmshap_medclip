@@ -376,28 +376,29 @@ def plot_comparison_simple(
         words_display = [format_word(w) for w in words]
         
         # Calcular anchos con padding para el bbox
-        char_width = 0.013  # ancho aproximado por caracter
-        bbox_padding = 0.006  # padding del bbox (0.3 * 2 / fontsize)
+        char_width = 0.012  # ancho aproximado por caracter
+        bbox_padding = 0.008  # padding del bbox
         widths = [(len(w) * char_width) + bbox_padding for w in words_display]
-        gap = 0.025  # Espacio mayor entre palabras para evitar superposición
+        gap = 0.02  # Espacio entre palabras
         
         total_w = sum(widths) + gap * max(0, len(words_display) - 1)
-        start_x = max(0.02, 0.5 - total_w / 2)  # Margen mínimo desde el borde
+        # Centrar siempre, sin margen mínimo artificial
+        start_x = 0.5 - total_w / 2
         x = start_x
         
         # Dibujar palabras coloreadas
         for word, val, w in zip(words_display, word_vals, widths):
             color = cmap_text(norm_text(val))
             ax_txt.text(
-                x + (w / 2), 0.5, word,  # Centrar texto en su espacio
-                ha="center", va="center", fontsize=11, color="black",
+                x, 0.5, word,
+                ha="left", va="center", fontsize=11, color="black",
                 transform=ax_txt.transAxes,
                 bbox=dict(
                     facecolor=color, 
                     alpha=0.8, 
                     edgecolor="white", 
                     linewidth=0.5, 
-                    boxstyle="square,pad=0.35"
+                    boxstyle="square,pad=0.3"
                 )
             )
             x += w + gap

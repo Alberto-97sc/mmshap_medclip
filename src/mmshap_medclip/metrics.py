@@ -81,10 +81,14 @@ def compute_mm_score(
         
         # Verificar si el texto decodificado tiene suficientes palabras
         # Si tiene muy pocas palabras comparado con tokens, probablemente falló el decode
-        # (ej: "as-octimageof..." en lugar de "as oct image of...")
-        min_expected_words = max(3, len(token_ids_list) // 3)
+        # (ej: "chestx-rayobtained..." en lugar of "chest x ray obtained...")
+        # Regla más estricta: si hay más de 8 tokens, esperamos al menos 4 palabras
+        min_expected_words = max(4, len(token_ids_list) // 2)
         
-        if len(words) >= min_expected_words or len(token_ids_list) <= 5:
+        # También verificar si hay palabras extremadamente largas (probablemente tokens sin espacios)
+        has_very_long_words = any(len(w) > 25 for w in words)
+        
+        if (len(words) >= min_expected_words and not has_very_long_words) or len(token_ids_list) <= 5:
             # El texto parece válido, procesar normalmente
             # Intentar obtener subtokens para mapear scores
             subtokens = []

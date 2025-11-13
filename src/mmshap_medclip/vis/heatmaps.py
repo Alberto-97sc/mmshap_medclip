@@ -531,18 +531,19 @@ def plot_text_image_heatmaps(
             t.remove()
 
         # Agregar espacio entre palabras para que no se sobrepongan los parches
-        gap = 0.03  # Espacio mayor entre palabras para evitar superposición
+        gap = 0.02  # Espacio entre palabras
         total_w = sum(widths) + gap * max(0, len(words_display)-1)
-        start_x = max(0.02, 0.5 - total_w/2)  # Margen mínimo desde el borde
+        # Centrar siempre, sin margen mínimo artificial
+        start_x = 0.5 - total_w/2
         x = start_x
 
         for word, val, w in zip(words_display, word_vals, widths):
             color = cmap_text(norm_text(val))
             ax_txt.text(
-                x + (w / 2), 0.5, word,  # Centrar texto en su espacio asignado
-                ha="center", va="center", fontsize=14, color="black",
+                x, 0.5, word,
+                ha="left", va="center", fontsize=14, color="black",
                 transform=ax_txt.transAxes,
-                bbox=dict(facecolor=color, alpha=0.8, edgecolor="white", linewidth=0.5, boxstyle="square,pad=0.25")
+                bbox=dict(facecolor=color, alpha=0.8, edgecolor="white", linewidth=0.5, boxstyle="square,pad=0.2")
             )
             x += w + gap
 
