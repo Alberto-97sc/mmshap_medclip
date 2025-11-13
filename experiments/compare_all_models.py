@@ -12,10 +12,10 @@
 # ---
 
 # %% [markdown]
-# # 🔬 Comparación de los 4 Modelos CLIP Médicos
+# # 🔬 Análisis SHAP de los 4 Modelos CLIP Médicos
 #
-# Este notebook permite ejecutar SHAP en una misma muestra con los 4 modelos y visualizar
-# los resultados lado a lado para comparar su comportamiento.
+# Este notebook permite ejecutar SHAP en una misma muestra con los 4 modelos y generar
+# heatmaps individuales detallados para cada uno, permitiendo comparar su comportamiento.
 #
 # **Modelos:**
 # - PubMedCLIP
@@ -26,6 +26,8 @@
 # **Dataset:** ROCO (Radiology Objects in COntext)
 #
 # **Tarea:** ISA (Image-Sentence Alignment)
+#
+# **Visualización:** Heatmaps individuales con imagen y texto por cada modelo
 #
 # ---
 
@@ -82,7 +84,7 @@ print(f"\n📊 Modelos cargados: {len(loaded_models)}/{len(models)}")
 # ## 🚀 Ejecutar comparación en una muestra
 
 # %%
-from mmshap_medclip.comparison import run_shap_on_all_models, plot_comparison_simple
+from mmshap_medclip.comparison import run_shap_on_all_models
 
 # 🎯 CONFIGURACIÓN: Cambiar este número para probar diferentes muestras
 MUESTRA_A_ANALIZAR = 154
@@ -100,16 +102,6 @@ results, image, caption = run_shap_on_all_models(
     verbose=True
 )
 
-# Visualizar comparación
-print("\n📊 Generando visualización comparativa...")
-fig = plot_comparison_simple(results, image, caption, MUESTRA_A_ANALIZAR)
-if fig is not None:
-    import matplotlib.pyplot as plt
-    plt.show()
-    print("✅ Visualización completada")
-else:
-    print("❌ No se pudo generar la visualización")
-
 # %% [markdown]
 # ## 📈 Resumen de resultados
 
@@ -121,14 +113,13 @@ print_summary(results)
 # %% [markdown]
 # ## 🔍 Visualizar heatmaps individuales detallados
 #
-# Si deseas ver los heatmaps completos con las palabras coloreadas para cada modelo,
-# descomenta y ejecuta la siguiente celda.
+# Esta sección muestra los heatmaps completos con las palabras coloreadas para cada modelo.
 
 # %%
 from mmshap_medclip.comparison import plot_individual_heatmaps
 
-# Descomentar para ver heatmaps individuales detallados
-# plot_individual_heatmaps(results, image, caption)
+# Generar heatmaps individuales para cada modelo
+plot_individual_heatmaps(results, image, caption)
 
 # %% [markdown]
 # ## 💾 Guardar resultados
@@ -166,10 +157,10 @@ from mmshap_medclip.comparison import analyze_multiple_samples
 #    Modifica la variable `MUESTRA_A_ANALIZAR` en la celda correspondiente.
 #
 # 2. **Re-ejecutar el análisis:**
-#    Simplemente ejecuta la celda de análisis de nuevo con el nuevo número de muestra.
+#    Simplemente ejecuta las celdas de nuevo con el nuevo número de muestra.
 #
 # 3. **Ver resultados:**
-#    - Visualización comparativa en grid 2x2
+#    - Heatmaps individuales detallados para cada modelo
 #    - Resumen de métricas en tabla
 #    - Análisis de balance multimodal
 #
@@ -184,9 +175,8 @@ from mmshap_medclip.comparison import analyze_multiple_samples
 #
 # - `load_all_models()`: Carga los 4 modelos CLIP médicos
 # - `run_shap_on_all_models()`: Ejecuta SHAP en todos los modelos
-# - `plot_comparison_simple()`: Visualización comparativa rápida
-# - `plot_individual_heatmaps()`: Heatmaps detallados individuales
-# - `print_summary()`: Imprime resumen comparativo
+# - `plot_individual_heatmaps()`: Muestra heatmaps detallados individuales para cada modelo
+# - `print_summary()`: Imprime resumen comparativo en tabla
 # - `save_comparison()`: Guarda resultados en disco
 # - `analyze_multiple_samples()`: Análisis batch de múltiples muestras
 #
