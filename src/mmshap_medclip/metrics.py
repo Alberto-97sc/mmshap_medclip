@@ -79,16 +79,30 @@ def compute_mm_score(
         # Tenemos el texto decodificado, dividir en palabras
         words = text_decoded.strip().split()
         
-        # Verificar si el texto decodificado tiene suficientes palabras
-        # Si tiene muy pocas palabras comparado con tokens, probablemente falló el decode
-        # (ej: "chestx-rayobtained..." en lugar of "chest x ray obtained...")
-        # Regla más estricta: si hay más de 8 tokens, esperamos al menos 4 palabras
-        min_expected_words = max(4, len(token_ids_list) // 2)
+        # Verificar si el texto decodificado es válido
+        # IMPORTANTE: BioMedCLIP y algunos tokenizadores BERT no insertan espacios correctamente
         
-        # También verificar si hay palabras extremadamente largas (probablemente tokens sin espacios)
-        has_very_long_words = any(len(w) > 25 for w in words)
+        # 1. Verificar número mínimo de palabras
+        min_expected_words = max(5, len(token_ids_list) // 2)
         
-        if (len(words) >= min_expected_words and not has_very_long_words) or len(token_ids_list) <= 5:
+        # 2. Detectar palabras extremadamente largas (tokens pegados sin espacios)
+        has_very_long_words = any(len(w) > 20 for w in words)
+        
+        # 3. Verificar si hay muy pocas palabras (menos de 1/3 de los tokens)
+        has_too_few_words = len(words) < (len(token_ids_list) // 3)
+        
+        # 4. Verificar si la primera palabra es sospechosamente larga
+        first_word_too_long = len(words) > 0 and len(words[0]) > 15
+        
+        # Si alguna validación falla, usar método de subtokens
+        decode_is_valid = (
+            len(words) >= min_expected_words and
+            not has_very_long_words and
+            not has_too_few_words and
+            not first_word_too_long
+        )
+        
+        if (decode_is_valid or len(token_ids_list) <= 5):
             # El texto parece válido, procesar normalmente
             # Intentar obtener subtokens para mapear scores
             subtokens = []
