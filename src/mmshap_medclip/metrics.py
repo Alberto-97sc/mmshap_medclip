@@ -46,41 +46,134 @@ def compute_mm_score(
     tscore = text_contrib / denom
 
     # Diccionario palabra→score (con signo)
-    token_ids = inputs["input_ids"][i][:text_length].detach().cpu().tolist()
-    subtokens = tokenizer.convert_ids_to_tokens(token_ids)
-    raw_shap  = v[:text_length]
-
-    # Ignorar especiales (si el tokenizer no los tiene, usa set vacío)
-    ignore = set(getattr(tokenizer, "all_special_tokens", []))
+    token_ids = inputs["input_ids"][i][:text_length]
+    if hasattr(token_ids, "detach"):
+        token_ids = token_ids.detach().cpu()
+    token_ids_list = token_ids.tolist() if hasattr(token_ids, "tolist") else list(token_ids)
+    
+    raw_shap = v[:text_length]
+    
+    # Intentar decodificar los tokens
+    # Primero intentar obtener el texto completo
+    text_decoded = None
+    if hasattr(tokenizer, "decode"):
+        try:
+            text_decoded = tokenizer.decode(token_ids_list, skip_special_tokens=True)
+        except:
+            try:
+                text_decoded = tokenizer.decode(token_ids_list)
+            except:
+                pass
+    
+    # Si pudimos decodificar el texto completo, dividir en palabras
     word_shap = OrderedDict()
-    cur_word, cur_score = "", 0.0
-
-    def flush():
-        nonlocal cur_word, cur_score
-        if cur_word:
-            word_shap[cur_word] = float(cur_score)
-            cur_word, cur_score = "", 0.0
-
-    for tok, score in zip(subtokens, raw_shap):
-        if tok in ignore:
-            continue
-
-        # heurísticas de segmentación
-        start_of_word = tok.startswith("Ġ") or tok.startswith("▁")
-        end_of_word   = tok.endswith("</w>")
-
-        piece = tok
-        piece = piece.lstrip("Ġ").lstrip("▁")
-        piece = piece.replace("</w>", "")
-        piece = piece.lstrip("#")  # WordPiece
-
-        if start_of_word:
-            flush()
-        cur_word += piece
-        cur_score += float(score)
-        if end_of_word:
-            flush()
-    flush()
+    
+    if text_decoded and isinstance(text_decoded, str) and text_decoded.strip():
+        # Tenemos el texto decodificado, dividir en palabras
+        words = text_decoded.strip().split()
+        
+        # Intentar obtener subtokens para mapear scores
+        subtokens = []
+        try:
+            if hasattr(tokenizer, "convert_ids_to_tokens"):
+                subtokens = tokenizer.convert_ids_to_tokens(token_ids_list)
+            else:
+                subtokens = [str(tid) for tid in token_ids_list]
+        except:
+            subtokens = [str(tid) for tid in token_ids_list]
+        
+        # Filtrar tokens especiales
+        special_ids = set(getattr(tokenizer, "all_special_ids", []))
+        special_tokens = set(getattr(tokenizer, "all_special_tokens", []))
+        special_token_strings = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "[UNK]", 
+                                "<s>", "</s>", "<pad>", "<unk>", "<mask>",
+                                "<|startoftext|>", "<|endoftext|>", "<|endoftext|>"}
+        
+        # Filtrar subtokens y sus scores
+        filtered_subtokens = []
+        filtered_scores = []
+        for tid, tok, score in zip(token_ids_list, subtokens, raw_shap):
+            if (tid not in special_ids and 
+                tok not in special_tokens and 
+                tok not in special_token_strings and
+                str(tok).strip() not in special_token_strings):
+                filtered_subtokens.append(tok)
+                filtered_scores.append(score)
+        
+        # Si tenemos el mismo número de palabras que subtokens filtrados, asignar directamente
+        if len(words) == len(filtered_scores):
+            for word, score in zip(words, filtered_scores):
+                if word and word.strip():
+                    word_shap[word] = float(score)
+        else:
+            # Intentar agrupar subtokens en palabras
+            cur_word = ""
+            cur_score = 0.0
+            subtoken_idx = 0
+            
+            for word in words:
+                # Acumular subtokens hasta reconstruir la palabra
+                word_clean = word.lower().strip()
+                temp_word = ""
+                temp_score = 0.0
+                
+                while subtoken_idx < len(filtered_subtokens) and len(temp_word) < len(word_clean) + 5:
+                    tok = str(filtered_subtokens[subtoken_idx])
+                    # Limpiar token
+                    tok_clean = tok.lstrip("Ġ").lstrip("▁").replace("</w>", "").lstrip("#").lower()
+                    temp_word += tok_clean
+                    temp_score += float(filtered_scores[subtoken_idx])
+                    subtoken_idx += 1
+                    
+                    if word_clean in temp_word:
+                        break
+                
+                if temp_word:
+                    word_shap[word] = temp_score
+                elif subtoken_idx < len(filtered_scores):
+                    # Fallback: asignar score del siguiente token
+                    word_shap[word] = float(filtered_scores[subtoken_idx])
+                    subtoken_idx += 1
+    else:
+        # Fallback: usar subtokens directamente
+        subtokens = []
+        try:
+            if hasattr(tokenizer, "convert_ids_to_tokens"):
+                subtokens = tokenizer.convert_ids_to_tokens(token_ids_list)
+            else:
+                subtokens = [str(tid) for tid in token_ids_list]
+        except:
+            subtokens = [str(tid) for tid in token_ids_list]
+        
+        ignore = set(getattr(tokenizer, "all_special_tokens", []))
+        cur_word, cur_score = "", 0.0
+        
+        def flush():
+            nonlocal cur_word, cur_score
+            if cur_word and cur_word.strip():
+                word_shap[cur_word] = float(cur_score)
+                cur_word, cur_score = "", 0.0
+        
+        for tok, score in zip(subtokens, raw_shap):
+            if tok in ignore:
+                continue
+            
+            # heurísticas de segmentación
+            start_of_word = tok.startswith("Ġ") or tok.startswith("▁")
+            end_of_word = tok.endswith("</w>")
+            
+            piece = str(tok)
+            piece = piece.lstrip("Ġ").lstrip("▁")
+            piece = piece.replace("</w>", "")
+            piece = piece.lstrip("#")  # WordPiece
+            
+            if start_of_word and cur_word:
+                flush()
+            cur_word += piece
+            cur_score += float(score)
+            if end_of_word:
+                flush()
+        flush()
 
     return tscore, word_shap
 
