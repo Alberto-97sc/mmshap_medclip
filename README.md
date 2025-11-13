@@ -445,7 +445,65 @@ jupytext --to notebook experiments/*.py
 jupyter notebook
 ```
 
-### Opción 4: Uso programático paso a paso
+### Opción 4: Comparar todos los modelos simultáneamente 🆕
+
+**Nuevo:** Ahora puedes comparar los 4 modelos en la misma muestra con un solo script:
+
+```bash
+# Ejecutar comparación
+python3 experiments/compare_all_models.py
+
+# O como notebook
+jupytext --to notebook experiments/compare_all_models.py
+jupyter notebook experiments/compare_all_models.ipynb
+```
+
+**Características:**
+- ✅ Carga los 4 modelos automáticamente
+- ✅ Ejecuta SHAP en todos con la misma muestra
+- ✅ Visualización comparativa en grid 2x2
+- ✅ Resumen de métricas (Logit, TScore, IScore)
+- ✅ Identifica el modelo más balanceado
+
+**Ejemplo de uso programático:**
+
+```python
+from mmshap_medclip.comparison import (
+    load_all_models, 
+    run_shap_on_all_models, 
+    plot_comparison_simple,
+    print_summary
+)
+from mmshap_medclip.devices import get_device
+from mmshap_medclip.io_utils import load_config
+from mmshap_medclip.registry import build_dataset
+
+# Setup
+device = get_device()
+cfg = load_config("configs/roco_isa_pubmedclip.yaml")
+dataset = build_dataset(cfg["dataset"])
+
+# Cargar los 4 modelos
+models = load_all_models(device)
+
+# Analizar muestra 154
+results, image, caption = run_shap_on_all_models(
+    models, sample_idx=154, dataset=dataset, device=device
+)
+
+# Visualizar comparación
+fig = plot_comparison_simple(results, image, caption, sample_idx=154)
+plt.show()
+
+# Imprimir resumen
+print_summary(results)
+```
+
+Ver documentación completa en: [`experiments/README_compare_models.md`](experiments/README_compare_models.md)
+
+---
+
+### Opción 5: Uso programático paso a paso
 
 Ejemplo con PubMedCLIP:
 
