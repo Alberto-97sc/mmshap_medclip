@@ -744,19 +744,24 @@ def plot_text_image_heatmaps(
         # Calcular el espacio vertical necesario y ajustar posición del TScore
         # Aumentar significativamente el espaciado entre líneas para evitar superposición
         # Usar más espacio cuando hay más líneas
-        if len(lines) > 3:
-            line_height = 0.25  # Espaciado grande para muchas líneas
+        if len(lines) > 5:
+            line_height = 0.32  # Espaciado muy grande para muchas líneas
+        elif len(lines) > 3:
+            line_height = 0.28  # Espaciado grande para varias líneas
         elif len(lines) > 1:
-            line_height = 0.22  # Espaciado medio para múltiples líneas
+            line_height = 0.25  # Espaciado medio para múltiples líneas
         else:
-            line_height = 0.18  # Espaciado normal para una línea
+            line_height = 0.20  # Espaciado normal para una línea
         
         total_height = len(lines) * line_height
         start_y = 0.5 + total_height / 2 - line_height / 2
         
         # Ajustar posición del TScore según el número de líneas
         # Si hay más de una línea, mover el TScore más arriba para dar espacio
-        if len(lines) > 1:
+        if len(lines) > 5:
+            # Para muchas líneas, mover el TScore más arriba
+            tscore_y_pos = min(0.99, 0.92 + (len(lines) - 1) * 0.015)
+        elif len(lines) > 1:
             # Aumentar el espacio superior cuando hay múltiples líneas
             tscore_y_pos = min(0.98, 0.90 + (len(lines) - 1) * 0.02)
         else:

@@ -432,8 +432,15 @@ def plot_comparison_simple(
             lines.append((current_line_words, current_line_vals, current_line_widths))
         
         # Calcular el espacio vertical necesario con mejor espaciado
-        # Aumentar el espaciado entre líneas cuando hay múltiples líneas
-        line_height = 0.20 if len(lines) > 1 else 0.18
+        # Aumentar significativamente el espaciado entre líneas para evitar superposición
+        if len(lines) > 5:
+            line_height = 0.32  # Espaciado muy grande para muchas líneas
+        elif len(lines) > 3:
+            line_height = 0.28  # Espaciado grande para varias líneas
+        elif len(lines) > 1:
+            line_height = 0.25  # Espaciado medio para múltiples líneas
+        else:
+            line_height = 0.20  # Espaciado normal para una línea
         total_height = len(lines) * line_height
         start_y = 0.5 + total_height / 2 - line_height / 2
         
