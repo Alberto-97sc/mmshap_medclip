@@ -659,12 +659,25 @@ def plot_text_image_heatmaps(
         # Agregar espacio entre palabras para que no se sobrepongan los parches
         gap = 0.02  # Espacio entre palabras
         
-        # Dividir palabras en múltiples líneas si el texto es muy largo
-        # Usar el 85% del ancho disponible como límite máximo por línea
-        max_width_per_line = 0.85
-        max_lines = 3  # Máximo de líneas para el texto coloreado
+        # Usar ancho real de las palabras para dividir en líneas simétricas
+        # Calcular ancho total de todas las palabras
+        total_width = sum(widths) + gap * max(0, len(words_display) - 1)
         
-        # Agrupar palabras en líneas
+        # Determinar número de líneas según la longitud del texto (igual que el caption)
+        text_plain = " ".join(words_display)
+        text_length = len(text_plain)
+        
+        if text_length > 200:
+            target_num_lines = 8
+        elif text_length > 120:
+            target_num_lines = 6
+        else:
+            target_num_lines = 4
+        
+        # Calcular ancho objetivo por línea (usar 80% del ancho disponible para dejar márgenes)
+        max_width_per_line = min(0.80, total_width / target_num_lines * 1.1)
+        
+        # Dividir palabras en líneas usando el ancho real
         lines = []
         current_line_words = []
         current_line_vals = []
@@ -674,21 +687,33 @@ def plot_text_image_heatmaps(
         for word, val, w in zip(words_display, word_vals, widths):
             word_width_with_gap = w + (gap if current_line_words else 0)
             
-            # Si agregar esta palabra excedería el ancho máximo, empezar una nueva línea
+            # Si agregar esta palabra excedería el ancho máximo Y ya tenemos contenido
             if current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line:
-                if len(lines) < max_lines - 1:  # Reservar espacio para al menos una línea
+                # Si aún no hemos alcanzado el número objetivo de líneas, crear nueva línea
+                if len(lines) < target_num_lines - 1:
                     lines.append((current_line_words, current_line_vals, current_line_widths))
                     current_line_words = [word]
                     current_line_vals = [val]
                     current_line_widths = [w]
                     current_line_width = w
                 else:
-                    # Si ya tenemos el máximo de líneas, agregar a la última línea aunque exceda
-                    current_line_words.append(word)
-                    current_line_vals.append(val)
-                    current_line_widths.append(w)
-                    current_line_width += word_width_with_gap
+                    # Si ya estamos en la última línea permitida, agregar todo lo que quede
+                    # pero primero verificar si la línea actual ya es muy larga
+                    if current_line_width > max_width_per_line * 0.9:
+                        # La línea actual ya es larga, crear nueva línea aunque exceda el límite
+                        lines.append((current_line_words, current_line_vals, current_line_widths))
+                        current_line_words = [word]
+                        current_line_vals = [val]
+                        current_line_widths = [w]
+                        current_line_width = w
+                    else:
+                        # Agregar a la línea actual
+                        current_line_words.append(word)
+                        current_line_vals.append(val)
+                        current_line_widths.append(w)
+                        current_line_width += word_width_with_gap
             else:
+                # Agregar palabra a la línea actual
                 current_line_words.append(word)
                 current_line_vals.append(val)
                 current_line_widths.append(w)
@@ -698,9 +723,34 @@ def plot_text_image_heatmaps(
         if current_line_words:
             lines.append((current_line_words, current_line_vals, current_line_widths))
         
+        # Si la última línea es muy larga (más del 120% del ancho promedio), dividirla
+        if len(lines) > 0:
+            last_line_width = sum(lines[-1][2]) + gap * max(0, len(lines[-1][0]) - 1)
+            avg_line_width = total_width / len(lines)
+            
+            if last_line_width > avg_line_width * 1.2 and len(lines[-1][0]) > 3:
+                # Dividir la última línea en dos
+                last_words = lines[-1][0]
+                last_vals = lines[-1][1]
+                last_widths = lines[-1][2]
+                
+                # Encontrar el punto medio
+                mid_point = len(last_words) // 2
+                
+                # Crear dos líneas
+                lines[-1] = (last_words[:mid_point], last_vals[:mid_point], last_widths[:mid_point])
+                lines.append((last_words[mid_point:], last_vals[mid_point:], last_widths[mid_point:]))
+        
         # Calcular el espacio vertical necesario y ajustar posición del TScore
-        # Aumentar el espaciado entre líneas para mejor legibilidad
-        line_height = 0.18 if len(lines) > 1 else 0.15
+        # Aumentar significativamente el espaciado entre líneas para evitar superposición
+        # Usar más espacio cuando hay más líneas
+        if len(lines) > 3:
+            line_height = 0.25  # Espaciado grande para muchas líneas
+        elif len(lines) > 1:
+            line_height = 0.22  # Espaciado medio para múltiples líneas
+        else:
+            line_height = 0.18  # Espaciado normal para una línea
+        
         total_height = len(lines) * line_height
         start_y = 0.5 + total_height / 2 - line_height / 2
         
@@ -708,7 +758,7 @@ def plot_text_image_heatmaps(
         # Si hay más de una línea, mover el TScore más arriba para dar espacio
         if len(lines) > 1:
             # Aumentar el espacio superior cuando hay múltiples líneas
-            tscore_y_pos = min(0.95, 0.88 + (len(lines) - 1) * 0.03)
+            tscore_y_pos = min(0.98, 0.90 + (len(lines) - 1) * 0.02)
         else:
             tscore_y_pos = 0.85
         
