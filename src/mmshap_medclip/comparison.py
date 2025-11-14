@@ -16,6 +16,7 @@ import torch.nn.functional as F
 
 from mmshap_medclip.registry import build_model
 from mmshap_medclip.tasks.isa import run_isa_one
+from mmshap_medclip.vis.heatmaps import wrap_text
 
 
 def load_all_models(device):
@@ -187,9 +188,19 @@ def plot_comparison_simple(
     # Cada modelo tiene 2 filas: imagen (más grande) y texto (más pequeña)
     fig = plt.figure(figsize=(12 * cols, 7 * ((n_models + cols - 1) // cols)))
     
+    # Envolver el caption largo en múltiples líneas SIN truncar
+    # Ajustar automáticamente según la longitud del texto
+    text_length = len(caption)
+    if text_length > 200:
+        wrapped_caption = wrap_text(caption, max_width=90, max_lines=6, prefer_long_lines=False)
+    elif text_length > 120:
+        wrapped_caption = wrap_text(caption, max_width=85, max_lines=4, prefer_long_lines=False)
+    else:
+        wrapped_caption = wrap_text(caption, max_width=80, max_lines=3, prefer_long_lines=False)
+    
     fig.suptitle(
-        f"🔬 Comparación de Modelos CLIP Médicos - Muestra #{sample_idx}\n\"{caption[:100]}...\"", 
-        fontsize=16, fontweight='bold', y=0.99
+        f"🔬 Comparación de Modelos CLIP Médicos - Muestra #{sample_idx}\n\n\"{wrapped_caption}\"", 
+        fontsize=13, fontweight='bold', y=0.995
     )
     
     # Calcular valores de texto e imagen para normalización global
@@ -381,27 +392,74 @@ def plot_comparison_simple(
         widths = [(len(w) * char_width) + bbox_padding for w in words_display]
         gap = 0.02  # Espacio entre palabras
         
-        total_w = sum(widths) + gap * max(0, len(words_display) - 1)
-        # Centrar siempre, sin margen mínimo artificial
-        start_x = 0.5 - total_w / 2
-        x = start_x
+        # Dividir palabras en múltiples líneas si el texto es muy largo
+        # Usar el 85% del ancho disponible como límite máximo por línea
+        max_width_per_line = 0.85
+        max_lines = 3  # Máximo de líneas para el texto coloreado
         
-        # Dibujar palabras coloreadas
+        # Agrupar palabras en líneas
+        lines = []
+        current_line_words = []
+        current_line_vals = []
+        current_line_widths = []
+        current_line_width = 0
+        
         for word, val, w in zip(words_display, word_vals, widths):
-            color = cmap_text(norm_text(val))
-            ax_txt.text(
-                x, 0.5, word,
-                ha="left", va="center", fontsize=11, color="black",
-                transform=ax_txt.transAxes,
-                bbox=dict(
-                    facecolor=color, 
-                    alpha=0.8, 
-                    edgecolor="white", 
-                    linewidth=0.5, 
-                    boxstyle="square,pad=0.3"
+            word_width_with_gap = w + (gap if current_line_words else 0)
+            
+            # Si agregar esta palabra excedería el ancho máximo, empezar una nueva línea
+            if current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line:
+                if len(lines) < max_lines - 1:  # Reservar espacio para al menos una línea
+                    lines.append((current_line_words, current_line_vals, current_line_widths))
+                    current_line_words = [word]
+                    current_line_vals = [val]
+                    current_line_widths = [w]
+                    current_line_width = w
+                else:
+                    # Si ya tenemos el máximo de líneas, agregar a la última línea aunque exceda
+                    current_line_words.append(word)
+                    current_line_vals.append(val)
+                    current_line_widths.append(w)
+                    current_line_width += word_width_with_gap
+            else:
+                current_line_words.append(word)
+                current_line_vals.append(val)
+                current_line_widths.append(w)
+                current_line_width += word_width_with_gap
+        
+        # Agregar la última línea
+        if current_line_words:
+            lines.append((current_line_words, current_line_vals, current_line_widths))
+        
+        # Calcular el espacio vertical necesario con mejor espaciado
+        # Aumentar el espaciado entre líneas cuando hay múltiples líneas
+        line_height = 0.20 if len(lines) > 1 else 0.18
+        total_height = len(lines) * line_height
+        start_y = 0.5 + total_height / 2 - line_height / 2
+        
+        # Dibujar cada línea de palabras con mejor espaciado uniforme
+        for line_idx, (line_words, line_vals, line_widths) in enumerate(lines):
+            line_total_w = sum(line_widths) + gap * max(0, len(line_words)-1)
+            start_x = 0.5 - line_total_w / 2
+            x = start_x
+            # Calcular posición Y con espaciado uniforme entre líneas
+            y = start_y - line_idx * line_height
+            
+            for word, val, w in zip(line_words, line_vals, line_widths):
+                color = cmap_text(norm_text(val))
+                ax_txt.text(
+                    x, y, word,
+                    ha="left", va="center", fontsize=11, color="black",
+                    transform=ax_txt.transAxes,
+                    bbox=dict(
+                        facecolor=color, 
+                        alpha=0.8, 
+                        edgecolor="white", 
+                        linewidth=0.5, 
+                        boxstyle="square,pad=0.3"
+                    )
                 )
-            )
-            x += w + gap
+                x += w + gap
     
     return fig
 

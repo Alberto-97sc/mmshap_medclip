@@ -1,5 +1,6 @@
 # src/mmshap_medclip/vis/heatmaps.py
 import math
+import textwrap
 from typing import List, Tuple, Union, Optional
 
 import matplotlib.pyplot as plt
@@ -17,6 +18,103 @@ _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float
 PLOT_ISA_IMG_PERCENTILE = 90   # escala robusta al percentil 90
 PLOT_ISA_ALPHA_IMG = 0.30      # opacidad del overlay (reducida para mejor visibilidad)
 PLOT_ISA_COARSEN_G = 2        # tamaño de super-parches (3x3)
+
+
+def wrap_text(text: str, max_width: int = 80, max_lines: Optional[int] = None, 
+              prefer_long_lines: bool = False) -> str:
+    """
+    Envuelve un texto largo en múltiples líneas de manera simétrica y equilibrada.
+    NO trunca el texto con puntos suspensivos; en su lugar, ajusta el ancho o número de líneas.
+    Intenta crear líneas de longitud similar para mejor legibilidad.
+    
+    Args:
+        text: Texto a envolver
+        max_width: Ancho máximo de caracteres por línea (por defecto 80)
+        max_lines: Número máximo de líneas deseado (None = sin límite, se ajusta automáticamente)
+        prefer_long_lines: Si True, prefiere líneas más largas en lugar de más líneas
+    
+    Returns:
+        Texto envuelto en múltiples líneas simétricas, SIN truncamiento
+    """
+    if not text:
+        return text
+    
+    # Dividir en palabras para mejor control
+    words = text.split()
+    if not words:
+        return text
+    
+    # Si max_lines está especificado, intentar crear líneas simétricas
+    if max_lines is not None and max_lines > 0:
+        # Calcular longitud total (caracteres + espacios entre palabras)
+        text_length = sum(len(word) for word in words) + len(words) - 1  # palabras + espacios
+        avg_chars_per_line = text_length / max_lines
+        
+        # Objetivo: crear líneas de longitud similar
+        target_line_length = max(int(avg_chars_per_line * 1.05), max_width // 2)
+        
+        # Si el texto es muy largo, aumentar el ancho objetivo
+        if text_length > max_width * max_lines:
+            # Ajustar target_line_length pero mantener límites razonables
+            target_line_length = min(max(target_line_length, max_width), 
+                                   100 if prefer_long_lines else 90)
+        
+        wrapped_lines = []
+        current_line = []
+        current_length = 0
+        
+        for idx, word in enumerate(words):
+            word_len = len(word)
+            space_needed = 1 if current_line else 0
+            total_length_if_added = current_length + space_needed + word_len
+            
+            # Verificar si ya estamos en la última línea permitida
+            is_last_allowed_line = len(wrapped_lines) == max_lines - 1
+            
+            # Si ya estamos en la última línea permitida, agregar todas las palabras restantes
+            if is_last_allowed_line and current_line:
+                # Agregar la palabra actual y todas las restantes
+                current_line.append(word)
+                if idx < len(words) - 1:
+                    remaining_words = words[idx + 1:]
+                    current_line.extend(remaining_words)
+                current_length = len(" ".join(current_line))
+                break
+            
+            # Si agregar esta palabra excedería el objetivo Y ya tenemos contenido
+            # Y aún no hemos alcanzado el máximo de líneas
+            if (current_line and total_length_if_added > target_line_length):
+                # Guardar la línea actual y comenzar una nueva
+                wrapped_lines.append(" ".join(current_line))
+                current_line = [word]
+                current_length = word_len
+            else:
+                # Agregar palabra a la línea actual
+                if current_line:
+                    current_length += 1  # espacio
+                current_line.append(word)
+                current_length += word_len
+        
+        # Agregar la última línea si quedó pendiente
+        if current_line:
+            wrapped_lines.append(" ".join(current_line))
+        
+        # Si después de este proceso aún tenemos más líneas de las deseadas,
+        # re-envolver con un ancho mayor (pero sin truncar)
+        if len(wrapped_lines) > max_lines:
+            # Calcular nuevo ancho para que quepa en max_lines
+            new_width = min(int(text_length / max_lines * 1.2), 100)
+            wrapped_lines = textwrap.wrap(text, width=new_width, 
+                                         break_long_words=True, 
+                                         break_on_hyphens=False)
+    else:
+        # Sin límite de líneas, usar textwrap estándar con el ancho especificado
+        wrapped_lines = textwrap.wrap(text, width=max_width, 
+                                     break_long_words=True, 
+                                     break_on_hyphens=False)
+    
+    # NUNCA truncar - siempre mostrar el texto completo
+    return "\n".join(wrapped_lines)
 
 def _infer_patch_size(model_wrapper, inputs, shap_values):
     ps = None
@@ -487,7 +585,27 @@ def plot_text_image_heatmaps(
 
         ax_img = fig.add_subplot(gs[0, i])
         ax_img.imshow(img_vis, origin="upper", interpolation="nearest", zorder=0)
-        ax_img.set_title(f"{texts[i]}\nIScore {iscore:.2%}", fontsize=14, pad=8)
+        # Envolver el caption largo en múltiples líneas SIN truncar
+        # Ajustar automáticamente para mostrar todo el texto de manera simétrica
+        caption = texts[i]
+        # Calcular un ancho óptimo basado en la longitud del texto para líneas simétricas
+        text_length = len(caption)
+        # Para textos largos, usar más líneas pero con ancho razonable
+        if text_length > 200:
+            # Textos muy largos: más líneas, ancho moderado
+            wrapped_caption = wrap_text(caption, max_width=65, max_lines=8, prefer_long_lines=False)
+        elif text_length > 120:
+            # Textos medianos: líneas moderadas
+            wrapped_caption = wrap_text(caption, max_width=60, max_lines=6, prefer_long_lines=False)
+        else:
+            # Textos cortos: líneas estándar
+            wrapped_caption = wrap_text(caption, max_width=55, max_lines=4, prefer_long_lines=False)
+        
+        # Formatear el título con mejor espaciado: caption separado del IScore
+        # Agregar una línea en blanco entre el caption y el IScore para mejor separación
+        title_text = f"{wrapped_caption}\n\nIScore: {iscore:.2%}"
+        ax_img.set_title(title_text, fontsize=11, pad=15, loc='center', 
+                        family='sans-serif')
         image_overlay_entries.append({
             "ax": ax_img,
             "heat": heat_up,
@@ -506,14 +624,22 @@ def plot_text_image_heatmaps(
         ax_txt.axis("off")
         ax_txt.set_xlim(0, 1); ax_txt.set_ylim(0, 1)
 
-        ax_txt.text(0.5, 0.85, f"TScore {tscore:.2%}",
-                    ha="center", va="center", transform=ax_txt.transAxes, fontsize=13)
-
         if len(words) == 0 or len(word_vals) == 0:
             # Fallback: decodificar tokens para mostrar el texto limpio
             token_ids = inputs["input_ids"][i][:seq_lens[i]]
             _, text_clean, _ = _decode_tokens_for_plot(tokenizer, token_ids)
-            ax_txt.text(0.5, 0.35, text_clean if text_clean else "(sin tokens)",
+            # Envolver el texto limpio largo en múltiples líneas SIN truncar
+            text_to_wrap = text_clean if text_clean else "(sin tokens)"
+            text_len = len(text_to_wrap)
+            if text_len > 150:
+                wrapped_text = wrap_text(text_to_wrap, max_width=75, max_lines=5, prefer_long_lines=False)
+            elif text_len > 100:
+                wrapped_text = wrap_text(text_to_wrap, max_width=70, max_lines=4, prefer_long_lines=False)
+            else:
+                wrapped_text = wrap_text(text_to_wrap, max_width=65, max_lines=3, prefer_long_lines=False)
+            ax_txt.text(0.5, 0.90, f"TScore {tscore:.2%}",
+                        ha="center", va="center", transform=ax_txt.transAxes, fontsize=13)
+            ax_txt.text(0.5, 0.35, wrapped_text,
                         ha="center", va="center", transform=ax_txt.transAxes, fontsize=12)
             continue
 
@@ -532,20 +658,82 @@ def plot_text_image_heatmaps(
 
         # Agregar espacio entre palabras para que no se sobrepongan los parches
         gap = 0.02  # Espacio entre palabras
-        total_w = sum(widths) + gap * max(0, len(words_display)-1)
-        # Centrar siempre, sin margen mínimo artificial
-        start_x = 0.5 - total_w/2
-        x = start_x
-
+        
+        # Dividir palabras en múltiples líneas si el texto es muy largo
+        # Usar el 85% del ancho disponible como límite máximo por línea
+        max_width_per_line = 0.85
+        max_lines = 3  # Máximo de líneas para el texto coloreado
+        
+        # Agrupar palabras en líneas
+        lines = []
+        current_line_words = []
+        current_line_vals = []
+        current_line_widths = []
+        current_line_width = 0
+        
         for word, val, w in zip(words_display, word_vals, widths):
-            color = cmap_text(norm_text(val))
-            ax_txt.text(
-                x, 0.5, word,
-                ha="left", va="center", fontsize=14, color="black",
-                transform=ax_txt.transAxes,
-                bbox=dict(facecolor=color, alpha=0.8, edgecolor="white", linewidth=0.5, boxstyle="square,pad=0.2")
-            )
-            x += w + gap
+            word_width_with_gap = w + (gap if current_line_words else 0)
+            
+            # Si agregar esta palabra excedería el ancho máximo, empezar una nueva línea
+            if current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line:
+                if len(lines) < max_lines - 1:  # Reservar espacio para al menos una línea
+                    lines.append((current_line_words, current_line_vals, current_line_widths))
+                    current_line_words = [word]
+                    current_line_vals = [val]
+                    current_line_widths = [w]
+                    current_line_width = w
+                else:
+                    # Si ya tenemos el máximo de líneas, agregar a la última línea aunque exceda
+                    current_line_words.append(word)
+                    current_line_vals.append(val)
+                    current_line_widths.append(w)
+                    current_line_width += word_width_with_gap
+            else:
+                current_line_words.append(word)
+                current_line_vals.append(val)
+                current_line_widths.append(w)
+                current_line_width += word_width_with_gap
+        
+        # Agregar la última línea
+        if current_line_words:
+            lines.append((current_line_words, current_line_vals, current_line_widths))
+        
+        # Calcular el espacio vertical necesario y ajustar posición del TScore
+        # Aumentar el espaciado entre líneas para mejor legibilidad
+        line_height = 0.18 if len(lines) > 1 else 0.15
+        total_height = len(lines) * line_height
+        start_y = 0.5 + total_height / 2 - line_height / 2
+        
+        # Ajustar posición del TScore según el número de líneas
+        # Si hay más de una línea, mover el TScore más arriba para dar espacio
+        if len(lines) > 1:
+            # Aumentar el espacio superior cuando hay múltiples líneas
+            tscore_y_pos = min(0.95, 0.88 + (len(lines) - 1) * 0.03)
+        else:
+            tscore_y_pos = 0.85
+        
+        # Dibujar TScore
+        ax_txt.text(0.5, tscore_y_pos, f"TScore {tscore:.2%}",
+                    ha="center", va="center", transform=ax_txt.transAxes, fontsize=13)
+        
+        # Dibujar cada línea de palabras con mejor espaciado
+        for line_idx, (line_words, line_vals, line_widths) in enumerate(lines):
+            line_total_w = sum(line_widths) + gap * max(0, len(line_words)-1)
+            start_x = 0.5 - line_total_w / 2
+            x = start_x
+            # Calcular posición Y con espaciado uniforme entre líneas
+            y = start_y - line_idx * line_height
+            
+            for word, val, w in zip(line_words, line_vals, line_widths):
+                color = cmap_text(norm_text(val))
+                ax_txt.text(
+                    x, y, word,
+                    ha="left", va="center", fontsize=14, color="black",
+                    transform=ax_txt.transAxes,
+                    bbox=dict(facecolor=color, alpha=0.8, edgecolor="white", 
+                             linewidth=0.5, boxstyle="square,pad=0.2")
+                )
+                x += w + gap
 
     if coarsened_abs_values:
         combined_abs = np.concatenate(coarsened_abs_values)
