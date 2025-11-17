@@ -42,4 +42,3 @@ print("\n" + "=" * 80)
 print("✅ Los heatmaps ahora tienen alpha=0.30 (antes 0.50)")
 print("   Los parches deberían verse más difuminados y la imagen más clara")
 print("=" * 80)
-

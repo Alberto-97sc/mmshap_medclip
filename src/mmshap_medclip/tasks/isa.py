@@ -173,11 +173,11 @@ def _compute_isa_shap(
     """Aplica SHAP al batch dado y retorna valores por muestra y text_len."""
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
     image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
-    
+
     # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
     # Solo para tokenizadores flexibles (BERT). OpenCLIP tradicional necesita longitud fija
     X_clean, text_len = concat_text_image_tokens(
-        inputs, image_token_ids_expanded, device=device, 
+        inputs, image_token_ids_expanded, device=device,
         nb_text_tokens=nb_text_tokens_tensor, tokenizer=model.tokenizer
     )
 

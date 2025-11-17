@@ -16,4 +16,3 @@ model:
   name: biomedclip
   params:
     model_name: hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
-

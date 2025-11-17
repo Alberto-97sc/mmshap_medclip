@@ -194,10 +194,10 @@ def _decode_tokens_for_plot(tokenizer, input_ids):
 
     # Filtrar tokens especiales que puedan haberse colado por nombre
     # (algunos tokenizadores devuelven "[CLS]", "[SEP]", etc como strings)
-    special_token_strings = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "[UNK]", 
+    special_token_strings = {"[CLS]", "[SEP]", "[PAD]", "[MASK]", "[UNK]",
                              "<s>", "</s>", "<pad>", "<unk>", "<mask>",
                              "<|startoftext|>", "<|endoftext|>"}
-    
+
     # Filtrar tokens y sus índices
     filtered_tokens = []
     filtered_keep_idx = []
@@ -205,7 +205,7 @@ def _decode_tokens_for_plot(tokenizer, input_ids):
         if tok.strip() not in special_token_strings:
             filtered_tokens.append(tok)
             filtered_keep_idx.append(idx)
-    
+
     # Si todos fueron filtrados, usar el texto limpio
     if not filtered_tokens and text_clean:
         filtered_tokens = text_clean.split()
@@ -553,21 +553,21 @@ def plot_text_image_heatmaps(
     vmax_img = float(np.percentile(combined_abs, percentile_img)) if combined_abs.size else 0.0
     if not np.isfinite(vmax_img) or vmax_img <= 0:
         vmax_img = float(np.max(combined_abs)) if combined_abs.size else 0.0
-    
+
     # Si los valores son extremadamente pequeños, usar el máximo absoluto
     # en lugar del percentil para hacer la visualización más visible
     if vmax_img < 1e-3:
         vmax_img = float(np.max(combined_abs)) if combined_abs.size else 0.0
-    
+
     # Asegurar un mínimo razonable para la normalización
     vmax_img = max(vmax_img, 1e-8)
-    
+
     # Calcular los valores originales (con signo) para la normalización
     if all_image_values:
         img_vals_concat = np.concatenate([v for v in all_image_values if v.size > 0])
         if img_vals_concat.size > 0 and np.any(img_vals_concat != 0):
             # Usar el rango real de los valores
-            vmax_img = max(abs(float(np.percentile(img_vals_concat, 95))), 
+            vmax_img = max(abs(float(np.percentile(img_vals_concat, 95))),
                           abs(float(np.percentile(img_vals_concat, 5))))
             vmax_img = max(vmax_img, 1e-8)
 
@@ -579,10 +579,10 @@ def plot_text_image_heatmaps(
         heat_up = entry["heat"]
         H = entry["H"]
         W = entry["W"]
-        
+
         # Aumentar alpha ligeramente si los valores son muy pequeños para mejorar visibilidad
         alpha_to_use = min(alpha_overlay * 1.3, 0.6) if vmax_img < 1.0 else alpha_overlay
-        
+
         ax.imshow(
             heat_up,
             cmap=cmap_img,
@@ -592,7 +592,7 @@ def plot_text_image_heatmaps(
             interpolation="nearest",
             zorder=1,
         )
-        
+
         ax.set_aspect("equal")
         ax.set_xlim(-0.5, W - 0.5)
         ax.set_ylim(H - 0.5, -0.5)
