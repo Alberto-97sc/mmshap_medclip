@@ -657,7 +657,8 @@ def plot_text_image_heatmaps(
             t.remove()
 
         # Agregar espacio entre palabras para que no se sobrepongan los parches
-        gap = 0.02  # Espacio entre palabras
+        # AUMENTADO significativamente para evitar solapamiento
+        gap = 0.045  # Espacio entre palabras (aumentado de 0.02)
         
         # Usar ancho real de las palabras para dividir en líneas simétricas
         # Calcular ancho total de todas las palabras
@@ -743,29 +744,30 @@ def plot_text_image_heatmaps(
         
         # Calcular el espacio vertical necesario y ajustar posición del TScore
         # Aumentar significativamente el espaciado entre líneas para evitar superposición
-        # Usar más espacio cuando hay más líneas
+        # Usar más espacio cuando hay más líneas - AUMENTADO AÚN MÁS para evitar solapamiento
         if len(lines) > 5:
-            line_height = 0.32  # Espaciado muy grande para muchas líneas
+            line_height = 0.45  # Espaciado muy grande para muchas líneas (aumentado de 0.38)
         elif len(lines) > 3:
-            line_height = 0.28  # Espaciado grande para varias líneas
+            line_height = 0.42  # Espaciado grande para varias líneas (aumentado de 0.35)
         elif len(lines) > 1:
-            line_height = 0.25  # Espaciado medio para múltiples líneas
+            line_height = 0.38  # Espaciado medio para múltiples líneas (aumentado de 0.32)
         else:
-            line_height = 0.20  # Espaciado normal para una línea
+            line_height = 0.35  # Espaciado normal para una línea (aumentado de 0.28)
         
         total_height = len(lines) * line_height
-        start_y = 0.5 + total_height / 2 - line_height / 2
+        # Bajar más las palabras: empezar desde una posición Y más baja para dar espacio al TScore
+        start_y = 0.28 + total_height / 2 - line_height / 2  # Bajado de 0.35 a 0.28
         
         # Ajustar posición del TScore según el número de líneas
-        # Si hay más de una línea, mover el TScore más arriba para dar espacio
+        # Mover el TScore más arriba para evitar solapamiento con las palabras
         if len(lines) > 5:
             # Para muchas líneas, mover el TScore más arriba
-            tscore_y_pos = min(0.99, 0.92 + (len(lines) - 1) * 0.015)
+            tscore_y_pos = min(0.99, 0.97 + (len(lines) - 1) * 0.008)  # Aumentado de 0.95
         elif len(lines) > 1:
             # Aumentar el espacio superior cuando hay múltiples líneas
-            tscore_y_pos = min(0.98, 0.90 + (len(lines) - 1) * 0.02)
+            tscore_y_pos = min(0.98, 0.96 + (len(lines) - 1) * 0.01)  # Aumentado de 0.93
         else:
-            tscore_y_pos = 0.85
+            tscore_y_pos = 0.92  # Aumentado de 0.88
         
         # Dibujar TScore
         ax_txt.text(0.5, tscore_y_pos, f"TScore {tscore:.2%}",
@@ -785,8 +787,9 @@ def plot_text_image_heatmaps(
                     x, y, word,
                     ha="left", va="center", fontsize=14, color="black",
                     transform=ax_txt.transAxes,
+                    # Aumentar el padding del bbox para más espacio visual entre palabras
                     bbox=dict(facecolor=color, alpha=0.8, edgecolor="white", 
-                             linewidth=0.5, boxstyle="square,pad=0.2")
+                             linewidth=0.5, boxstyle="square,pad=0.35")  # Aumentado de 0.2 a 0.35
                 )
                 x += w + gap
 
@@ -849,7 +852,8 @@ def plot_text_image_heatmaps(
     cax_i = fig.add_axes([first_pos.x1 + 0.01, first_pos.y0, 0.015, first_pos.height])
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_img, norm=norm_img), cax=cax_i, label="Valor SHAP por parche")
 
-    cax_t = fig.add_axes([0.05, 0.03, 0.9, 0.02])
+    # Bajar más el colorbar del texto para evitar solapamiento con las palabras del caption
+    cax_t = fig.add_axes([0.05, 0.01, 0.9, 0.02])  # Bajado de 0.03 a 0.01
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_text, norm=norm_text),
                  cax=cax_t, orientation="horizontal", label="Valor SHAP por palabra")
 
