@@ -481,7 +481,7 @@ def plot_text_image_heatmaps(
     # --- figura ---
     # Aumentar altura de la figura y dar más espacio a la sección de texto
     fig = plt.figure(figsize=(5 * B, 7.5), layout="constrained")
-    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=-0.05, wspace=0.03)
+    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=-0.25, wspace=0.03)
 
     # for measuring token widths to center text row
     fig.canvas.draw()
@@ -825,7 +825,7 @@ def plot_text_image_heatmaps(
         # Ancho total = posición final del último - posición inicial del primero
         text_width_total = last_text_pos.x1 - first_text_pos.x0
         # Colocar el colorbar separado del texto (más separado del caption)
-        cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.12, text_width_total, 0.015])
+        cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.20, text_width_total, 0.015])
     else:
         # Fallback si no encontramos los subplots de texto
         cax_t = fig.add_axes([0.05, 0.01, 0.9, 0.015])
