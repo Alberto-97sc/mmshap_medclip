@@ -650,19 +650,19 @@ def plot_text_image_heatmaps(
         # Calcular ancho total de todas las palabras
         total_width = sum(widths) + gap * max(0, len(words_display) - 1)
         
-        # Determinar número de líneas según la longitud del texto (igual que el caption)
+        # Determinar número de líneas según la longitud del texto (reducido para más palabras por línea)
         text_plain = " ".join(words_display)
         text_length = len(text_plain)
         
         if text_length > 200:
-            target_num_lines = 8
-        elif text_length > 120:
-            target_num_lines = 6
-        else:
             target_num_lines = 4
+        elif text_length > 120:
+            target_num_lines = 3
+        else:
+            target_num_lines = 2
         
-        # Calcular ancho objetivo por línea (usar 80% del ancho disponible para dejar márgenes)
-        max_width_per_line = min(0.80, total_width / target_num_lines * 1.1)
+        # Calcular ancho objetivo por línea (usar 95% del ancho disponible para más palabras por línea)
+        max_width_per_line = min(0.95, total_width / max(target_num_lines, 1) * 1.2)
         
         # Dividir palabras en líneas usando el ancho real
         lines = []
@@ -675,7 +675,8 @@ def plot_text_image_heatmaps(
             word_width_with_gap = w + (gap if current_line_words else 0)
             
             # Si agregar esta palabra excedería el ancho máximo Y ya tenemos contenido
-            if current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line:
+            # Ser más permisivo: solo crear nueva línea si excede significativamente (1.05x) o si ya tenemos muchas líneas
+            if current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line * 1.05:
                 # Si aún no hemos alcanzado el número objetivo de líneas, crear nueva línea
                 if len(lines) < target_num_lines - 1:
                     lines.append((current_line_words, current_line_vals, current_line_widths))
@@ -684,17 +685,16 @@ def plot_text_image_heatmaps(
                     current_line_widths = [w]
                     current_line_width = w
                 else:
-                    # Si ya estamos en la última línea permitida, agregar todo lo que quede
-                    # pero primero verificar si la línea actual ya es muy larga
-                    if current_line_width > max_width_per_line * 0.9:
-                        # La línea actual ya es larga, crear nueva línea aunque exceda el límite
+                    # Si ya estamos en la última línea permitida, permitir que sea más larga
+                    # Solo crear nueva línea si excede mucho (1.15x)
+                    if current_line_width > max_width_per_line * 1.15:
                         lines.append((current_line_words, current_line_vals, current_line_widths))
                         current_line_words = [word]
                         current_line_vals = [val]
                         current_line_widths = [w]
                         current_line_width = w
                     else:
-                        # Agregar a la línea actual
+                        # Agregar a la línea actual (permitir líneas más largas)
                         current_line_words.append(word)
                         current_line_vals.append(val)
                         current_line_widths.append(w)
@@ -710,23 +710,7 @@ def plot_text_image_heatmaps(
         if current_line_words:
             lines.append((current_line_words, current_line_vals, current_line_widths))
         
-        # Si la última línea es muy larga (más del 120% del ancho promedio), dividirla
-        if len(lines) > 0:
-            last_line_width = sum(lines[-1][2]) + gap * max(0, len(lines[-1][0]) - 1)
-            avg_line_width = total_width / len(lines)
-            
-            if last_line_width > avg_line_width * 1.2 and len(lines[-1][0]) > 3:
-                # Dividir la última línea en dos
-                last_words = lines[-1][0]
-                last_vals = lines[-1][1]
-                last_widths = lines[-1][2]
-                
-                # Encontrar el punto medio
-                mid_point = len(last_words) // 2
-                
-                # Crear dos líneas
-                lines[-1] = (last_words[:mid_point], last_vals[:mid_point], last_widths[:mid_point])
-                lines.append((last_words[mid_point:], last_vals[mid_point:], last_widths[mid_point:]))
+        # No dividir líneas largas - permitir que las líneas sean más largas con más palabras
         
         # Calcular el espacio vertical necesario y ajustar posición del TScore
         # Aumentar significativamente el espaciado entre líneas para evitar superposición
