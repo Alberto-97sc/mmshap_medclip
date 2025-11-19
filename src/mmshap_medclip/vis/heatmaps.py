@@ -804,13 +804,31 @@ def plot_text_image_heatmaps(
         ax.axis("off")
 
     # colorbars
-    # Usar el primer eje de imagen de image_overlay_entries para alineación correcta
-    if image_overlay_entries:
+    # Encontrar los ejes de imagen (fila 0) para alineación correcta del colorbar
+    # y evitar que se cruce con el caption
+    img_axes = []
+    for ax in fig.axes:
+        if hasattr(ax, 'get_subplotspec') and ax.get_subplotspec() is not None:
+            subplot_spec = ax.get_subplotspec()
+            if hasattr(subplot_spec, 'rowspan') and subplot_spec.rowspan.start == 0:  # Fila superior (imagen)
+                img_axes.append(ax)
+    
+    if img_axes:
+        # Usar el primer eje de imagen para obtener posición y altura correcta
+        first_img_pos = img_axes[0].get_position()
+        # Calcular la altura real del subplot de imagen (fila 0) sin superposición
+        # Usar la posición del gridspec para obtener la altura correcta
+        gs_pos = gs[0, 0].get_position(fig)
+        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, gs_pos.y0, 0.015, gs_pos.height])
+    elif image_overlay_entries:
+        # Fallback: usar image_overlay_entries pero limitar altura al gridspec
         first_img_pos = image_overlay_entries[0]["ax"].get_position()
-        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, first_img_pos.y0, 0.015, first_img_pos.height])
+        gs_pos = gs[0, 0].get_position(fig)
+        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, gs_pos.y0, 0.015, gs_pos.height])
     else:
         first_pos = fig.axes[0].get_position()
-        cax_i = fig.add_axes([first_pos.x1 + 0.03, first_pos.y0, 0.015, first_pos.height])
+        gs_pos = gs[0, 0].get_position(fig)
+        cax_i = fig.add_axes([first_pos.x1 + 0.03, gs_pos.y0, 0.015, gs_pos.height])
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_img, norm=norm_img), cax=cax_i, label="Valor SHAP por parche")
 
     # Colorbar del texto cerca del caption
