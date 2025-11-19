@@ -481,7 +481,7 @@ def plot_text_image_heatmaps(
     # --- figura ---
     # Aumentar altura de la figura y dar más espacio a la sección de texto
     fig = plt.figure(figsize=(5 * B, 7.5), layout="constrained")
-    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=0.12, wspace=0.03)
+    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=0.0, wspace=0.03)
 
     # for measuring token widths to center text row
     fig.canvas.draw()
@@ -809,8 +809,27 @@ def plot_text_image_heatmaps(
     cax_i = fig.add_axes([first_pos.x1 + 0.03, first_pos.y0, 0.015, first_pos.height])
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_img, norm=norm_img), cax=cax_i, label="Valor SHAP por parche")
 
-    # Bajar más el colorbar del texto para evitar solapamiento con las palabras del caption
-    cax_t = fig.add_axes([0.05, 0.005, 0.9, 0.015])  # Ajustado para más espacio
+    # Colorbar del texto cerca del caption
+    # Obtener las posiciones de los subplots de texto para calcular el ancho total
+    text_axes = []
+    for ax in fig.axes:
+        if hasattr(ax, 'get_subplotspec') and ax.get_subplotspec() is not None:
+            subplot_spec = ax.get_subplotspec()
+            if hasattr(subplot_spec, 'rowspan') and subplot_spec.rowspan.start == 1:  # Fila inferior (texto)
+                text_axes.append(ax)
+    
+    if text_axes:
+        # Usar el primer y último subplot para calcular el ancho total
+        first_text_pos = text_axes[0].get_position()
+        last_text_pos = text_axes[-1].get_position()
+        # Ancho total = posición final del último - posición inicial del primero
+        text_width_total = last_text_pos.x1 - first_text_pos.x0
+        # Colocar el colorbar justo debajo del texto, sin espacio
+        cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.02, text_width_total, 0.015])
+    else:
+        # Fallback si no encontramos los subplots de texto
+        cax_t = fig.add_axes([0.05, 0.01, 0.9, 0.015])
+    
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_text, norm=norm_text),
                  cax=cax_t, orientation="horizontal", label="Valor SHAP por palabra")
 
