@@ -588,11 +588,12 @@ def plot_text_image_heatmaps(
         ax_img.imshow(img_vis, origin="upper", interpolation="nearest", zorder=0)
         
         # Mostrar solo TScore e IScore juntos en la parte superior
+        # Usar text() con posición absoluta para subir el título y evitar que choque con la imagen
         title_text = f"TScore: {tscore:.2%}  |  IScore: {iscore:.2%}"
-        ax_img.set_title(title_text, fontsize=13, pad=10, loc='center', 
-                        family='sans-serif', weight='bold',
-                        bbox=dict(boxstyle="round,pad=0.5", facecolor="white", 
-                                 alpha=0.9, edgecolor="gray", linewidth=1.5))
+        ax_img.text(0.5, 1.02, title_text, fontsize=12, weight='bold',
+                   ha='center', va='bottom', transform=ax_img.transAxes,
+                   bbox=dict(boxstyle="round,pad=0.4", facecolor="white", 
+                            alpha=0.9, edgecolor="gray", linewidth=1.2))
         image_overlay_entries.append({
             "ax": ax_img,
             "heat": heat_up,
@@ -642,9 +643,8 @@ def plot_text_image_heatmaps(
             widths.append(bb_data[0,0] - bb_data[1,0])
             t.remove()
 
-        # Agregar espacio entre palabras para que no se sobrepongan los parches
-        # AUMENTADO significativamente para evitar solapamiento
-        gap = 0.065  # Espacio entre palabras (aumentado para mejor legibilidad)
+        # Agregar espacio entre palabras - usar espaciado normal del caption original
+        gap = 0.025  # Espacio entre palabras (reducido para espaciado normal)
         
         # Usar ancho real de las palabras para dividir en líneas simétricas
         # Calcular ancho total de todas las palabras
@@ -760,9 +760,9 @@ def plot_text_image_heatmaps(
                     x, y, word,
                     ha="left", va="center", fontsize=13, color="black",
                     transform=ax_txt.transAxes,
-                    # Aumentar el padding del bbox para más espacio visual entre palabras
+                    # Padding reducido para espaciado normal entre palabras
                     bbox=dict(facecolor=color, alpha=0.85, edgecolor="white", 
-                             linewidth=0.8, boxstyle="square,pad=0.4")  # Padding aumentado para mejor separación
+                             linewidth=0.5, boxstyle="square,pad=0.15")  # Padding reducido para espaciado normal
                 )
                 x += w + gap
 
