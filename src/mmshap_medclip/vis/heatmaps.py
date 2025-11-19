@@ -481,7 +481,7 @@ def plot_text_image_heatmaps(
     # --- figura ---
     # Aumentar altura de la figura y dar más espacio a la sección de texto
     fig = plt.figure(figsize=(5 * B, 7.5), layout="constrained")
-    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=-0.25, wspace=0.03)
+    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=-0.30, wspace=0.03)
 
     # for measuring token widths to center text row
     fig.canvas.draw()
@@ -725,10 +725,9 @@ def plot_text_image_heatmaps(
             line_height = 0.09  # Espaciado normal para una línea
         
         total_height = len(lines) * line_height
-        # Calcular posición inicial de las palabras centradas verticalmente
-        # Ya no hay TScore abajo, así que podemos usar más espacio vertical
-        # Centrar las palabras en el espacio disponible
-        start_y = 0.5 + total_height / 2 - line_height / 2
+        # Calcular posición inicial de las palabras cerca de la parte superior
+        # para reducir el espacio entre la imagen y el caption
+        start_y = 0.75 + total_height / 2 - line_height / 2
         
         # Dibujar cada línea de palabras con mejor espaciado
         for line_idx, (line_words, line_vals, line_widths) in enumerate(lines):
@@ -824,8 +823,8 @@ def plot_text_image_heatmaps(
         last_text_pos = text_axes[-1].get_position()
         # Ancho total = posición final del último - posición inicial del primero
         text_width_total = last_text_pos.x1 - first_text_pos.x0
-        # Colocar el colorbar separado del texto (más separado del caption)
-        cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.20, text_width_total, 0.015])
+        # Colocar el colorbar cerca del caption (reducir espacio entre caption y colorbar)
+        cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.03, text_width_total, 0.015])
     else:
         # Fallback si no encontramos los subplots de texto
         cax_t = fig.add_axes([0.05, 0.01, 0.9, 0.015])
