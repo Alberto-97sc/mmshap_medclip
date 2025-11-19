@@ -481,7 +481,7 @@ def plot_text_image_heatmaps(
     # --- figura ---
     # Aumentar altura de la figura y dar más espacio a la sección de texto
     fig = plt.figure(figsize=(5 * B, 7.5), layout="constrained")
-    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=0.08, wspace=0.03)
+    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=0.12, wspace=0.03)
 
     # for measuring token widths to center text row
     fig.canvas.draw()
@@ -590,7 +590,7 @@ def plot_text_image_heatmaps(
         # Mostrar solo TScore e IScore juntos en la parte superior
         # Usar text() con posición absoluta para subir el título y evitar que choque con la imagen
         title_text = f"TScore: {tscore:.2%}  |  IScore: {iscore:.2%}"
-        ax_img.text(0.5, 1.02, title_text, fontsize=12, weight='bold',
+        ax_img.text(0.5, 1.08, title_text, fontsize=12, weight='bold',
                    ha='center', va='bottom', transform=ax_img.transAxes,
                    bbox=dict(boxstyle="round,pad=0.4", facecolor="white", 
                             alpha=0.9, edgecolor="gray", linewidth=1.2))
@@ -644,7 +644,7 @@ def plot_text_image_heatmaps(
             t.remove()
 
         # Agregar espacio entre palabras - usar espaciado normal del caption original
-        gap = 0.025  # Espacio entre palabras (reducido para espaciado normal)
+        gap = 0.015  # Espacio entre palabras (reducido para espaciado normal)
         
         # Usar ancho real de las palabras para dividir en líneas simétricas
         # Calcular ancho total de todas las palabras
@@ -822,7 +822,7 @@ def plot_text_image_heatmaps(
 
     # colorbars
     first_pos = fig.axes[0].get_position()
-    cax_i = fig.add_axes([first_pos.x1 + 0.01, first_pos.y0, 0.015, first_pos.height])
+    cax_i = fig.add_axes([first_pos.x1 + 0.03, first_pos.y0, 0.015, first_pos.height])
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_img, norm=norm_img), cax=cax_i, label="Valor SHAP por parche")
 
     # Bajar más el colorbar del texto para evitar solapamiento con las palabras del caption
