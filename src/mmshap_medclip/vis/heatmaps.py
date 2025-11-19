@@ -586,27 +586,13 @@ def plot_text_image_heatmaps(
 
         ax_img = fig.add_subplot(gs[0, i])
         ax_img.imshow(img_vis, origin="upper", interpolation="nearest", zorder=0)
-        # Envolver el caption largo en múltiples líneas SIN truncar
-        # Ajustar automáticamente para mostrar todo el texto de manera simétrica
-        caption = texts[i]
-        # Calcular un ancho óptimo basado en la longitud del texto para líneas simétricas
-        text_length = len(caption)
-        # Para textos largos, usar más líneas pero con ancho razonable
-        if text_length > 200:
-            # Textos muy largos: más líneas, ancho moderado
-            wrapped_caption = wrap_text(caption, max_width=65, max_lines=8, prefer_long_lines=False)
-        elif text_length > 120:
-            # Textos medianos: líneas moderadas
-            wrapped_caption = wrap_text(caption, max_width=60, max_lines=6, prefer_long_lines=False)
-        else:
-            # Textos cortos: líneas estándar
-            wrapped_caption = wrap_text(caption, max_width=55, max_lines=4, prefer_long_lines=False)
         
-        # Formatear el título con mejor espaciado: caption separado del IScore
-        # Agregar una línea en blanco entre el caption y el IScore para mejor separación
-        title_text = f"{wrapped_caption}\n\nIScore: {iscore:.2%}"
-        ax_img.set_title(title_text, fontsize=11, pad=15, loc='center', 
-                        family='sans-serif')
+        # Mostrar solo TScore e IScore juntos en la parte superior
+        title_text = f"TScore: {tscore:.2%}  |  IScore: {iscore:.2%}"
+        ax_img.set_title(title_text, fontsize=13, pad=10, loc='center', 
+                        family='sans-serif', weight='bold',
+                        bbox=dict(boxstyle="round,pad=0.5", facecolor="white", 
+                                 alpha=0.9, edgecolor="gray", linewidth=1.5))
         image_overlay_entries.append({
             "ax": ax_img,
             "heat": heat_up,
@@ -638,9 +624,8 @@ def plot_text_image_heatmaps(
                 wrapped_text = wrap_text(text_to_wrap, max_width=70, max_lines=4, prefer_long_lines=False)
             else:
                 wrapped_text = wrap_text(text_to_wrap, max_width=65, max_lines=3, prefer_long_lines=False)
-            ax_txt.text(0.5, 0.90, f"TScore {tscore:.2%}",
-                        ha="center", va="center", transform=ax_txt.transAxes, fontsize=13)
-            ax_txt.text(0.5, 0.35, wrapped_text,
+            # Ya no mostrar TScore aquí, está arriba junto con IScore
+            ax_txt.text(0.5, 0.5, wrapped_text,
                         ha="center", va="center", transform=ax_txt.transAxes, fontsize=12)
             continue
 
@@ -757,35 +742,9 @@ def plot_text_image_heatmaps(
         
         total_height = len(lines) * line_height
         # Calcular posición inicial de las palabras centradas verticalmente
-        # Dejar espacio suficiente arriba para el TScore (que está en ~0.92-0.95)
-        # Asegurar que la línea más alta no suba más allá de 0.85
-        max_top_y = 0.85  # Límite superior para las palabras (línea más alta)
-        # La primera línea (más alta) estará en max_top_y
-        # Las siguientes líneas irán bajando con line_height
-        start_y = max_top_y
-        
-        # Ajustar posición del TScore según el número de líneas
-        # Mover el TScore más arriba para evitar solapamiento con las palabras
-        # Asegurar que siempre haya espacio suficiente entre TScore y palabras
-        if len(lines) > 5:
-            # Para muchas líneas, mover el TScore más arriba
-            tscore_y_pos = 0.95
-        elif len(lines) > 3:
-            # Para varias líneas, posición alta
-            tscore_y_pos = 0.94
-        elif len(lines) > 1:
-            # Para múltiples líneas, posición media-alta
-            tscore_y_pos = 0.93
-        else:
-            # Para una línea, posición estándar
-            tscore_y_pos = 0.92
-        
-        # Dibujar TScore con mejor formato y posición
-        ax_txt.text(0.5, tscore_y_pos, f"TScore: {tscore:.2%}",
-                    ha="center", va="top", transform=ax_txt.transAxes, 
-                    fontsize=14, weight='bold', 
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", 
-                             alpha=0.9, edgecolor="gray", linewidth=1))
+        # Ya no hay TScore abajo, así que podemos usar más espacio vertical
+        # Centrar las palabras en el espacio disponible
+        start_y = 0.5 + total_height / 2 - line_height / 2
         
         # Dibujar cada línea de palabras con mejor espaciado
         for line_idx, (line_words, line_vals, line_widths) in enumerate(lines):
