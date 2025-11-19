@@ -479,8 +479,9 @@ def plot_text_image_heatmaps(
     coarsened_abs_values = []
 
     # --- figura ---
-    fig = plt.figure(figsize=(5 * B, 6), layout="constrained")
-    gs  = fig.add_gridspec(2, B, height_ratios=[4, 1], hspace=0.05, wspace=0.03)
+    # Aumentar altura de la figura y dar más espacio a la sección de texto
+    fig = plt.figure(figsize=(5 * B, 7.5), layout="constrained")
+    gs  = fig.add_gridspec(2, B, height_ratios=[3.5, 1.5], hspace=0.08, wspace=0.03)
 
     # for measuring token widths to center text row
     fig.canvas.draw()
@@ -658,7 +659,7 @@ def plot_text_image_heatmaps(
 
         # Agregar espacio entre palabras para que no se sobrepongan los parches
         # AUMENTADO significativamente para evitar solapamiento
-        gap = 0.045  # Espacio entre palabras (aumentado de 0.02)
+        gap = 0.065  # Espacio entre palabras (aumentado para mejor legibilidad)
         
         # Usar ancho real de las palabras para dividir en líneas simétricas
         # Calcular ancho total de todas las palabras
@@ -744,34 +745,47 @@ def plot_text_image_heatmaps(
         
         # Calcular el espacio vertical necesario y ajustar posición del TScore
         # Aumentar significativamente el espaciado entre líneas para evitar superposición
-        # Usar más espacio cuando hay más líneas - AUMENTADO AÚN MÁS para evitar solapamiento
+        # Usar más espacio cuando hay más líneas para mejor legibilidad
         if len(lines) > 5:
-            line_height = 0.45  # Espaciado muy grande para muchas líneas (aumentado de 0.38)
+            line_height = 0.12  # Espaciado muy grande para muchas líneas
         elif len(lines) > 3:
-            line_height = 0.42  # Espaciado grande para varias líneas (aumentado de 0.35)
+            line_height = 0.11  # Espaciado grande para varias líneas
         elif len(lines) > 1:
-            line_height = 0.38  # Espaciado medio para múltiples líneas (aumentado de 0.32)
+            line_height = 0.10  # Espaciado medio para múltiples líneas
         else:
-            line_height = 0.35  # Espaciado normal para una línea (aumentado de 0.28)
+            line_height = 0.09  # Espaciado normal para una línea
         
         total_height = len(lines) * line_height
-        # Bajar más las palabras: empezar desde una posición Y más baja para dar espacio al TScore
-        start_y = 0.28 + total_height / 2 - line_height / 2  # Bajado de 0.35 a 0.28
+        # Calcular posición inicial de las palabras centradas verticalmente
+        # Dejar espacio suficiente arriba para el TScore (que está en ~0.92-0.95)
+        # Asegurar que la línea más alta no suba más allá de 0.85
+        max_top_y = 0.85  # Límite superior para las palabras (línea más alta)
+        # La primera línea (más alta) estará en max_top_y
+        # Las siguientes líneas irán bajando con line_height
+        start_y = max_top_y
         
         # Ajustar posición del TScore según el número de líneas
         # Mover el TScore más arriba para evitar solapamiento con las palabras
+        # Asegurar que siempre haya espacio suficiente entre TScore y palabras
         if len(lines) > 5:
             # Para muchas líneas, mover el TScore más arriba
-            tscore_y_pos = min(0.99, 0.97 + (len(lines) - 1) * 0.008)  # Aumentado de 0.95
+            tscore_y_pos = 0.95
+        elif len(lines) > 3:
+            # Para varias líneas, posición alta
+            tscore_y_pos = 0.94
         elif len(lines) > 1:
-            # Aumentar el espacio superior cuando hay múltiples líneas
-            tscore_y_pos = min(0.98, 0.96 + (len(lines) - 1) * 0.01)  # Aumentado de 0.93
+            # Para múltiples líneas, posición media-alta
+            tscore_y_pos = 0.93
         else:
-            tscore_y_pos = 0.92  # Aumentado de 0.88
+            # Para una línea, posición estándar
+            tscore_y_pos = 0.92
         
-        # Dibujar TScore
-        ax_txt.text(0.5, tscore_y_pos, f"TScore {tscore:.2%}",
-                    ha="center", va="center", transform=ax_txt.transAxes, fontsize=13)
+        # Dibujar TScore con mejor formato y posición
+        ax_txt.text(0.5, tscore_y_pos, f"TScore: {tscore:.2%}",
+                    ha="center", va="top", transform=ax_txt.transAxes, 
+                    fontsize=14, weight='bold', 
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", 
+                             alpha=0.9, edgecolor="gray", linewidth=1))
         
         # Dibujar cada línea de palabras con mejor espaciado
         for line_idx, (line_words, line_vals, line_widths) in enumerate(lines):
@@ -785,11 +799,11 @@ def plot_text_image_heatmaps(
                 color = cmap_text(norm_text(val))
                 ax_txt.text(
                     x, y, word,
-                    ha="left", va="center", fontsize=14, color="black",
+                    ha="left", va="center", fontsize=13, color="black",
                     transform=ax_txt.transAxes,
                     # Aumentar el padding del bbox para más espacio visual entre palabras
-                    bbox=dict(facecolor=color, alpha=0.8, edgecolor="white", 
-                             linewidth=0.5, boxstyle="square,pad=0.35")  # Aumentado de 0.2 a 0.35
+                    bbox=dict(facecolor=color, alpha=0.85, edgecolor="white", 
+                             linewidth=0.8, boxstyle="square,pad=0.4")  # Padding aumentado para mejor separación
                 )
                 x += w + gap
 
@@ -853,7 +867,7 @@ def plot_text_image_heatmaps(
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_img, norm=norm_img), cax=cax_i, label="Valor SHAP por parche")
 
     # Bajar más el colorbar del texto para evitar solapamiento con las palabras del caption
-    cax_t = fig.add_axes([0.05, 0.01, 0.9, 0.02])  # Bajado de 0.03 a 0.01
+    cax_t = fig.add_axes([0.05, 0.005, 0.9, 0.015])  # Ajustado para más espacio
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_text, norm=norm_text),
                  cax=cax_t, orientation="horizontal", label="Valor SHAP por palabra")
 
