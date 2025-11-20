@@ -879,8 +879,33 @@ def plot_text_image_heatmaps(
         last_text_pos = text_axes[-1].get_position()
         # Ancho total = posición final del último - posición inicial del primero
         text_width_total = last_text_pos.x1 - first_text_pos.x0
-        # Colocar el colorbar muy cerca del caption (reducir espacio entre caption y colorbar)
-        cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.005, text_width_total, 0.015])
+        
+        # Calcular la posición Y real de la última línea de texto en el primer subplot
+        # para colocar el colorbar justo debajo del texto, no del subplot completo
+        ax_txt_ref = text_axes[0]
+        # Obtener todos los objetos de texto en el eje
+        from matplotlib.text import Text
+        text_objects = [obj for obj in ax_txt_ref.get_children() if isinstance(obj, Text)]
+        
+        if text_objects:
+            # Encontrar la posición Y más baja (última línea) en coordenadas de figura
+            min_y_fig = float('inf')
+            for text_obj in text_objects:
+                # Obtener la posición del texto en coordenadas de datos del eje
+                bbox = text_obj.get_window_extent(renderer=renderer)
+                # Transformar a coordenadas de figura
+                bbox_fig = bbox.transformed(fig.transFigure.inverted())
+                # La parte inferior del texto (y0 del bbox)
+                text_bottom_y = bbox_fig.y0
+                if text_bottom_y < min_y_fig:
+                    min_y_fig = text_bottom_y
+            
+            # Colocar el colorbar justo debajo de la última línea de texto
+            # Reducir significativamente la distancia (de 0.005 a 0.02 para estar más cerca)
+            cax_t = fig.add_axes([first_text_pos.x0, min_y_fig - 0.02, text_width_total, 0.015])
+        else:
+            # Fallback: usar la posición del subplot pero más cerca
+            cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.01, text_width_total, 0.015])
     else:
         # Fallback si no encontramos los subplots de texto
         cax_t = fig.add_axes([0.05, 0.01, 0.9, 0.015])
