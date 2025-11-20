@@ -172,7 +172,7 @@ def concat_text_image_tokens(
         # OpenCLIP tradicional tiene context_length fijo
         inner_tok = getattr(tokenizer, "_tokenizer", tokenizer)
         context_length = getattr(inner_tok, "context_length", None)
-        
+
         # Si tiene context_length definido Y es mayor que los tokens reales, necesita padding
         if context_length is not None and nb_text_tokens is not None:
             max_real = int(nb_text_tokens.max().item())
@@ -185,7 +185,7 @@ def concat_text_image_tokens(
         # Tomar solo los tokens reales de cada muestra (para tokenizadores BERT/flexibles)
         X_clean_list = []
         max_real_tokens = int(nb_text_tokens.max().item())
-        
+
         for i in range(B_txt):
             n_real = int(nb_text_tokens[i].item())
             # Solo los tokens reales (sin padding)
@@ -193,7 +193,7 @@ def concat_text_image_tokens(
             # Concatenar con parches de imagen
             x_sample = torch.cat([real_tokens, image_token_ids_expanded[i]], dim=0)
             X_clean_list.append(x_sample)
-        
+
         # Pad todas las muestras al mismo tamaño
         X_clean = torch.nn.utils.rnn.pad_sequence(X_clean_list, batch_first=True, padding_value=0)
         text_seq_len = max_real_tokens
@@ -201,6 +201,6 @@ def concat_text_image_tokens(
         # Usar todo input_ids (con padding) para modelos con longitud fija
         text_seq_len = input_ids.shape[1]
         X_clean = torch.cat((input_ids, image_token_ids_expanded), dim=1)
-    
+
     X_clean = X_clean.to(dtype=dtype).to(device)
     return X_clean, text_seq_len
