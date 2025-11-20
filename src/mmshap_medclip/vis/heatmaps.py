@@ -814,21 +814,19 @@ def plot_text_image_heatmaps(
                 img_axes.append(ax)
     
     if img_axes:
-        # Usar el primer eje de imagen para obtener posición y altura correcta
+        # Usar la posición real del primer eje de imagen para alinear el colorbar
+        # Esto asegura que el colorbar esté a la misma altura que la imagen médica
         first_img_pos = img_axes[0].get_position()
-        # Calcular la altura real del subplot de imagen (fila 0) sin superposición
-        # Usar la posición del gridspec para obtener la altura correcta
-        gs_pos = gs[0, 0].get_position(fig)
-        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, gs_pos.y0, 0.015, gs_pos.height])
+        # Usar y0 y height del eje de imagen directamente para alineación perfecta
+        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, first_img_pos.y0, 0.015, first_img_pos.height])
     elif image_overlay_entries:
-        # Fallback: usar image_overlay_entries pero limitar altura al gridspec
+        # Fallback: usar image_overlay_entries con la posición real del eje
         first_img_pos = image_overlay_entries[0]["ax"].get_position()
-        gs_pos = gs[0, 0].get_position(fig)
-        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, gs_pos.y0, 0.015, gs_pos.height])
+        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, first_img_pos.y0, 0.015, first_img_pos.height])
     else:
+        # Fallback si no encontramos los ejes de imagen
         first_pos = fig.axes[0].get_position()
-        gs_pos = gs[0, 0].get_position(fig)
-        cax_i = fig.add_axes([first_pos.x1 + 0.03, gs_pos.y0, 0.015, gs_pos.height])
+        cax_i = fig.add_axes([first_pos.x1 + 0.03, first_pos.y0, 0.015, first_pos.height])
     fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_img, norm=norm_img), cax=cax_i, label="Valor SHAP por parche")
 
     # Colorbar del texto cerca del caption
