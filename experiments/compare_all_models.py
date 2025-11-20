@@ -19,7 +19,7 @@
 #
 # **Modelos:**
 # - PubMedCLIP
-# - BioMedCLIP  
+# - BioMedCLIP
 # - RCLIP
 # - WhyXRayCLIP
 #
@@ -180,4 +180,3 @@ from mmshap_medclip.comparison import analyze_multiple_samples
 # ---
 #
 # **Proyecto de tesis sobre balance multimodal en modelos CLIP médicos**
-

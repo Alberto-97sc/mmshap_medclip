@@ -471,8 +471,8 @@ jupyter notebook experiments/compare_all_models.ipynb
 
 ```python
 from mmshap_medclip.comparison import (
-    load_all_models, 
-    run_shap_on_all_models, 
+    load_all_models,
+    run_shap_on_all_models,
     plot_comparison_simple,
     print_summary
 )

@@ -212,4 +212,3 @@ jupytext --test experiments/compare_all_models.py
 ---
 
 **Creado para el proyecto de tesis sobre balance multimodal en modelos CLIP médicos**
-

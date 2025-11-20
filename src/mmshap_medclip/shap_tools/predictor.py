@@ -152,13 +152,13 @@ class Predictor:
                 # Enmascarar los parches donde patch_mask_ids == 0
                 mid = patch_mask_ids[i]              # [N]
                 pix = masked["pixel_values"]         # [1, 3, H, W]
-                
+
                 # Estrategia de enmascaramiento: usar valor constante neutral
                 # En espacio normalizado CLIP, usar gris oscuro (0.0, 0.0, 0.0)
-                mask_value = torch.tensor([0.0, 0.0, 0.0], 
-                                         dtype=pix.dtype, 
+                mask_value = torch.tensor([0.0, 0.0, 0.0],
+                                         dtype=pix.dtype,
                                          device=pix.device).view(1, 3, 1, 1)
-                
+
                 for k in range(self.num_patches):
                     if mid[k].item() == 0:
                         r = k // self.grid_w

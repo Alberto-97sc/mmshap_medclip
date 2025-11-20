@@ -72,4 +72,3 @@ image, caption = sample['image'], sample['text']
 
 res = run_isa_one(model, image, caption, device, explain=True, plot=True)
 print(f"logit={res['logit']:.4f}  TScore={res['tscore']:.2%}  IScore={res['iscore']:.2%}")
-
