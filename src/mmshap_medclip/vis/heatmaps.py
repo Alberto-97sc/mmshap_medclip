@@ -804,6 +804,9 @@ def plot_text_image_heatmaps(
         ax.axis("off")
 
     # colorbars
+    # Asegurar que la figura esté dibujada antes de calcular posiciones
+    fig.canvas.draw()
+    
     # Encontrar los ejes de imagen (fila 0) para alineación correcta del colorbar
     # y evitar que se cruce con el caption
     img_axes = []
@@ -814,15 +817,26 @@ def plot_text_image_heatmaps(
                 img_axes.append(ax)
     
     if img_axes:
-        # Usar la posición real del primer eje de imagen para alinear el colorbar
-        # Esto asegura que el colorbar esté a la misma altura que la imagen médica
-        first_img_pos = img_axes[0].get_position()
-        # Usar y0 y height del eje de imagen directamente para alineación perfecta
-        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, first_img_pos.y0, 0.015, first_img_pos.height])
+        # Usar el primer eje de imagen para calcular la posición del colorbar
+        # alineado con el área visible de la imagen (no con todo el subplot)
+        ax_img_ref = img_axes[0]
+        img_pos = ax_img_ref.get_position()
+        
+        # Obtener el bbox del área visible de la imagen (incluye solo el área de datos)
+        # Esto nos da la posición exacta donde se muestra la imagen, sin el espacio del título
+        bbox = ax_img_ref.get_window_extent(renderer=renderer)
+        bbox_fig = bbox.transformed(fig.transFigure.inverted())
+        
+        # El colorbar debe estar alineado con el área visible de la imagen
+        # Usar la posición del bbox transformado para alineación precisa
+        cax_i = fig.add_axes([img_pos.x1 + 0.03, bbox_fig.y0, 0.015, bbox_fig.height])
     elif image_overlay_entries:
-        # Fallback: usar image_overlay_entries con la posición real del eje
-        first_img_pos = image_overlay_entries[0]["ax"].get_position()
-        cax_i = fig.add_axes([first_img_pos.x1 + 0.03, first_img_pos.y0, 0.015, first_img_pos.height])
+        # Fallback: usar image_overlay_entries con cálculo de bbox
+        ax_img_ref = image_overlay_entries[0]["ax"]
+        img_pos = ax_img_ref.get_position()
+        bbox = ax_img_ref.get_window_extent(renderer=renderer)
+        bbox_fig = bbox.transformed(fig.transFigure.inverted())
+        cax_i = fig.add_axes([img_pos.x1 + 0.03, bbox_fig.y0, 0.015, bbox_fig.height])
     else:
         # Fallback si no encontramos los ejes de imagen
         first_pos = fig.axes[0].get_position()
