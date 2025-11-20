@@ -822,21 +822,42 @@ def plot_text_image_heatmaps(
         ax_img_ref = img_axes[0]
         img_pos = ax_img_ref.get_position()
         
-        # Obtener el bbox del área visible de la imagen (incluye solo el área de datos)
-        # Esto nos da la posición exacta donde se muestra la imagen, sin el espacio del título
-        bbox = ax_img_ref.get_window_extent(renderer=renderer)
-        bbox_fig = bbox.transformed(fig.transFigure.inverted())
+        # Obtener los límites de datos de la imagen para calcular el área visible exacta
+        # La imagen tiene límites: xlim(-0.5, W-0.5) y ylim(H-0.5, -0.5)
+        xlim = ax_img_ref.get_xlim()
+        ylim = ax_img_ref.get_ylim()
+        
+        # Transformar las esquinas del área de datos a coordenadas de figura
+        # Esquina inferior izquierda: (xlim[0], ylim[0])
+        # Esquina superior derecha: (xlim[1], ylim[1])
+        bbox_bottom_left = ax_img_ref.transData.transform([xlim[0], ylim[0]])
+        bbox_top_right = ax_img_ref.transData.transform([xlim[1], ylim[1]])
+        
+        # Transformar a coordenadas de figura
+        bbox_bottom_left_fig = fig.transFigure.inverted().transform(bbox_bottom_left)
+        bbox_top_right_fig = fig.transFigure.inverted().transform(bbox_top_right)
+        
+        # Calcular altura y posición Y del área visible de la imagen
+        img_visible_y0 = bbox_bottom_left_fig[1]
+        img_visible_y1 = bbox_top_right_fig[1]
+        img_visible_height = img_visible_y1 - img_visible_y0
         
         # El colorbar debe estar alineado con el área visible de la imagen
-        # Usar la posición del bbox transformado para alineación precisa
-        cax_i = fig.add_axes([img_pos.x1 + 0.03, bbox_fig.y0, 0.015, bbox_fig.height])
+        cax_i = fig.add_axes([img_pos.x1 + 0.03, img_visible_y0, 0.015, img_visible_height])
     elif image_overlay_entries:
-        # Fallback: usar image_overlay_entries con cálculo de bbox
+        # Fallback: usar image_overlay_entries con cálculo de límites de datos
         ax_img_ref = image_overlay_entries[0]["ax"]
         img_pos = ax_img_ref.get_position()
-        bbox = ax_img_ref.get_window_extent(renderer=renderer)
-        bbox_fig = bbox.transformed(fig.transFigure.inverted())
-        cax_i = fig.add_axes([img_pos.x1 + 0.03, bbox_fig.y0, 0.015, bbox_fig.height])
+        xlim = ax_img_ref.get_xlim()
+        ylim = ax_img_ref.get_ylim()
+        bbox_bottom_left = ax_img_ref.transData.transform([xlim[0], ylim[0]])
+        bbox_top_right = ax_img_ref.transData.transform([xlim[1], ylim[1]])
+        bbox_bottom_left_fig = fig.transFigure.inverted().transform(bbox_bottom_left)
+        bbox_top_right_fig = fig.transFigure.inverted().transform(bbox_top_right)
+        img_visible_y0 = bbox_bottom_left_fig[1]
+        img_visible_y1 = bbox_top_right_fig[1]
+        img_visible_height = img_visible_y1 - img_visible_y0
+        cax_i = fig.add_axes([img_pos.x1 + 0.03, img_visible_y0, 0.015, img_visible_height])
     else:
         # Fallback si no encontramos los ejes de imagen
         first_pos = fig.axes[0].get_position()
