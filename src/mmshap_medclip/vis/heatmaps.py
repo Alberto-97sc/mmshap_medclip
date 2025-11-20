@@ -900,12 +900,12 @@ def plot_text_image_heatmaps(
                 if text_bottom_y < min_y_fig:
                     min_y_fig = text_bottom_y
             
-            # Colocar el colorbar justo debajo de la última línea de texto
-            # Reducir significativamente la distancia (de 0.005 a 0.02 para estar más cerca)
-            cax_t = fig.add_axes([first_text_pos.x0, min_y_fig - 0.02, text_width_total, 0.015])
+            # Colocar el colorbar debajo de la última línea de texto con un espacio adecuado
+            # Aumentar la distancia para que no esté muy pegado al caption
+            cax_t = fig.add_axes([first_text_pos.x0, min_y_fig - 0.035, text_width_total, 0.015])
         else:
-            # Fallback: usar la posición del subplot pero más cerca
-            cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.01, text_width_total, 0.015])
+            # Fallback: usar la posición del subplot con espacio adecuado
+            cax_t = fig.add_axes([first_text_pos.x0, first_text_pos.y0 - 0.025, text_width_total, 0.015])
     else:
         # Fallback si no encontramos los subplots de texto
         cax_t = fig.add_axes([0.05, 0.01, 0.9, 0.015])
