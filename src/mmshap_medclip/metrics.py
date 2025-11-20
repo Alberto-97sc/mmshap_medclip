@@ -80,6 +80,9 @@ def compute_mm_score(
     if original_text and isinstance(original_text, str) and original_text.strip():
         words = original_text.strip().split()
         
+        # Verificar que no haya palabras vacías
+        words = [w for w in words if w.strip()]
+        
         # Obtener subtokens y sus scores
         subtokens = []
         try:
@@ -123,46 +126,151 @@ def compute_mm_score(
                 filtered_scores.append(score)
 
         # Mapear tokens a palabras del texto original
-        # Estrategia: acumular tokens hasta que formen una palabra completa
-        subtoken_idx = 0
-        for word in words:
-            word_clean = word.lower().strip().rstrip('.,!?;:')
-            temp_word = ""
-            temp_score = 0.0
-            tokens_in_word = 0
-
-            # Acumular tokens hasta formar la palabra
-            while subtoken_idx < len(filtered_subtokens):
-                tok = str(filtered_subtokens[subtoken_idx])
-                tok_clean = tok.lstrip("Ġ").lstrip("▁").replace("</w>", "").lstrip("#").lower().strip()
+        # Estrategia mejorada: usar el texto decodificado como referencia para mapear tokens a palabras
+        # Primero intentar decodificar el texto completo para tener una referencia
+        text_decoded_ref = None
+        try:
+            if hasattr(tokenizer, "decode"):
+                text_decoded_ref = tokenizer.decode(token_ids_list, skip_special_tokens=True)
+        except:
+            pass
+        
+        # Si tenemos texto decodificado, usarlo para mapear mejor
+        if text_decoded_ref and text_decoded_ref.strip():
+            # Limpiar el texto decodificado
+            text_decoded_ref = text_decoded_ref.strip()
+            for special in ["[CLS]", "[SEP]", "[PAD]", "<s>", "</s>", "<|startoftext|>", "<|endoftext|>", "<start_of_text>", "<end_of_text>"]:
+                text_decoded_ref = text_decoded_ref.replace(special, "")
+            text_decoded_ref = text_decoded_ref.strip()
+            
+            # Dividir el texto decodificado en palabras para referencia
+            words_decoded = text_decoded_ref.split()
+            
+            # Si el número de palabras coincide aproximadamente, usar mapeo directo
+            if abs(len(words) - len(words_decoded)) <= 2 and len(words) > 0:
+                # Mapeo más directo: asignar tokens proporcionalmente
+                tokens_per_word = len(filtered_subtokens) / len(words)
                 
-                # Si el token limpio está vacío, saltarlo
-                if not tok_clean:
-                    subtoken_idx += 1
+                for word_idx, word in enumerate(words):
+                    # Evitar duplicados: solo agregar si la palabra no está ya en el diccionario
+                    if word in word_shap:
+                        continue
+                        
+                    word_clean = word.lower().strip().rstrip('.,!?;:')
+                    temp_score = 0.0
+                    tokens_assigned = 0
+                    
+                    # Calcular cuántos tokens deberían corresponder a esta palabra
+                    start_idx = int(word_idx * tokens_per_word)
+                    end_idx = int((word_idx + 1) * tokens_per_word) if word_idx < len(words) - 1 else len(filtered_subtokens)
+                    
+                    # Asegurar que no excedamos el límite
+                    end_idx = min(end_idx, len(filtered_scores))
+                    
+                    # Acumular scores de los tokens asignados a esta palabra
+                    for idx in range(start_idx, end_idx):
+                        if idx < len(filtered_scores):
+                            temp_score += float(filtered_scores[idx])
+                            tokens_assigned += 1
+                    
+                    if word and word.strip() and tokens_assigned > 0:
+                        word_shap[word] = temp_score
+            else:
+                # Si no coincide, usar estrategia de acumulación mejorada
+                subtoken_idx = 0
+                for word_idx, word in enumerate(words):
+                    # Evitar duplicados: solo procesar si la palabra no está ya asignada
+                    if word in word_shap:
+                        continue
+                        
+                    word_clean = word.lower().strip().rstrip('.,!?;:')
+                    temp_word = ""
+                    temp_score = 0.0
+                    tokens_in_word = 0
+
+                    # Acumular tokens hasta formar la palabra completa
+                    # Limitar el número de tokens a procesar para evitar procesar tokens de más
+                    max_tokens_to_check = min(len(filtered_subtokens) - subtoken_idx, len(word_clean) * 3 + 5)
+                    
+                    for _ in range(max_tokens_to_check):
+                        if subtoken_idx >= len(filtered_subtokens):
+                            break
+                            
+                        tok = str(filtered_subtokens[subtoken_idx])
+                        tok_clean = tok.lstrip("Ġ").lstrip("▁").replace("</w>", "").lstrip("#").lower().strip()
+                        
+                        if not tok_clean:
+                            subtoken_idx += 1
+                            continue
+                        
+                        temp_word += tok_clean
+                        temp_score += float(filtered_scores[subtoken_idx])
+                        tokens_in_word += 1
+                        subtoken_idx += 1
+
+                        # Verificar si hemos formado la palabra completa
+                        temp_word_clean = temp_word.lower().strip().rstrip('.,!?;:')
+                        # Comparación más estricta: la palabra debe estar contenida o ser igual
+                        if word_clean == temp_word_clean or (word_clean in temp_word_clean and len(temp_word_clean) <= len(word_clean) * 1.2):
+                            if word and word.strip():
+                                word_shap[word] = temp_score
+                            break
+                        elif len(temp_word) > len(word_clean) * 1.3:
+                            # Si acumulamos demasiado, asignar y continuar
+                            if word and word.strip() and tokens_in_word > 0:
+                                word_shap[word] = temp_score
+                            break
+
+                    # Si no se asignó score, usar el acumulado (solo si no está duplicado)
+                    if word not in word_shap and word and word.strip() and tokens_in_word > 0:
+                        word_shap[word] = temp_score
+        else:
+            # Fallback: usar estrategia de acumulación simple
+            subtoken_idx = 0
+            for word_idx, word in enumerate(words):
+                # Evitar duplicados: solo procesar si la palabra no está ya asignada
+                if word in word_shap:
                     continue
+                    
+                word_clean = word.lower().strip().rstrip('.,!?;:')
+                temp_word = ""
+                temp_score = 0.0
+                tokens_in_word = 0
+
+                # Acumular tokens hasta formar la palabra completa
+                # Limitar el número de tokens a procesar para evitar procesar tokens de más
+                max_tokens_to_check = min(len(filtered_subtokens) - subtoken_idx, len(word_clean) * 3 + 5)
                 
-                temp_word += tok_clean
-                temp_score += float(filtered_scores[subtoken_idx])
-                tokens_in_word += 1
-                subtoken_idx += 1
+                for _ in range(max_tokens_to_check):
+                    if subtoken_idx >= len(filtered_subtokens):
+                        break
+                        
+                    tok = str(filtered_subtokens[subtoken_idx])
+                    tok_clean = tok.lstrip("Ġ").lstrip("▁").replace("</w>", "").lstrip("#").lower().strip()
+                    
+                    if not tok_clean:
+                        subtoken_idx += 1
+                        continue
+                    
+                    temp_word += tok_clean
+                    temp_score += float(filtered_scores[subtoken_idx])
+                    tokens_in_word += 1
+                    subtoken_idx += 1
 
-                # Verificar si hemos formado la palabra completa
-                # Comparar sin considerar mayúsculas/minúsculas y puntuación
-                temp_word_clean = temp_word.lower().strip().rstrip('.,!?;:')
-                if word_clean in temp_word_clean or temp_word_clean in word_clean:
-                    # Si la palabra está completa o muy cerca, asignar el score
-                    if word and word.strip():
-                        word_shap[word] = temp_score
-                    break
-                elif len(temp_word) > len(word_clean) * 1.5:
-                    # Si acumulamos demasiado sin formar la palabra, asignar y continuar
-                    if word and word.strip() and tokens_in_word > 0:
-                        word_shap[word] = temp_score
-                    break
+                    # Verificar si hemos formado la palabra completa (comparación más estricta)
+                    temp_word_clean = temp_word.lower().strip().rstrip('.,!?;:')
+                    if word_clean == temp_word_clean or (word_clean in temp_word_clean and len(temp_word_clean) <= len(word_clean) * 1.2):
+                        if word and word.strip():
+                            word_shap[word] = temp_score
+                        break
+                    elif len(temp_word) > len(word_clean) * 1.3:
+                        if word and word.strip() and tokens_in_word > 0:
+                            word_shap[word] = temp_score
+                        break
 
-            # Si no se asignó score pero hay tokens, asignar el acumulado
-            if word not in word_shap and word and word.strip() and tokens_in_word > 0:
-                word_shap[word] = temp_score
+                # Solo asignar si no está duplicado
+                if word not in word_shap and word and word.strip() and tokens_in_word > 0:
+                    word_shap[word] = temp_score
 
     elif text_decoded and isinstance(text_decoded, str) and text_decoded.strip():
         # Tenemos el texto decodificado, dividir en palabras

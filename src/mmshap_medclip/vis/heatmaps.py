@@ -605,8 +605,21 @@ def plot_text_image_heatmaps(
         # Usar las palabras y sus valores SHAP directamente de mm_scores
         # para que haya un parche por palabra, no por subtoken
         _, word_shap_dict = mm_scores[i]
-        words = list(word_shap_dict.keys())
-        word_vals = np.array([word_shap_dict[w] for w in words])
+        
+        # Eliminar palabras duplicadas manteniendo el orden (usar OrderedDict)
+        # Esto evita que se repita el texto en la visualización
+        from collections import OrderedDict
+        unique_word_shap = OrderedDict()
+        seen_words = set()
+        for word, score in word_shap_dict.items():
+            # Normalizar la palabra para comparación (sin puntuación final)
+            word_normalized = word.strip().rstrip('.,!?;:').lower()
+            if word_normalized not in seen_words:
+                unique_word_shap[word] = score
+                seen_words.add(word_normalized)
+        
+        words = list(unique_word_shap.keys())
+        word_vals = np.array([unique_word_shap[w] for w in words])
 
         ax_txt = fig.add_subplot(gs[1, i])
         ax_txt.axis("off")
