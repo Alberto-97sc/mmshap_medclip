@@ -932,6 +932,10 @@ def plot_text_image_heatmaps(
             # Reducir alpha más agresivamente para parches replicados
             # Aplicar reducción del 60% (multiplicar por 0.4) para que coincida mejor con otros modelos
             alpha_to_use = alpha_to_use * 0.4
+        else:
+            # Para modelos sin replicación, aumentar ligeramente el alpha para igualar con PubMedCLIP
+            # Aumentar en ~15% para mejorar visibilidad y balance
+            alpha_to_use = alpha_to_use * 1.15
 
         ax.imshow(
             heat_up,
