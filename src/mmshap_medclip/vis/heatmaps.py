@@ -715,12 +715,20 @@ def plot_text_image_heatmaps(
         current_line_widths = []
         current_line_width = 0
 
-        for word, val, w in zip(words_display, word_vals, widths):
+        # Convertir a lista para poder iterar con índice
+        words_list = list(words_display)
+        vals_list = list(word_vals)
+        widths_list = list(widths)
+        total_words = len(words_list)
+
+        for word_idx, (word, val, w) in enumerate(zip(words_list, vals_list, widths_list)):
+            is_last_word = (word_idx == total_words - 1)
             word_width_with_gap = w + (gap if current_line_words else 0)
 
             # Si agregar esta palabra excedería el ancho máximo Y ya tenemos contenido
             # Ser más permisivo: solo crear nueva línea si excede significativamente (1.05x) o si ya tenemos muchas líneas
-            if current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line * 1.05:
+            # IMPORTANTE: Si es la última palabra, siempre agregarla a la línea actual sin crear nueva línea
+            if not is_last_word and current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line * 1.05:
                 # Si aún no hemos alcanzado el número objetivo de líneas, crear nueva línea
                 if len(lines) < target_num_lines - 1:
                     lines.append((current_line_words, current_line_vals, current_line_widths))
@@ -744,13 +752,13 @@ def plot_text_image_heatmaps(
                         current_line_widths.append(w)
                         current_line_width += word_width_with_gap
             else:
-                # Agregar palabra a la línea actual
+                # Agregar palabra a la línea actual (siempre para la última palabra)
                 current_line_words.append(word)
                 current_line_vals.append(val)
                 current_line_widths.append(w)
                 current_line_width += word_width_with_gap
 
-        # Agregar la última línea
+        # Agregar la última línea (siempre debe tener contenido, especialmente la última palabra)
         if current_line_words:
             lines.append((current_line_words, current_line_vals, current_line_widths))
 
