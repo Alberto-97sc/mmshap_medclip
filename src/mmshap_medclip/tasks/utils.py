@@ -173,12 +173,11 @@ def concat_text_image_tokens(
         inner_tok = getattr(tokenizer, "_tokenizer", tokenizer)
         context_length = getattr(inner_tok, "context_length", None)
 
-        # Si tiene context_length definido Y es mayor que los tokens reales, necesita padding
-        if context_length is not None and nb_text_tokens is not None:
-            max_real = int(nb_text_tokens.max().item())
-            # Solo usar longitud fija si el context_length es significativamente mayor
-            # (esto indica que es un modelo OpenCLIP clásico con embeddings posicionales fijos)
-            needs_fixed_length = (context_length > max_real * 1.5)
+        # Si tiene context_length definido, es un modelo OpenCLIP y necesita longitud fija
+        # Esto es crítico porque OpenCLIP tiene embeddings posicionales fijos que requieren
+        # que todos los input_ids tengan la misma longitud (context_length)
+        if context_length is not None:
+            needs_fixed_length = True
 
     # Si tenemos nb_text_tokens Y el tokenizador es flexible, usar solo tokens reales
     if nb_text_tokens is not None and not needs_fixed_length:
