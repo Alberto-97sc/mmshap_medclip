@@ -575,18 +575,21 @@ def plot_text_image_heatmaps(
         # tengan la misma granularidad visual que modelos con patch_size pequeño (como BioMedCLIP con patch16)
         # Usamos replicación en lugar de interpolación para mantener la apariencia de parches discretos
         target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
-        if grid_vis.shape[0] < target_grid_size or grid_vis.shape[1] < target_grid_size:
-            # Calcular el factor de replicación necesario
-            h_orig, w_orig = grid_vis.shape[0], grid_vis.shape[1]
-            h_scale = target_grid_size / h_orig
-            w_scale = target_grid_size / w_orig
+        h_orig, w_orig = grid_vis.shape[0], grid_vis.shape[1]
+        
+        # Forzar replicación si el grid es más pequeño que el objetivo
+        if h_orig < target_grid_size or w_orig < target_grid_size:
+            # Calcular el factor de replicación necesario (redondear hacia arriba)
+            h_scale = int(np.ceil(target_grid_size / h_orig)) if h_orig > 0 else 1
+            w_scale = int(np.ceil(target_grid_size / w_orig)) if w_orig > 0 else 1
             
             # Replicar cada parche usando repeat_interleave para mantener parches discretos
             grid_vis_tensor = torch.as_tensor(grid_vis, dtype=torch.float32)
-            # Replicar en altura
-            grid_vis_tensor = grid_vis_tensor.repeat_interleave(int(np.ceil(h_scale)), dim=0)
-            # Replicar en ancho
-            grid_vis_tensor = grid_vis_tensor.repeat_interleave(int(np.ceil(w_scale)), dim=1)
+            # Replicar en altura: cada fila se repite h_scale veces
+            grid_vis_tensor = grid_vis_tensor.repeat_interleave(h_scale, dim=0)
+            # Replicar en ancho: cada columna se repite w_scale veces
+            grid_vis_tensor = grid_vis_tensor.repeat_interleave(w_scale, dim=1)
+            
             # Asegurar que tenga exactamente el tamaño objetivo
             if grid_vis_tensor.shape[0] > target_grid_size:
                 grid_vis_tensor = grid_vis_tensor[:target_grid_size, :]
@@ -594,9 +597,10 @@ def plot_text_image_heatmaps(
                 grid_vis_tensor = grid_vis_tensor[:, :target_grid_size]
             if grid_vis_tensor.shape[0] < target_grid_size or grid_vis_tensor.shape[1] < target_grid_size:
                 # Si aún es más pequeño, usar padding con el último valor
-                pad_h = target_grid_size - grid_vis_tensor.shape[0]
-                pad_w = target_grid_size - grid_vis_tensor.shape[1]
-                grid_vis_tensor = F.pad(grid_vis_tensor, (0, pad_w, 0, pad_h), mode='replicate')
+                pad_h = max(0, target_grid_size - grid_vis_tensor.shape[0])
+                pad_w = max(0, target_grid_size - grid_vis_tensor.shape[1])
+                if pad_h > 0 or pad_w > 0:
+                    grid_vis_tensor = F.pad(grid_vis_tensor, (0, pad_w, 0, pad_h), mode='replicate')
             grid_vis = grid_vis_tensor.numpy()
 
         grid_abs = np.abs(grid_vis).reshape(-1)

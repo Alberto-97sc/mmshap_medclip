@@ -343,18 +343,21 @@ def plot_comparison_simple(
         # tengan la misma granularidad visual que modelos con patch_size pequeño (como BioMedCLIP con patch16)
         # Usamos replicación en lugar de interpolación para mantener la apariencia de parches discretos
         target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
-        if patch_grid.shape[0] < target_grid_size or patch_grid.shape[1] < target_grid_size:
-            # Calcular el factor de replicación necesario
-            h_orig, w_orig = patch_grid.shape[0], patch_grid.shape[1]
-            h_scale = target_grid_size / h_orig
-            w_scale = target_grid_size / w_orig
+        h_orig, w_orig = patch_grid.shape[0], patch_grid.shape[1]
+        
+        # Forzar replicación si el grid es más pequeño que el objetivo
+        if h_orig < target_grid_size or w_orig < target_grid_size:
+            # Calcular el factor de replicación necesario (redondear hacia arriba)
+            h_scale = int(np.ceil(target_grid_size / h_orig)) if h_orig > 0 else 1
+            w_scale = int(np.ceil(target_grid_size / w_orig)) if w_orig > 0 else 1
             
             # Replicar cada parche usando repeat_interleave para mantener parches discretos
             patch_grid_tensor = torch.as_tensor(patch_grid, dtype=torch.float32)
-            # Replicar en altura
-            patch_grid_tensor = patch_grid_tensor.repeat_interleave(int(np.ceil(h_scale)), dim=0)
-            # Replicar en ancho
-            patch_grid_tensor = patch_grid_tensor.repeat_interleave(int(np.ceil(w_scale)), dim=1)
+            # Replicar en altura: cada fila se repite h_scale veces
+            patch_grid_tensor = patch_grid_tensor.repeat_interleave(h_scale, dim=0)
+            # Replicar en ancho: cada columna se repite w_scale veces
+            patch_grid_tensor = patch_grid_tensor.repeat_interleave(w_scale, dim=1)
+            
             # Asegurar que tenga exactamente el tamaño objetivo
             if patch_grid_tensor.shape[0] > target_grid_size:
                 patch_grid_tensor = patch_grid_tensor[:target_grid_size, :]
@@ -362,9 +365,10 @@ def plot_comparison_simple(
                 patch_grid_tensor = patch_grid_tensor[:, :target_grid_size]
             if patch_grid_tensor.shape[0] < target_grid_size or patch_grid_tensor.shape[1] < target_grid_size:
                 # Si aún es más pequeño, usar padding con el último valor
-                pad_h = target_grid_size - patch_grid_tensor.shape[0]
-                pad_w = target_grid_size - patch_grid_tensor.shape[1]
-                patch_grid_tensor = F.pad(patch_grid_tensor, (0, pad_w, 0, pad_h), mode='replicate')
+                pad_h = max(0, target_grid_size - patch_grid_tensor.shape[0])
+                pad_w = max(0, target_grid_size - patch_grid_tensor.shape[1])
+                if pad_h > 0 or pad_w > 0:
+                    patch_grid_tensor = F.pad(patch_grid_tensor, (0, pad_w, 0, pad_h), mode='replicate')
             patch_grid = patch_grid_tensor.numpy()
         
         heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
