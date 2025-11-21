@@ -379,6 +379,9 @@ def plot_text_image_heatmaps(
         patch_h = patch_w = int(patch_size_info)
 
     _, _, H, W = inputs["pixel_values"].shape
+    
+    print(f"[DEBUG heatmaps.py] imginfo: grid_h={grid_h}, grid_w={grid_w}, patch_size={patch_size_info}")
+    print(f"[DEBUG heatmaps.py] Imagen: H={H}, W={W}")
 
     if patch_h is None and grid_h > 0:
         patch_h = max(1, int(round(H / max(grid_h, 1))))
@@ -386,7 +389,9 @@ def plot_text_image_heatmaps(
         patch_w = max(1, int(round(W / max(grid_w, 1))))
 
     if patch_h is None or patch_w is None or patch_h <= 0 or patch_w <= 0 or grid_h <= 0 or grid_w <= 0:
+        print(f"[DEBUG heatmaps.py] Inferiendo patch_size (patch_h={patch_h}, patch_w={patch_w}, grid_h={grid_h}, grid_w={grid_w})")
         ps = _infer_patch_size(model_wrapper, inputs, shap_values)
+        print(f"[DEBUG heatmaps.py] patch_size inferido: {ps}")
         if ps is None:
             raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper o inputs.")
         if isinstance(ps, (list, tuple)):
@@ -400,11 +405,14 @@ def plot_text_image_heatmaps(
             patch_h = patch_w = int(ps)
         grid_h = max(1, int(round(H / max(patch_h, 1))))
         grid_w = max(1, int(round(W / max(patch_w, 1))))
+        print(f"[DEBUG heatmaps.py] Grid recalculado: grid_h={grid_h}, grid_w={grid_w} (patch_h={patch_h}, patch_w={patch_w})")
 
     patch_h = max(1, int(patch_h))
     patch_w = max(1, int(patch_w))
     side_h_base = grid_h if grid_h > 0 else None
     side_w_base = grid_w if grid_w > 0 else None
+    
+    print(f"[DEBUG heatmaps.py] Valores finales: patch_h={patch_h}, patch_w={patch_w}, side_h_base={side_h_base}, side_w_base={side_w_base}")
 
     # --- normalizar SHAP a matriz (B, L) ---
     vals = shap_values.values if hasattr(shap_values, "values") else shap_values
@@ -519,6 +527,8 @@ def plot_text_image_heatmaps(
         side_h = side_h_base if side_h_base else max(1, int(round(H / float(patch_h_eff))))
         side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w_eff))))
         n_expected = max(1, side_h * side_w)
+        
+        print(f"[DEBUG heatmaps.py] Muestra {i}: img_slice.size={img_slice.size}, n_expected={n_expected}, side_h={side_h}, side_w={side_w}")
 
         full_vec = np.asarray(img_slice).reshape(-1)
 
