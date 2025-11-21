@@ -379,7 +379,7 @@ def plot_text_image_heatmaps(
         patch_h = patch_w = int(patch_size_info)
 
     _, _, H, W = inputs["pixel_values"].shape
-    
+
     print(f"[DEBUG heatmaps.py] imginfo: grid_h={grid_h}, grid_w={grid_w}, patch_size={patch_size_info}")
     print(f"[DEBUG heatmaps.py] Imagen: H={H}, W={W}")
 
@@ -411,7 +411,7 @@ def plot_text_image_heatmaps(
     patch_w = max(1, int(patch_w))
     side_h_base = grid_h if grid_h > 0 else None
     side_w_base = grid_w if grid_w > 0 else None
-    
+
     print(f"[DEBUG heatmaps.py] Valores finales: patch_h={patch_h}, patch_w={patch_w}, side_h_base={side_h_base}, side_w_base={side_w_base}")
 
     # --- normalizar SHAP a matriz (B, L) ---
@@ -530,7 +530,7 @@ def plot_text_image_heatmaps(
         side_h = side_h_base if side_h_base else max(1, int(round(H / float(patch_h_eff))))
         side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w_eff))))
         n_expected = max(1, side_h * side_w)
-        
+
         print(f"[DEBUG heatmaps.py] Muestra {i}: img_slice.size={img_slice.size}, n_expected={n_expected}, side_h={side_h}, side_w={side_w}")
 
         full_vec = np.asarray(img_slice).reshape(-1)
@@ -571,7 +571,7 @@ def plot_text_image_heatmaps(
         patch_grid = np.reshape(pv_clean, (side_h, side_w), order="C")
 
         grid_vis = patch_grid
-        
+
         # Replicar el grid a una resolución más alta si tiene pocos parches
         # Esto asegura que modelos con patch_size grande (como PubMedCLIP con patch32)
         # tengan la misma granularidad visual que modelos con patch_size pequeño (como BioMedCLIP con patch16)
@@ -579,33 +579,33 @@ def plot_text_image_heatmaps(
         # IMPORTANTE: Hacer esto ANTES del coarsening para evitar que se reduzca demasiado
         target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
         h_orig, w_orig = grid_vis.shape[0], grid_vis.shape[1]
-        
+
         # Flag para indicar si se aplicó replicación (para ajustar alpha después)
         was_replicated = False
-        
+
         # DEBUG: Log información del modelo y grid original
         if i == 0:  # Solo loggear para la primera muestra
             model_name = getattr(model_wrapper, '__class__', {}).__name__ if hasattr(model_wrapper, '__class__') else "Unknown"
             print(f"[DEBUG heatmaps.py] Modelo: {model_name} | Grid original ANTES de replicación: {h_orig}x{w_orig} | Target: {target_grid_size}x{target_grid_size}")
-        
+
         # Forzar replicación si el grid es más pequeño que el objetivo
         if h_orig < target_grid_size or w_orig < target_grid_size:
             was_replicated = True
             # Calcular el factor de replicación necesario (redondear hacia arriba)
             h_scale = int(np.ceil(target_grid_size / h_orig)) if h_orig > 0 else 1
             w_scale = int(np.ceil(target_grid_size / w_orig)) if w_orig > 0 else 1
-            
+
             print(f"[DEBUG heatmaps.py] ✅ REPLICANDO: {h_orig}x{w_orig} -> {target_grid_size}x{target_grid_size} (escalas: h={h_scale}, w={w_scale})")
-            
+
             # Replicar cada parche usando repeat_interleave para mantener parches discretos
             grid_vis_tensor = torch.as_tensor(grid_vis, dtype=torch.float32)
             # Replicar en altura: cada fila se repite h_scale veces
             grid_vis_tensor = grid_vis_tensor.repeat_interleave(h_scale, dim=0)
             # Replicar en ancho: cada columna se repite w_scale veces
             grid_vis_tensor = grid_vis_tensor.repeat_interleave(w_scale, dim=1)
-            
+
             print(f"[DEBUG heatmaps.py] Después de repeat_interleave: {grid_vis_tensor.shape[0]}x{grid_vis_tensor.shape[1]}")
-            
+
             # Asegurar que tenga exactamente el tamaño objetivo
             if grid_vis_tensor.shape[0] > target_grid_size:
                 grid_vis_tensor = grid_vis_tensor[:target_grid_size, :]
@@ -929,7 +929,7 @@ def plot_text_image_heatmaps(
         # Usar un alpha base fijo para todos los modelos, con ajuste mínimo solo para replicación
         # Esto asegura que la intensidad visual sea similar independientemente de los valores SHAP
         alpha_base = alpha_overlay  # Usar el alpha base sin ajustes por vmax_img
-        
+
         # Si el grid fue replicado (de 7x7 a 14x14), reducir alpha ligeramente
         # Los parches replicados pueden verse ligeramente más intensos, así que ajustamos mínimamente
         if hasattr(entry, 'was_replicated') and entry.get('was_replicated', False):
