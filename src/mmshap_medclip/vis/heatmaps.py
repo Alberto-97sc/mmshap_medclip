@@ -729,18 +729,23 @@ def plot_text_image_heatmaps(
         # Aumentar significativamente el espaciado entre líneas para evitar superposición
         # Usar más espacio cuando hay más líneas para mejor legibilidad
         if len(lines) > 5:
-            line_height = 0.12  # Espaciado muy grande para muchas líneas
+            base_line_height = 0.12  # Espaciado muy grande para muchas líneas
         elif len(lines) > 3:
-            line_height = 0.11  # Espaciado grande para varias líneas
+            base_line_height = 0.11  # Espaciado grande para varias líneas
         elif len(lines) > 1:
-            line_height = 0.10  # Espaciado medio para múltiples líneas
+            base_line_height = 0.10  # Espaciado medio para múltiples líneas
         else:
-            line_height = 0.09  # Espaciado normal para una línea
+            base_line_height = 0.09  # Espaciado normal para una línea
 
-        total_height = len(lines) * line_height
-        # Calcular posición inicial de las palabras cerca de la parte superior
-        # para reducir el espacio entre la imagen y el caption
-        start_y = 0.95 + total_height / 2 - line_height / 2
+        line_height = base_line_height
+        top_margin = 0.92
+        bottom_margin = 0.08
+
+        if len(lines) > 1:
+            max_spacing = (top_margin - bottom_margin) / (len(lines) - 1)
+            line_height = min(line_height, max_spacing)
+
+        start_y = top_margin
 
         # Dibujar cada línea de palabras con mejor espaciado
         for line_idx, (line_words, line_vals, line_widths) in enumerate(lines):

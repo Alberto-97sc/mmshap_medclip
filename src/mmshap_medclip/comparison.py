@@ -100,7 +100,8 @@ def run_shap_on_all_models(
     image, caption = sample['image'], sample['text']
 
     if verbose:
-        print(f"📝 Caption: {caption[:100]}...")
+        print("📝 Caption completo:")
+        print(caption)
         print()
 
     results = {}
