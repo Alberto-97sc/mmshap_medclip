@@ -926,11 +926,11 @@ def plot_text_image_heatmaps(
         # Los parches replicados pueden verse más intensos, así que reducimos el alpha
         alpha_to_use = min(alpha_overlay * 1.3, 0.6) if vmax_img < 1.0 else alpha_overlay
         
-        # Si el grid fue replicado (de 7x7 a 14x14), reducir alpha para igualar intensidad con otros modelos
-        # Usar un factor de reducción basado en la relación de replicación
+        # Si el grid fue replicado (de 7x7 a 14x14), reducir alpha significativamente para igualar intensidad con otros modelos
+        # Los parches replicados se ven más intensos porque tienen más área, así que reducimos más el alpha
         if hasattr(entry, 'was_replicated') and entry.get('was_replicated', False):
-            # Reducir alpha en ~25% para parches replicados
-            alpha_to_use = alpha_to_use * 0.75
+            # Reducir alpha en ~50% para parches replicados (de 0.75 a 0.5)
+            alpha_to_use = alpha_to_use * 0.5
 
         ax.imshow(
             heat_up,
