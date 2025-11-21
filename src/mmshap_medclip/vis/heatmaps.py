@@ -577,12 +577,17 @@ def plot_text_image_heatmaps(
         target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
         h_orig, w_orig = grid_vis.shape[0], grid_vis.shape[1]
         
+        # Flag para indicar si se aplicó replicación (para ajustar alpha después)
+        was_replicated = False
+        
         # DEBUG: Log información del modelo y grid original
-        model_name = getattr(model_wrapper, '__class__', {}).__name__ if hasattr(model_wrapper, '__class__') else "Unknown"
-        print(f"[DEBUG heatmaps.py] Modelo: {model_name} | Grid original ANTES de replicación: {h_orig}x{w_orig} | Target: {target_grid_size}x{target_grid_size}")
+        if i == 0:  # Solo loggear para la primera muestra
+            model_name = getattr(model_wrapper, '__class__', {}).__name__ if hasattr(model_wrapper, '__class__') else "Unknown"
+            print(f"[DEBUG heatmaps.py] Modelo: {model_name} | Grid original ANTES de replicación: {h_orig}x{w_orig} | Target: {target_grid_size}x{target_grid_size}")
         
         # Forzar replicación si el grid es más pequeño que el objetivo
         if h_orig < target_grid_size or w_orig < target_grid_size:
+            was_replicated = True
             # Calcular el factor de replicación necesario (redondear hacia arriba)
             h_scale = int(np.ceil(target_grid_size / h_orig)) if h_orig > 0 else 1
             w_scale = int(np.ceil(target_grid_size / w_orig)) if w_orig > 0 else 1
@@ -663,6 +668,7 @@ def plot_text_image_heatmaps(
             "heat": heat_up,
             "H": H,
             "W": W,
+            "was_replicated": was_replicated,  # Guardar flag de replicación para ajustar alpha
         })
 
         # --- texto ---
@@ -916,8 +922,15 @@ def plot_text_image_heatmaps(
         H = entry["H"]
         W = entry["W"]
 
-        # Aumentar alpha ligeramente si los valores son muy pequeños para mejorar visibilidad
+        # Ajustar alpha: reducir si se aplicó replicación para que coincida con otros modelos
+        # Los parches replicados pueden verse más intensos, así que reducimos el alpha
         alpha_to_use = min(alpha_overlay * 1.3, 0.6) if vmax_img < 1.0 else alpha_overlay
+        
+        # Si el grid fue replicado (de 7x7 a 14x14), reducir alpha para igualar intensidad con otros modelos
+        # Usar un factor de reducción basado en la relación de replicación
+        if hasattr(entry, 'was_replicated') and entry.get('was_replicated', False):
+            # Reducir alpha en ~25% para parches replicados
+            alpha_to_use = alpha_to_use * 0.75
 
         ax.imshow(
             heat_up,
