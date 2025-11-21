@@ -390,10 +390,16 @@ def plot_comparison_simple(
         vmax = max(vmax, 1e-6)
         norm_img = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
 
+        # Alpha consistente para todos los modelos (igual que en heatmaps.py)
+        # Verificar si este modelo tiene replicación para ajustar ligeramente
+        alpha_consistent = 0.40  # Alpha base consistente
+        # Nota: En comparison.py no tenemos el flag was_replicated, así que usamos alpha fijo
+        # La normalización por percentil ya ayuda a mantener consistencia visual
+
         # Mostrar imagen con overlay
         ax_img.imshow(img_vis, origin='upper', interpolation='nearest')
         ax_img.imshow(
-            heat_up, cmap='coolwarm', norm=norm_img, alpha=0.4,
+            heat_up, cmap='coolwarm', norm=norm_img, alpha=alpha_consistent,
             origin='upper', interpolation='nearest'
         )
 

@@ -475,11 +475,14 @@ def plot_text_image_heatmaps(
         norm_text = Normalize(vmin=0.0, vmax=vmax_text)
         cmap_text = plt.get_cmap("Reds")
 
+    # Alpha base consistente para todos los modelos
+    # Usar un valor fijo para asegurar intensidad visual uniforme
     alpha_overlay = (
         float(alpha_img)
         if alpha_img is not None
         else float(PLOT_ISA_ALPHA_IMG)
     )
+    # Asegurar que el alpha esté en un rango razonable y consistente
     alpha_overlay = min(max(alpha_overlay, 0.0), 1.0)
     coarsen_factor = int(PLOT_ISA_COARSEN_G) if PLOT_ISA_COARSEN_G else 0
     percentile_img = float(PLOT_ISA_IMG_PERCENTILE)
@@ -922,20 +925,19 @@ def plot_text_image_heatmaps(
         H = entry["H"]
         W = entry["W"]
 
-        # Ajustar alpha: reducir si se aplicó replicación para que coincida con otros modelos
-        # Los parches replicados pueden verse más intensos, así que reducimos el alpha
-        alpha_to_use = min(alpha_overlay * 1.3, 0.6) if vmax_img < 1.0 else alpha_overlay
+        # Normalización de alpha para intensidad consistente entre todos los modelos
+        # Usar un alpha base fijo para todos los modelos, con ajuste mínimo solo para replicación
+        # Esto asegura que la intensidad visual sea similar independientemente de los valores SHAP
+        alpha_base = alpha_overlay  # Usar el alpha base sin ajustes por vmax_img
         
-        # Si el grid fue replicado (de 7x7 a 14x14), reducir alpha significativamente para igualar intensidad con otros modelos
-        # Los parches replicados se ven más intensos porque tienen más área, así que reducimos más el alpha
+        # Si el grid fue replicado (de 7x7 a 14x14), reducir alpha ligeramente
+        # Los parches replicados pueden verse ligeramente más intensos, así que ajustamos mínimamente
         if hasattr(entry, 'was_replicated') and entry.get('was_replicated', False):
-            # Reducir alpha más agresivamente para parches replicados
-            # Aplicar reducción del 70% (multiplicar por 0.3) para que coincida mejor con otros modelos
-            alpha_to_use = alpha_to_use * 0.1
+            # Reducción mínima del 10% para parches replicados
+            alpha_to_use = alpha_base * 0.9
         else:
-            # Para modelos sin replicación, aumentar ligeramente el alpha para igualar con PubMedCLIP
-            # Aumentar en ~15% para mejorar visibilidad y balance
-            alpha_to_use = alpha_to_use * 1.15
+            # Para modelos sin replicación, usar el alpha base directamente
+            alpha_to_use = alpha_base
 
         ax.imshow(
             heat_up,
