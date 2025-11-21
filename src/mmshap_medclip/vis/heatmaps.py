@@ -606,13 +606,26 @@ def plot_text_image_heatmaps(
         # para que haya un parche por palabra, no por subtoken
         _, word_shap_dict = mm_scores[i]
         
-        # Eliminar palabras duplicadas manteniendo el orden (usar OrderedDict)
-        # Esto evita que se repita el texto en la visualización
+        # Si tenemos el texto original, usarlo para asegurar que todas las palabras estén incluidas
+        # Esto garantiza que el caption completo se muestre en el heatmap
         from collections import OrderedDict
         unique_word_shap = OrderedDict()
         seen_words = set()
+        
+        # Primero agregar todas las palabras del texto original si está disponible
+        if texts and i < len(texts) and texts[i]:
+            original_words = texts[i].strip().split()
+            for word in original_words:
+                if word.strip():
+                    word_normalized = word.strip().rstrip('.,!?;:').lower()
+                    if word_normalized not in seen_words:
+                        # Si la palabra no está en word_shap_dict, asignar score 0.0
+                        score = word_shap_dict.get(word, 0.0)
+                        unique_word_shap[word] = score
+                        seen_words.add(word_normalized)
+        
+        # Luego agregar cualquier palabra adicional que esté en word_shap_dict pero no en el texto original
         for word, score in word_shap_dict.items():
-            # Normalizar la palabra para comparación (sin puntuación final)
             word_normalized = word.strip().rstrip('.,!?;:').lower()
             if word_normalized not in seen_words:
                 unique_word_shap[word] = score

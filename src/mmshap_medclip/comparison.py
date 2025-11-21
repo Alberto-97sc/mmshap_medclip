@@ -99,11 +99,6 @@ def run_shap_on_all_models(
     sample = dataset[sample_idx]
     image, caption = sample['image'], sample['text']
 
-    if verbose:
-        print("📝 Caption completo:")
-        print(caption)
-        print()
-
     results = {}
 
     for model_name, model in models.items():
