@@ -577,11 +577,17 @@ def plot_text_image_heatmaps(
         target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
         h_orig, w_orig = grid_vis.shape[0], grid_vis.shape[1]
         
+        # DEBUG: Log información del modelo y grid original
+        model_name = getattr(model_wrapper, '__class__', {}).__name__ if hasattr(model_wrapper, '__class__') else "Unknown"
+        print(f"[DEBUG heatmaps.py] Modelo: {model_name} | Grid original: {h_orig}x{w_orig} | Target: {target_grid_size}x{target_grid_size}")
+        
         # Forzar replicación si el grid es más pequeño que el objetivo
         if h_orig < target_grid_size or w_orig < target_grid_size:
             # Calcular el factor de replicación necesario (redondear hacia arriba)
             h_scale = int(np.ceil(target_grid_size / h_orig)) if h_orig > 0 else 1
             w_scale = int(np.ceil(target_grid_size / w_orig)) if w_orig > 0 else 1
+            
+            print(f"[DEBUG heatmaps.py] ✅ REPLICANDO: {h_orig}x{w_orig} -> {target_grid_size}x{target_grid_size} (escalas: h={h_scale}, w={w_scale})")
             
             # Replicar cada parche usando repeat_interleave para mantener parches discretos
             grid_vis_tensor = torch.as_tensor(grid_vis, dtype=torch.float32)
@@ -589,6 +595,8 @@ def plot_text_image_heatmaps(
             grid_vis_tensor = grid_vis_tensor.repeat_interleave(h_scale, dim=0)
             # Replicar en ancho: cada columna se repite w_scale veces
             grid_vis_tensor = grid_vis_tensor.repeat_interleave(w_scale, dim=1)
+            
+            print(f"[DEBUG heatmaps.py] Después de repeat_interleave: {grid_vis_tensor.shape[0]}x{grid_vis_tensor.shape[1]}")
             
             # Asegurar que tenga exactamente el tamaño objetivo
             if grid_vis_tensor.shape[0] > target_grid_size:
@@ -600,8 +608,12 @@ def plot_text_image_heatmaps(
                 pad_h = max(0, target_grid_size - grid_vis_tensor.shape[0])
                 pad_w = max(0, target_grid_size - grid_vis_tensor.shape[1])
                 if pad_h > 0 or pad_w > 0:
+                    print(f"[DEBUG heatmaps.py] Aplicando padding: pad_h={pad_h}, pad_w={pad_w}")
                     grid_vis_tensor = F.pad(grid_vis_tensor, (0, pad_w, 0, pad_h), mode='replicate')
             grid_vis = grid_vis_tensor.numpy()
+            print(f"[DEBUG heatmaps.py] Grid final después de replicación: {grid_vis.shape[0]}x{grid_vis.shape[1]}")
+        else:
+            print(f"[DEBUG heatmaps.py] ⏭️  NO se replica (grid ya es {h_orig}x{w_orig} >= {target_grid_size}x{target_grid_size})")
 
         grid_abs = np.abs(grid_vis).reshape(-1)
         if grid_abs.size == 0:

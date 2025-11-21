@@ -345,11 +345,16 @@ def plot_comparison_simple(
         target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
         h_orig, w_orig = patch_grid.shape[0], patch_grid.shape[1]
         
+        # DEBUG: Log información del modelo y grid original
+        print(f"[DEBUG comparison.py] Modelo: {model_name} | Grid original: {h_orig}x{w_orig} | Target: {target_grid_size}x{target_grid_size}")
+        
         # Forzar replicación si el grid es más pequeño que el objetivo
         if h_orig < target_grid_size or w_orig < target_grid_size:
             # Calcular el factor de replicación necesario (redondear hacia arriba)
             h_scale = int(np.ceil(target_grid_size / h_orig)) if h_orig > 0 else 1
             w_scale = int(np.ceil(target_grid_size / w_orig)) if w_orig > 0 else 1
+            
+            print(f"[DEBUG comparison.py] ✅ REPLICANDO: {h_orig}x{w_orig} -> {target_grid_size}x{target_grid_size} (escalas: h={h_scale}, w={w_scale})")
             
             # Replicar cada parche usando repeat_interleave para mantener parches discretos
             patch_grid_tensor = torch.as_tensor(patch_grid, dtype=torch.float32)
@@ -357,6 +362,8 @@ def plot_comparison_simple(
             patch_grid_tensor = patch_grid_tensor.repeat_interleave(h_scale, dim=0)
             # Replicar en ancho: cada columna se repite w_scale veces
             patch_grid_tensor = patch_grid_tensor.repeat_interleave(w_scale, dim=1)
+            
+            print(f"[DEBUG comparison.py] Después de repeat_interleave: {patch_grid_tensor.shape[0]}x{patch_grid_tensor.shape[1]}")
             
             # Asegurar que tenga exactamente el tamaño objetivo
             if patch_grid_tensor.shape[0] > target_grid_size:
@@ -368,8 +375,12 @@ def plot_comparison_simple(
                 pad_h = max(0, target_grid_size - patch_grid_tensor.shape[0])
                 pad_w = max(0, target_grid_size - patch_grid_tensor.shape[1])
                 if pad_h > 0 or pad_w > 0:
+                    print(f"[DEBUG comparison.py] Aplicando padding: pad_h={pad_h}, pad_w={pad_w}")
                     patch_grid_tensor = F.pad(patch_grid_tensor, (0, pad_w, 0, pad_h), mode='replicate')
             patch_grid = patch_grid_tensor.numpy()
+            print(f"[DEBUG comparison.py] Grid final después de replicación: {patch_grid.shape[0]}x{patch_grid.shape[1]}")
+        else:
+            print(f"[DEBUG comparison.py] ⏭️  NO se replica (grid ya es {h_orig}x{w_orig} >= {target_grid_size}x{target_grid_size})")
         
         heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
         heat_up = F.interpolate(heat_tensor, size=(H, W), mode='nearest').squeeze().numpy()
