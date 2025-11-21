@@ -83,6 +83,12 @@ def compute_mm_score(
         # Verificar que no haya palabras vacías
         words = [w for w in words if w.strip()]
         
+        # IMPORTANTE: Inicializar word_shap con todas las palabras del texto original
+        # Esto garantiza que todas las palabras estén presentes, incluso si no se mapean tokens
+        for word in words:
+            if word.strip() and word not in word_shap:
+                word_shap[word] = 0.0  # Valor por defecto, se actualizará si se mapean tokens
+        
         # Obtener subtokens y sus scores
         subtokens = []
         try:
@@ -152,10 +158,8 @@ def compute_mm_score(
                 tokens_per_word = len(filtered_subtokens) / len(words)
                 
                 for word_idx, word in enumerate(words):
-                    # Evitar duplicados: solo agregar si la palabra no está ya en el diccionario
-                    if word in word_shap:
-                        continue
-                        
+                    # La palabra ya está en word_shap (inicializada con 0.0)
+                    # Solo actualizar si se mapean tokens
                     word_clean = word.lower().strip().rstrip('.,!?;:')
                     temp_score = 0.0
                     tokens_assigned = 0
@@ -175,14 +179,13 @@ def compute_mm_score(
                     
                     if word and word.strip() and tokens_assigned > 0:
                         word_shap[word] = temp_score
+                    # Si no se asignaron tokens, la palabra ya tiene 0.0 (inicializada arriba)
             else:
                 # Si no coincide, usar estrategia de acumulación mejorada
                 subtoken_idx = 0
                 for word_idx, word in enumerate(words):
-                    # Evitar duplicados: solo procesar si la palabra no está ya asignada
-                    if word in word_shap:
-                        continue
-                        
+                    # La palabra ya está en word_shap (inicializada con 0.0)
+                    # Solo actualizar si se mapean tokens
                     word_clean = word.lower().strip().rstrip('.,!?;:')
                     temp_word = ""
                     temp_score = 0.0
@@ -212,7 +215,7 @@ def compute_mm_score(
                         temp_word_clean = temp_word.lower().strip().rstrip('.,!?;:')
                         # Comparación más estricta: la palabra debe estar contenida o ser igual
                         if word_clean == temp_word_clean or (word_clean in temp_word_clean and len(temp_word_clean) <= len(word_clean) * 1.2):
-                            if word and word.strip():
+                            if word and word.strip() and tokens_in_word > 0:
                                 word_shap[word] = temp_score
                             break
                         elif len(temp_word) > len(word_clean) * 1.3:
@@ -221,17 +224,15 @@ def compute_mm_score(
                                 word_shap[word] = temp_score
                             break
 
-                    # Si no se asignó score, usar el acumulado (solo si no está duplicado)
-                    if word not in word_shap and word and word.strip() and tokens_in_word > 0:
+                    # Si no se asignó score pero se procesaron tokens, actualizar
+                    if word and word.strip() and tokens_in_word > 0 and word_shap.get(word, 0.0) == 0.0:
                         word_shap[word] = temp_score
         else:
             # Fallback: usar estrategia de acumulación simple
             subtoken_idx = 0
             for word_idx, word in enumerate(words):
-                # Evitar duplicados: solo procesar si la palabra no está ya asignada
-                if word in word_shap:
-                    continue
-                    
+                # La palabra ya está en word_shap (inicializada con 0.0)
+                # Solo actualizar si se mapean tokens
                 word_clean = word.lower().strip().rstrip('.,!?;:')
                 temp_word = ""
                 temp_score = 0.0
@@ -260,7 +261,7 @@ def compute_mm_score(
                     # Verificar si hemos formado la palabra completa (comparación más estricta)
                     temp_word_clean = temp_word.lower().strip().rstrip('.,!?;:')
                     if word_clean == temp_word_clean or (word_clean in temp_word_clean and len(temp_word_clean) <= len(word_clean) * 1.2):
-                        if word and word.strip():
+                        if word and word.strip() and tokens_in_word > 0:
                             word_shap[word] = temp_score
                         break
                     elif len(temp_word) > len(word_clean) * 1.3:
@@ -268,8 +269,8 @@ def compute_mm_score(
                             word_shap[word] = temp_score
                         break
 
-                # Solo asignar si no está duplicado
-                if word not in word_shap and word and word.strip() and tokens_in_word > 0:
+                # Si no se asignó score pero se procesaron tokens, actualizar
+                if word and word.strip() and tokens_in_word > 0 and word_shap.get(word, 0.0) == 0.0:
                     word_shap[word] = temp_score
 
     elif text_decoded and isinstance(text_decoded, str) and text_decoded.strip():

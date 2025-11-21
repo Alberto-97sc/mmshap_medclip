@@ -612,21 +612,39 @@ def plot_text_image_heatmaps(
         unique_word_shap = OrderedDict()
         seen_words = set()
         
+        # Función auxiliar para normalizar palabras para comparación
+        def normalize_word_for_comparison(w):
+            return w.strip().rstrip('.,!?;:').lower()
+        
+        # Crear un diccionario normalizado para búsqueda rápida
+        normalized_to_original = {}
+        for word_key, score in word_shap_dict.items():
+            norm_key = normalize_word_for_comparison(word_key)
+            if norm_key not in normalized_to_original:
+                normalized_to_original[norm_key] = (word_key, score)
+        
         # Primero agregar todas las palabras del texto original si está disponible
         if texts and i < len(texts) and texts[i]:
             original_words = texts[i].strip().split()
             for word in original_words:
                 if word.strip():
-                    word_normalized = word.strip().rstrip('.,!?;:').lower()
+                    word_normalized = normalize_word_for_comparison(word)
                     if word_normalized not in seen_words:
-                        # Si la palabra no está en word_shap_dict, asignar score 0.0
-                        score = word_shap_dict.get(word, 0.0)
+                        # Buscar la palabra en word_shap_dict (con búsqueda flexible)
+                        # Primero intentar búsqueda exacta
+                        score = word_shap_dict.get(word, None)
+                        # Si no se encuentra, buscar por versión normalizada
+                        if score is None and word_normalized in normalized_to_original:
+                            _, score = normalized_to_original[word_normalized]
+                        # Si aún no se encuentra, usar 0.0
+                        if score is None:
+                            score = 0.0
                         unique_word_shap[word] = score
                         seen_words.add(word_normalized)
         
         # Luego agregar cualquier palabra adicional que esté en word_shap_dict pero no en el texto original
         for word, score in word_shap_dict.items():
-            word_normalized = word.strip().rstrip('.,!?;:').lower()
+            word_normalized = normalize_word_for_comparison(word)
             if word_normalized not in seen_words:
                 unique_word_shap[word] = score
                 seen_words.add(word_normalized)
