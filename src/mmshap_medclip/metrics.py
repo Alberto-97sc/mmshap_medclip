@@ -163,10 +163,15 @@ def compute_mm_score(
                     word_clean = word.lower().strip().rstrip('.,!?;:')
                     temp_score = 0.0
                     tokens_assigned = 0
+                    is_last_word = (word_idx == len(words) - 1)
                     
                     # Calcular cuántos tokens deberían corresponder a esta palabra
                     start_idx = int(word_idx * tokens_per_word)
-                    end_idx = int((word_idx + 1) * tokens_per_word) if word_idx < len(words) - 1 else len(filtered_subtokens)
+                    if is_last_word:
+                        # Para la última palabra, usar todos los tokens restantes
+                        end_idx = len(filtered_subtokens)
+                    else:
+                        end_idx = int((word_idx + 1) * tokens_per_word)
                     
                     # Asegurar que no excedamos el límite
                     end_idx = min(end_idx, len(filtered_scores))
@@ -177,9 +182,13 @@ def compute_mm_score(
                             temp_score += float(filtered_scores[idx])
                             tokens_assigned += 1
                     
-                    if word and word.strip() and tokens_assigned > 0:
-                        word_shap[word] = temp_score
-                    # Si no se asignaron tokens, la palabra ya tiene 0.0 (inicializada arriba)
+                    # Para la última palabra, siempre asignar si hay tokens (incluso si es 0.0, ya está inicializada)
+                    # Para otras palabras, solo asignar si hay tokens asignados
+                    if word and word.strip():
+                        if is_last_word or tokens_assigned > 0:
+                            if tokens_assigned > 0:
+                                word_shap[word] = temp_score
+                            # Si no se asignaron tokens, la palabra ya tiene 0.0 (inicializada arriba)
             else:
                 # Si no coincide, usar estrategia de acumulación mejorada
                 subtoken_idx = 0
@@ -190,10 +199,14 @@ def compute_mm_score(
                     temp_word = ""
                     temp_score = 0.0
                     tokens_in_word = 0
+                    is_last_word = (word_idx == len(words) - 1)
 
                     # Acumular tokens hasta formar la palabra completa
-                    # Limitar el número de tokens a procesar para evitar procesar tokens de más
-                    max_tokens_to_check = min(len(filtered_subtokens) - subtoken_idx, len(word_clean) * 3 + 5)
+                    # Para la última palabra, procesar todos los tokens restantes
+                    if is_last_word:
+                        max_tokens_to_check = len(filtered_subtokens) - subtoken_idx
+                    else:
+                        max_tokens_to_check = min(len(filtered_subtokens) - subtoken_idx, len(word_clean) * 3 + 5)
                     
                     for _ in range(max_tokens_to_check):
                         if subtoken_idx >= len(filtered_subtokens):
@@ -217,16 +230,20 @@ def compute_mm_score(
                         if word_clean == temp_word_clean or (word_clean in temp_word_clean and len(temp_word_clean) <= len(word_clean) * 1.2):
                             if word and word.strip() and tokens_in_word > 0:
                                 word_shap[word] = temp_score
-                            break
+                            if not is_last_word:
+                                break
                         elif len(temp_word) > len(word_clean) * 1.3:
                             # Si acumulamos demasiado, asignar y continuar
                             if word and word.strip() and tokens_in_word > 0:
                                 word_shap[word] = temp_score
-                            break
+                            if not is_last_word:
+                                break
 
                     # Si no se asignó score pero se procesaron tokens, actualizar
-                    if word and word.strip() and tokens_in_word > 0 and word_shap.get(word, 0.0) == 0.0:
-                        word_shap[word] = temp_score
+                    # Para la última palabra, siempre asignar si hay tokens procesados
+                    if word and word.strip() and tokens_in_word > 0:
+                        if is_last_word or word_shap.get(word, 0.0) == 0.0:
+                            word_shap[word] = temp_score
         else:
             # Fallback: usar estrategia de acumulación simple
             subtoken_idx = 0
@@ -237,10 +254,14 @@ def compute_mm_score(
                 temp_word = ""
                 temp_score = 0.0
                 tokens_in_word = 0
+                is_last_word = (word_idx == len(words) - 1)
 
                 # Acumular tokens hasta formar la palabra completa
-                # Limitar el número de tokens a procesar para evitar procesar tokens de más
-                max_tokens_to_check = min(len(filtered_subtokens) - subtoken_idx, len(word_clean) * 3 + 5)
+                # Para la última palabra, procesar todos los tokens restantes
+                if is_last_word:
+                    max_tokens_to_check = len(filtered_subtokens) - subtoken_idx
+                else:
+                    max_tokens_to_check = min(len(filtered_subtokens) - subtoken_idx, len(word_clean) * 3 + 5)
                 
                 for _ in range(max_tokens_to_check):
                     if subtoken_idx >= len(filtered_subtokens):
@@ -263,15 +284,19 @@ def compute_mm_score(
                     if word_clean == temp_word_clean or (word_clean in temp_word_clean and len(temp_word_clean) <= len(word_clean) * 1.2):
                         if word and word.strip() and tokens_in_word > 0:
                             word_shap[word] = temp_score
-                        break
+                        if not is_last_word:
+                            break
                     elif len(temp_word) > len(word_clean) * 1.3:
                         if word and word.strip() and tokens_in_word > 0:
                             word_shap[word] = temp_score
-                        break
+                        if not is_last_word:
+                            break
 
                 # Si no se asignó score pero se procesaron tokens, actualizar
-                if word and word.strip() and tokens_in_word > 0 and word_shap.get(word, 0.0) == 0.0:
-                    word_shap[word] = temp_score
+                # Para la última palabra, siempre asignar si hay tokens procesados
+                if word and word.strip() and tokens_in_word > 0:
+                    if is_last_word or word_shap.get(word, 0.0) == 0.0:
+                        word_shap[word] = temp_score
 
     elif text_decoded and isinstance(text_decoded, str) and text_decoded.strip():
         # Tenemos el texto decodificado, dividir en palabras
