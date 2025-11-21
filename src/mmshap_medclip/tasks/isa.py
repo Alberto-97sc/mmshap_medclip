@@ -261,13 +261,13 @@ def _compute_isa_shap(
     # Pasar text_len y original_texts para que compute_mm_score use el texto original cuando esté disponible
     mm_scores = [
         compute_mm_score(
-            shap_values, 
-            model.tokenizer, 
-            inputs, 
-            i=i, 
+            shap_values,
+            model.tokenizer,
+            inputs,
+            i=i,
             text_length=text_len,
             original_text=original_texts[i] if original_texts and i < len(original_texts) else None
-        ) 
+        )
         for i in range(batch_size)
     ]
     iscores = [compute_iscore(shap_values, inputs, i=i, text_length=text_len) for i in range(batch_size)]

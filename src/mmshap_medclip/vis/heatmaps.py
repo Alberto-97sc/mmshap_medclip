@@ -605,12 +605,12 @@ def plot_text_image_heatmaps(
         # Usar las palabras y sus valores SHAP directamente de mm_scores
         # para que haya un parche por palabra, no por subtoken
         _, word_shap_dict = mm_scores[i]
-        
+
         # Limpiar word_shap_dict de duplicados (mantener solo la primera ocurrencia de cada palabra normalizada)
         from collections import OrderedDict
         def normalize_word_for_comparison(w):
             return w.strip().rstrip('.,!?;:').lower()
-        
+
         # Crear un diccionario limpio sin duplicados
         cleaned_word_shap_dict = OrderedDict()
         seen_normalized = set()
@@ -619,14 +619,14 @@ def plot_text_image_heatmaps(
             if norm_key not in seen_normalized:
                 cleaned_word_shap_dict[word_key] = score
                 seen_normalized.add(norm_key)
-        
+
         word_shap_dict = cleaned_word_shap_dict
-        
+
         # Si tenemos el texto original, usarlo para asegurar que todas las palabras estén incluidas
         # Esto garantiza que el caption completo se muestre en el heatmap
         unique_word_shap = OrderedDict()
         seen_words = set()
-        
+
         # Crear un diccionario normalizado para búsqueda rápida
         # IMPORTANTE: Solo mantener la primera ocurrencia de cada palabra normalizada
         normalized_to_original = {}
@@ -635,7 +635,7 @@ def plot_text_image_heatmaps(
             # Solo agregar si no está ya en el diccionario (evitar duplicados)
             if norm_key not in normalized_to_original:
                 normalized_to_original[norm_key] = (word_key, score)
-        
+
         # Si tenemos el texto original, usarlo como fuente de verdad para el orden y contenido
         if texts and i < len(texts) and texts[i]:
             original_words = texts[i].strip().split()
@@ -656,10 +656,10 @@ def plot_text_image_heatmaps(
                             score = 0.0
                         unique_word_shap[word] = score
                         seen_words.add(word_normalized)
-        
+
         # NO agregar palabras adicionales del word_shap_dict que no estén en el texto original
         # Esto evita duplicados y mantiene el orden del texto original
-        
+
         words = list(unique_word_shap.keys())
         word_vals = np.array([unique_word_shap[w] for w in words])
 

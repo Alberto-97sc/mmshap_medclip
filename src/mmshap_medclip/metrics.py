@@ -79,16 +79,16 @@ def compute_mm_score(
     # Si tenemos el texto original, usarlo directamente (más confiable)
     if original_text and isinstance(original_text, str) and original_text.strip():
         words = original_text.strip().split()
-        
+
         # Verificar que no haya palabras vacías
         words = [w for w in words if w.strip()]
-        
+
         # IMPORTANTE: Inicializar word_shap con todas las palabras del texto original
         # Esto garantiza que todas las palabras estén presentes, incluso si no se mapean tokens
         for word in words:
             if word.strip() and word not in word_shap:
                 word_shap[word] = 0.0  # Valor por defecto, se actualizará si se mapean tokens
-        
+
         # Obtener subtokens y sus scores
         subtokens = []
         try:
@@ -140,7 +140,7 @@ def compute_mm_score(
                 text_decoded_ref = tokenizer.decode(token_ids_list, skip_special_tokens=True)
         except:
             pass
-        
+
         # Si tenemos texto decodificado, usarlo para mapear mejor
         if text_decoded_ref and text_decoded_ref.strip():
             # Limpiar el texto decodificado
@@ -148,15 +148,15 @@ def compute_mm_score(
             for special in ["[CLS]", "[SEP]", "[PAD]", "<s>", "</s>", "<|startoftext|>", "<|endoftext|>", "<start_of_text>", "<end_of_text>"]:
                 text_decoded_ref = text_decoded_ref.replace(special, "")
             text_decoded_ref = text_decoded_ref.strip()
-            
+
             # Dividir el texto decodificado en palabras para referencia
             words_decoded = text_decoded_ref.split()
-            
+
             # Si el número de palabras coincide aproximadamente, usar mapeo directo
             if abs(len(words) - len(words_decoded)) <= 2 and len(words) > 0:
                 # Mapeo más directo: asignar tokens proporcionalmente
                 tokens_per_word = len(filtered_subtokens) / len(words)
-                
+
                 for word_idx, word in enumerate(words):
                     # La palabra ya está en word_shap (inicializada con 0.0)
                     # Solo actualizar si se mapean tokens
@@ -164,7 +164,7 @@ def compute_mm_score(
                     temp_score = 0.0
                     tokens_assigned = 0
                     is_last_word = (word_idx == len(words) - 1)
-                    
+
                     # Calcular cuántos tokens deberían corresponder a esta palabra
                     start_idx = int(word_idx * tokens_per_word)
                     if is_last_word:
@@ -172,16 +172,16 @@ def compute_mm_score(
                         end_idx = len(filtered_subtokens)
                     else:
                         end_idx = int((word_idx + 1) * tokens_per_word)
-                    
+
                     # Asegurar que no excedamos el límite
                     end_idx = min(end_idx, len(filtered_scores))
-                    
+
                     # Acumular scores de los tokens asignados a esta palabra
                     for idx in range(start_idx, end_idx):
                         if idx < len(filtered_scores):
                             temp_score += float(filtered_scores[idx])
                             tokens_assigned += 1
-                    
+
                     # Para la última palabra, siempre asignar si hay tokens (incluso si es 0.0, ya está inicializada)
                     # Para otras palabras, solo asignar si hay tokens asignados
                     if word and word.strip():
@@ -207,18 +207,18 @@ def compute_mm_score(
                         max_tokens_to_check = len(filtered_subtokens) - subtoken_idx
                     else:
                         max_tokens_to_check = min(len(filtered_subtokens) - subtoken_idx, len(word_clean) * 3 + 5)
-                    
+
                     for _ in range(max_tokens_to_check):
                         if subtoken_idx >= len(filtered_subtokens):
                             break
-                            
+
                         tok = str(filtered_subtokens[subtoken_idx])
                         tok_clean = tok.lstrip("Ġ").lstrip("▁").replace("</w>", "").lstrip("#").lower().strip()
-                        
+
                         if not tok_clean:
                             subtoken_idx += 1
                             continue
-                        
+
                         temp_word += tok_clean
                         temp_score += float(filtered_scores[subtoken_idx])
                         tokens_in_word += 1
@@ -262,18 +262,18 @@ def compute_mm_score(
                     max_tokens_to_check = len(filtered_subtokens) - subtoken_idx
                 else:
                     max_tokens_to_check = min(len(filtered_subtokens) - subtoken_idx, len(word_clean) * 3 + 5)
-                
+
                 for _ in range(max_tokens_to_check):
                     if subtoken_idx >= len(filtered_subtokens):
                         break
-                        
+
                     tok = str(filtered_subtokens[subtoken_idx])
                     tok_clean = tok.lstrip("Ġ").lstrip("▁").replace("</w>", "").lstrip("#").lower().strip()
-                    
+
                     if not tok_clean:
                         subtoken_idx += 1
                         continue
-                    
+
                     temp_word += tok_clean
                     temp_score += float(filtered_scores[subtoken_idx])
                     tokens_in_word += 1
