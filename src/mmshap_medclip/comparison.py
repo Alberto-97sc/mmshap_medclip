@@ -337,8 +337,23 @@ def plot_comparison_simple(
             grid_w = n_patches // grid_h
 
         patch_grid = img_vals[:grid_h * grid_w].reshape(grid_h, grid_w)
+        
+        # Interpolar el grid a una resolución más alta si tiene pocos parches
+        # Esto asegura que modelos con patch_size grande (como PubMedCLIP con patch32)
+        # tengan la misma granularidad visual que modelos con patch_size pequeño (como BioMedCLIP con patch16)
+        target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
         heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        heat_up = F.interpolate(heat_tensor, size=(H, W), mode='nearest').squeeze().numpy()
+        
+        if patch_grid.shape[0] < target_grid_size or patch_grid.shape[1] < target_grid_size:
+            # Interpolar el grid a la resolución objetivo antes de interpolar a la imagen
+            heat_tensor = F.interpolate(
+                heat_tensor, 
+                size=(target_grid_size, target_grid_size), 
+                mode='bilinear', 
+                align_corners=False
+            )
+        
+        heat_up = F.interpolate(heat_tensor, size=(H, W), mode='bilinear', align_corners=False).squeeze().numpy()
 
         # Normalización del heatmap
         vmax = np.percentile(np.abs(heat_up), 95)
