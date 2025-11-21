@@ -568,28 +568,18 @@ def plot_text_image_heatmaps(
         patch_grid = np.reshape(pv_clean, (side_h, side_w), order="C")
 
         grid_vis = patch_grid
-        if coarsen_factor and coarsen_factor > 1:
-            sh, sw = grid_vis.shape
-            sh2 = (sh // coarsen_factor) * coarsen_factor
-            sw2 = (sw // coarsen_factor) * coarsen_factor
-            if sh2 >= coarsen_factor and sw2 >= coarsen_factor and sh2 > 0 and sw2 > 0:
-                grid_vis = grid_vis[:sh2, :sw2].reshape(
-                    sh2 // coarsen_factor,
-                    coarsen_factor,
-                    sw2 // coarsen_factor,
-                    coarsen_factor,
-                ).mean(axis=(1, 3))
-
+        
         # Replicar el grid a una resolución más alta si tiene pocos parches
         # Esto asegura que modelos con patch_size grande (como PubMedCLIP con patch32)
         # tengan la misma granularidad visual que modelos con patch_size pequeño (como BioMedCLIP con patch16)
         # Usamos replicación en lugar de interpolación para mantener la apariencia de parches discretos
+        # IMPORTANTE: Hacer esto ANTES del coarsening para evitar que se reduzca demasiado
         target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
         h_orig, w_orig = grid_vis.shape[0], grid_vis.shape[1]
         
         # DEBUG: Log información del modelo y grid original
         model_name = getattr(model_wrapper, '__class__', {}).__name__ if hasattr(model_wrapper, '__class__') else "Unknown"
-        print(f"[DEBUG heatmaps.py] Modelo: {model_name} | Grid original: {h_orig}x{w_orig} | Target: {target_grid_size}x{target_grid_size}")
+        print(f"[DEBUG heatmaps.py] Modelo: {model_name} | Grid original ANTES de replicación: {h_orig}x{w_orig} | Target: {target_grid_size}x{target_grid_size}")
         
         # Forzar replicación si el grid es más pequeño que el objetivo
         if h_orig < target_grid_size or w_orig < target_grid_size:
@@ -624,6 +614,25 @@ def plot_text_image_heatmaps(
             print(f"[DEBUG heatmaps.py] Grid final después de replicación: {grid_vis.shape[0]}x{grid_vis.shape[1]}")
         else:
             print(f"[DEBUG heatmaps.py] ⏭️  NO se replica (grid ya es {h_orig}x{w_orig} >= {target_grid_size}x{target_grid_size})")
+
+        # Aplicar coarsening SOLO si el grid es lo suficientemente grande después de la replicación
+        # Esto evita reducir grids que ya son pequeños
+        if coarsen_factor and coarsen_factor > 1:
+            sh, sw = grid_vis.shape
+            # Solo aplicar coarsening si el grid es más grande que el target después de la replicación
+            if sh >= target_grid_size and sw >= target_grid_size:
+                sh2 = (sh // coarsen_factor) * coarsen_factor
+                sw2 = (sw // coarsen_factor) * coarsen_factor
+                if sh2 >= coarsen_factor and sw2 >= coarsen_factor and sh2 > 0 and sw2 > 0:
+                    print(f"[DEBUG heatmaps.py] Aplicando coarsening: {sh}x{sw} -> {sh2//coarsen_factor}x{sw2//coarsen_factor}")
+                    grid_vis = grid_vis[:sh2, :sw2].reshape(
+                        sh2 // coarsen_factor,
+                        coarsen_factor,
+                        sw2 // coarsen_factor,
+                        coarsen_factor,
+                    ).mean(axis=(1, 3))
+            else:
+                print(f"[DEBUG heatmaps.py] ⏭️  NO se aplica coarsening (grid {sh}x{sw} es menor que target {target_grid_size})")
 
         grid_abs = np.abs(grid_vis).reshape(-1)
         if grid_abs.size == 0:
