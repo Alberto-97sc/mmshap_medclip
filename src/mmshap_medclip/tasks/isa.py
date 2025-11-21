@@ -41,6 +41,7 @@ def run_isa_one(
         inputs,
         device=device,
         amp_if_cuda=amp_if_cuda,
+        original_texts=[caption],  # Pasar el texto original para mejor agrupación de tokens
     )
     out.update(explanation)
 
@@ -82,6 +83,7 @@ def run_isa_batch(
         inputs,
         device=device,
         amp_if_cuda=amp_if_cuda,
+        original_texts=captions,  # Pasar los textos originales
     )
 
     result.update({
@@ -98,6 +100,7 @@ def explain_isa(
     inputs: Dict[str, Any],
     device,
     amp_if_cuda: bool = True,
+    original_texts: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Calcula explicaciones ISA para un batch preparado."""
     shap_values, mm_scores, iscores, text_len = _compute_isa_shap(
@@ -105,6 +108,7 @@ def explain_isa(
         inputs,
         device=device,
         amp_if_cuda=amp_if_cuda,
+        original_texts=original_texts,
     )
 
     out: Dict[str, Any] = {
@@ -169,6 +173,7 @@ def _compute_isa_shap(
     inputs: Dict[str, Any],
     device,
     amp_if_cuda: bool = True,
+    original_texts: Optional[List[str]] = None,
 ) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float], int]:
     """Aplica SHAP al batch dado y retorna valores por muestra y text_len."""
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
@@ -253,8 +258,18 @@ def _compute_isa_shap(
     shap_values = explainer(X_clean.cpu(), **call_kwargs)
 
     batch_size = inputs["input_ids"].shape[0]
-    # Pasar text_len para que compute_mm_score use la misma longitud que el Predictor
-    mm_scores = [compute_mm_score(shap_values, model.tokenizer, inputs, i=i, text_length=text_len) for i in range(batch_size)]
+    # Pasar text_len y original_texts para que compute_mm_score use el texto original cuando esté disponible
+    mm_scores = [
+        compute_mm_score(
+            shap_values,
+            model.tokenizer,
+            inputs,
+            i=i,
+            text_length=text_len,
+            original_text=original_texts[i] if original_texts and i < len(original_texts) else None
+        )
+        for i in range(batch_size)
+    ]
     iscores = [compute_iscore(shap_values, inputs, i=i, text_length=text_len) for i in range(batch_size)]
 
     return shap_values, mm_scores, iscores, text_len

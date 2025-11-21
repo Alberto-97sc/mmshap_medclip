@@ -605,8 +605,63 @@ def plot_text_image_heatmaps(
         # Usar las palabras y sus valores SHAP directamente de mm_scores
         # para que haya un parche por palabra, no por subtoken
         _, word_shap_dict = mm_scores[i]
-        words = list(word_shap_dict.keys())
-        word_vals = np.array([word_shap_dict[w] for w in words])
+
+        # Limpiar word_shap_dict de duplicados (mantener solo la primera ocurrencia de cada palabra normalizada)
+        from collections import OrderedDict
+        def normalize_word_for_comparison(w):
+            return w.strip().rstrip('.,!?;:').lower()
+
+        # Crear un diccionario limpio sin duplicados
+        cleaned_word_shap_dict = OrderedDict()
+        seen_normalized = set()
+        for word_key, score in word_shap_dict.items():
+            norm_key = normalize_word_for_comparison(word_key)
+            if norm_key not in seen_normalized:
+                cleaned_word_shap_dict[word_key] = score
+                seen_normalized.add(norm_key)
+
+        word_shap_dict = cleaned_word_shap_dict
+
+        # Si tenemos el texto original, usarlo para asegurar que todas las palabras estén incluidas
+        # Esto garantiza que el caption completo se muestre en el heatmap
+        unique_word_shap = OrderedDict()
+        seen_words = set()
+
+        # Crear un diccionario normalizado para búsqueda rápida
+        # IMPORTANTE: Solo mantener la primera ocurrencia de cada palabra normalizada
+        normalized_to_original = {}
+        for word_key, score in word_shap_dict.items():
+            norm_key = normalize_word_for_comparison(word_key)
+            # Solo agregar si no está ya en el diccionario (evitar duplicados)
+            if norm_key not in normalized_to_original:
+                normalized_to_original[norm_key] = (word_key, score)
+
+        # Si tenemos el texto original, usarlo como fuente de verdad para el orden y contenido
+        if texts and i < len(texts) and texts[i]:
+            original_words = texts[i].strip().split()
+            # Usar solo las palabras del texto original, en el orden correcto
+            for word in original_words:
+                if word.strip():
+                    word_normalized = normalize_word_for_comparison(word)
+                    # Solo agregar si no la hemos visto antes (evitar duplicados)
+                    if word_normalized not in seen_words:
+                        # Buscar la palabra en word_shap_dict (con búsqueda flexible)
+                        # Primero intentar búsqueda exacta
+                        score = word_shap_dict.get(word, None)
+                        # Si no se encuentra, buscar por versión normalizada
+                        if score is None and word_normalized in normalized_to_original:
+                            _, score = normalized_to_original[word_normalized]
+                        # Si aún no se encuentra, usar 0.0
+                        if score is None:
+                            score = 0.0
+                        unique_word_shap[word] = score
+                        seen_words.add(word_normalized)
+
+        # NO agregar palabras adicionales del word_shap_dict que no estén en el texto original
+        # Esto evita duplicados y mantiene el orden del texto original
+
+        words = list(unique_word_shap.keys())
+        word_vals = np.array([unique_word_shap[w] for w in words])
 
         ax_txt = fig.add_subplot(gs[1, i])
         ax_txt.axis("off")
@@ -671,12 +726,20 @@ def plot_text_image_heatmaps(
         current_line_widths = []
         current_line_width = 0
 
-        for word, val, w in zip(words_display, word_vals, widths):
+        # Convertir a lista para poder iterar con índice
+        words_list = list(words_display)
+        vals_list = list(word_vals)
+        widths_list = list(widths)
+        total_words = len(words_list)
+
+        for word_idx, (word, val, w) in enumerate(zip(words_list, vals_list, widths_list)):
+            is_last_word = (word_idx == total_words - 1)
             word_width_with_gap = w + (gap if current_line_words else 0)
 
             # Si agregar esta palabra excedería el ancho máximo Y ya tenemos contenido
             # Ser más permisivo: solo crear nueva línea si excede significativamente (1.05x) o si ya tenemos muchas líneas
-            if current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line * 1.05:
+            # IMPORTANTE: Si es la última palabra, siempre agregarla a la línea actual sin crear nueva línea
+            if not is_last_word and current_line_words and (current_line_width + word_width_with_gap) > max_width_per_line * 1.05:
                 # Si aún no hemos alcanzado el número objetivo de líneas, crear nueva línea
                 if len(lines) < target_num_lines - 1:
                     lines.append((current_line_words, current_line_vals, current_line_widths))
@@ -700,13 +763,13 @@ def plot_text_image_heatmaps(
                         current_line_widths.append(w)
                         current_line_width += word_width_with_gap
             else:
-                # Agregar palabra a la línea actual
+                # Agregar palabra a la línea actual (siempre para la última palabra)
                 current_line_words.append(word)
                 current_line_vals.append(val)
                 current_line_widths.append(w)
                 current_line_width += word_width_with_gap
 
-        # Agregar la última línea
+        # Agregar la última línea (siempre debe tener contenido, especialmente la última palabra)
         if current_line_words:
             lines.append((current_line_words, current_line_vals, current_line_widths))
 
@@ -716,18 +779,23 @@ def plot_text_image_heatmaps(
         # Aumentar significativamente el espaciado entre líneas para evitar superposición
         # Usar más espacio cuando hay más líneas para mejor legibilidad
         if len(lines) > 5:
-            line_height = 0.12  # Espaciado muy grande para muchas líneas
+            base_line_height = 0.12  # Espaciado muy grande para muchas líneas
         elif len(lines) > 3:
-            line_height = 0.11  # Espaciado grande para varias líneas
+            base_line_height = 0.11  # Espaciado grande para varias líneas
         elif len(lines) > 1:
-            line_height = 0.10  # Espaciado medio para múltiples líneas
+            base_line_height = 0.10  # Espaciado medio para múltiples líneas
         else:
-            line_height = 0.09  # Espaciado normal para una línea
+            base_line_height = 0.09  # Espaciado normal para una línea
 
-        total_height = len(lines) * line_height
-        # Calcular posición inicial de las palabras cerca de la parte superior
-        # para reducir el espacio entre la imagen y el caption
-        start_y = 0.95 + total_height / 2 - line_height / 2
+        line_height = base_line_height
+        top_margin = 0.92
+        bottom_margin = 0.08
+
+        if len(lines) > 1:
+            max_spacing = (top_margin - bottom_margin) / (len(lines) - 1)
+            line_height = min(line_height, max_spacing)
+
+        start_y = top_margin
 
         # Dibujar cada línea de palabras con mejor espaciado
         for line_idx, (line_words, line_vals, line_widths) in enumerate(lines):

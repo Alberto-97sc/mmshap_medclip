@@ -108,6 +108,12 @@ results, image, caption = run_shap_on_all_models(
     verbose=True
 )
 
+# Imprimir caption completo antes del resumen
+print("\n" + "="*80)
+print("📝 Caption original (completo):")
+print(caption)
+print("="*80 + "\n")
+
 # Mostrar resumen en tabla
 print_summary(results)
 
