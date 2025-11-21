@@ -16,7 +16,7 @@ _CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float
 _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32)
 
 PLOT_ISA_IMG_PERCENTILE = 90   # escala robusta al percentil 90
-PLOT_ISA_ALPHA_IMG = 0.30      # opacidad del overlay (reducida para mejor visibilidad)
+PLOT_ISA_ALPHA_IMG = 0.40      # opacidad del overlay (reducida para mejor visibilidad)
 PLOT_ISA_COARSEN_G = 2        # tamaño de super-parches (3x3)
 
 
@@ -380,13 +380,18 @@ def plot_text_image_heatmaps(
 
     _, _, H, W = inputs["pixel_values"].shape
 
+    print(f"[DEBUG heatmaps.py] imginfo: grid_h={grid_h}, grid_w={grid_w}, patch_size={patch_size_info}")
+    print(f"[DEBUG heatmaps.py] Imagen: H={H}, W={W}")
+
     if patch_h is None and grid_h > 0:
         patch_h = max(1, int(round(H / max(grid_h, 1))))
     if patch_w is None and grid_w > 0:
         patch_w = max(1, int(round(W / max(grid_w, 1))))
 
     if patch_h is None or patch_w is None or patch_h <= 0 or patch_w <= 0 or grid_h <= 0 or grid_w <= 0:
+        print(f"[DEBUG heatmaps.py] Inferiendo patch_size (patch_h={patch_h}, patch_w={patch_w}, grid_h={grid_h}, grid_w={grid_w})")
         ps = _infer_patch_size(model_wrapper, inputs, shap_values)
+        print(f"[DEBUG heatmaps.py] patch_size inferido: {ps}")
         if ps is None:
             raise ValueError("No pude inferir patch_size; pásalo vía model_wrapper o inputs.")
         if isinstance(ps, (list, tuple)):
@@ -400,11 +405,14 @@ def plot_text_image_heatmaps(
             patch_h = patch_w = int(ps)
         grid_h = max(1, int(round(H / max(patch_h, 1))))
         grid_w = max(1, int(round(W / max(patch_w, 1))))
+        print(f"[DEBUG heatmaps.py] Grid recalculado: grid_h={grid_h}, grid_w={grid_w} (patch_h={patch_h}, patch_w={patch_w})")
 
     patch_h = max(1, int(patch_h))
     patch_w = max(1, int(patch_w))
     side_h_base = grid_h if grid_h > 0 else None
     side_w_base = grid_w if grid_w > 0 else None
+
+    print(f"[DEBUG heatmaps.py] Valores finales: patch_h={patch_h}, patch_w={patch_w}, side_h_base={side_h_base}, side_w_base={side_w_base}")
 
     # --- normalizar SHAP a matriz (B, L) ---
     vals = shap_values.values if hasattr(shap_values, "values") else shap_values
@@ -467,11 +475,14 @@ def plot_text_image_heatmaps(
         norm_text = Normalize(vmin=0.0, vmax=vmax_text)
         cmap_text = plt.get_cmap("Reds")
 
+    # Alpha base consistente para todos los modelos
+    # Usar un valor fijo para asegurar intensidad visual uniforme
     alpha_overlay = (
         float(alpha_img)
         if alpha_img is not None
         else float(PLOT_ISA_ALPHA_IMG)
     )
+    # Asegurar que el alpha esté en un rango razonable y consistente
     alpha_overlay = min(max(alpha_overlay, 0.0), 1.0)
     coarsen_factor = int(PLOT_ISA_COARSEN_G) if PLOT_ISA_COARSEN_G else 0
     percentile_img = float(PLOT_ISA_IMG_PERCENTILE)
@@ -520,6 +531,8 @@ def plot_text_image_heatmaps(
         side_w = side_w_base if side_w_base else max(1, int(round(W / float(patch_w_eff))))
         n_expected = max(1, side_h * side_w)
 
+        print(f"[DEBUG heatmaps.py] Muestra {i}: img_slice.size={img_slice.size}, n_expected={n_expected}, side_h={side_h}, side_w={side_w}")
+
         full_vec = np.asarray(img_slice).reshape(-1)
 
         if full_vec.size == 0:
@@ -558,17 +571,76 @@ def plot_text_image_heatmaps(
         patch_grid = np.reshape(pv_clean, (side_h, side_w), order="C")
 
         grid_vis = patch_grid
+
+        # Replicar el grid a una resolución más alta si tiene pocos parches
+        # Esto asegura que modelos con patch_size grande (como PubMedCLIP con patch32)
+        # tengan la misma granularidad visual que modelos con patch_size pequeño (como BioMedCLIP con patch16)
+        # Usamos replicación en lugar de interpolación para mantener la apariencia de parches discretos
+        # IMPORTANTE: Hacer esto ANTES del coarsening para evitar que se reduzca demasiado
+        target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
+        h_orig, w_orig = grid_vis.shape[0], grid_vis.shape[1]
+
+        # Flag para indicar si se aplicó replicación (para ajustar alpha después)
+        was_replicated = False
+
+        # DEBUG: Log información del modelo y grid original
+        if i == 0:  # Solo loggear para la primera muestra
+            model_name = getattr(model_wrapper, '__class__', {}).__name__ if hasattr(model_wrapper, '__class__') else "Unknown"
+            print(f"[DEBUG heatmaps.py] Modelo: {model_name} | Grid original ANTES de replicación: {h_orig}x{w_orig} | Target: {target_grid_size}x{target_grid_size}")
+
+        # Forzar replicación si el grid es más pequeño que el objetivo
+        if h_orig < target_grid_size or w_orig < target_grid_size:
+            was_replicated = True
+            # Calcular el factor de replicación necesario (redondear hacia arriba)
+            h_scale = int(np.ceil(target_grid_size / h_orig)) if h_orig > 0 else 1
+            w_scale = int(np.ceil(target_grid_size / w_orig)) if w_orig > 0 else 1
+
+            print(f"[DEBUG heatmaps.py] ✅ REPLICANDO: {h_orig}x{w_orig} -> {target_grid_size}x{target_grid_size} (escalas: h={h_scale}, w={w_scale})")
+
+            # Replicar cada parche usando repeat_interleave para mantener parches discretos
+            grid_vis_tensor = torch.as_tensor(grid_vis, dtype=torch.float32)
+            # Replicar en altura: cada fila se repite h_scale veces
+            grid_vis_tensor = grid_vis_tensor.repeat_interleave(h_scale, dim=0)
+            # Replicar en ancho: cada columna se repite w_scale veces
+            grid_vis_tensor = grid_vis_tensor.repeat_interleave(w_scale, dim=1)
+
+            print(f"[DEBUG heatmaps.py] Después de repeat_interleave: {grid_vis_tensor.shape[0]}x{grid_vis_tensor.shape[1]}")
+
+            # Asegurar que tenga exactamente el tamaño objetivo
+            if grid_vis_tensor.shape[0] > target_grid_size:
+                grid_vis_tensor = grid_vis_tensor[:target_grid_size, :]
+            if grid_vis_tensor.shape[1] > target_grid_size:
+                grid_vis_tensor = grid_vis_tensor[:, :target_grid_size]
+            if grid_vis_tensor.shape[0] < target_grid_size or grid_vis_tensor.shape[1] < target_grid_size:
+                # Si aún es más pequeño, usar padding con el último valor
+                pad_h = max(0, target_grid_size - grid_vis_tensor.shape[0])
+                pad_w = max(0, target_grid_size - grid_vis_tensor.shape[1])
+                if pad_h > 0 or pad_w > 0:
+                    print(f"[DEBUG heatmaps.py] Aplicando padding: pad_h={pad_h}, pad_w={pad_w}")
+                    grid_vis_tensor = F.pad(grid_vis_tensor, (0, pad_w, 0, pad_h), mode='replicate')
+            grid_vis = grid_vis_tensor.numpy()
+            print(f"[DEBUG heatmaps.py] Grid final después de replicación: {grid_vis.shape[0]}x{grid_vis.shape[1]}")
+        else:
+            print(f"[DEBUG heatmaps.py] ⏭️  NO se replica (grid ya es {h_orig}x{w_orig} >= {target_grid_size}x{target_grid_size})")
+
+        # Aplicar coarsening SOLO si el grid es lo suficientemente grande después de la replicación
+        # Esto evita reducir grids que ya son pequeños
         if coarsen_factor and coarsen_factor > 1:
             sh, sw = grid_vis.shape
-            sh2 = (sh // coarsen_factor) * coarsen_factor
-            sw2 = (sw // coarsen_factor) * coarsen_factor
-            if sh2 >= coarsen_factor and sw2 >= coarsen_factor and sh2 > 0 and sw2 > 0:
-                grid_vis = grid_vis[:sh2, :sw2].reshape(
-                    sh2 // coarsen_factor,
-                    coarsen_factor,
-                    sw2 // coarsen_factor,
-                    coarsen_factor,
-                ).mean(axis=(1, 3))
+            # Solo aplicar coarsening si el grid es más grande que el target después de la replicación
+            if sh >= target_grid_size and sw >= target_grid_size:
+                sh2 = (sh // coarsen_factor) * coarsen_factor
+                sw2 = (sw // coarsen_factor) * coarsen_factor
+                if sh2 >= coarsen_factor and sw2 >= coarsen_factor and sh2 > 0 and sw2 > 0:
+                    print(f"[DEBUG heatmaps.py] Aplicando coarsening: {sh}x{sw} -> {sh2//coarsen_factor}x{sw2//coarsen_factor}")
+                    grid_vis = grid_vis[:sh2, :sw2].reshape(
+                        sh2 // coarsen_factor,
+                        coarsen_factor,
+                        sw2 // coarsen_factor,
+                        coarsen_factor,
+                    ).mean(axis=(1, 3))
+            else:
+                print(f"[DEBUG heatmaps.py] ⏭️  NO se aplica coarsening (grid {sh}x{sw} es menor que target {target_grid_size})")
 
         grid_abs = np.abs(grid_vis).reshape(-1)
         if grid_abs.size == 0:
@@ -599,6 +671,7 @@ def plot_text_image_heatmaps(
             "heat": heat_up,
             "H": H,
             "W": W,
+            "was_replicated": was_replicated,  # Guardar flag de replicación para ajustar alpha
         })
 
         # --- texto ---
@@ -852,8 +925,19 @@ def plot_text_image_heatmaps(
         H = entry["H"]
         W = entry["W"]
 
-        # Aumentar alpha ligeramente si los valores son muy pequeños para mejorar visibilidad
-        alpha_to_use = min(alpha_overlay * 1.3, 0.6) if vmax_img < 1.0 else alpha_overlay
+        # Normalización de alpha para intensidad consistente entre todos los modelos
+        # Usar un alpha base fijo para todos los modelos, con ajuste mínimo solo para replicación
+        # Esto asegura que la intensidad visual sea similar independientemente de los valores SHAP
+        alpha_base = alpha_overlay  # Usar el alpha base sin ajustes por vmax_img
+
+        # Si el grid fue replicado (de 7x7 a 14x14), reducir alpha ligeramente
+        # Los parches replicados pueden verse ligeramente más intensos, así que ajustamos mínimamente
+        if hasattr(entry, 'was_replicated') and entry.get('was_replicated', False):
+            # Reducción mínima del 10% para parches replicados
+            alpha_to_use = alpha_base * 0.9
+        else:
+            # Para modelos sin replicación, usar el alpha base directamente
+            alpha_to_use = alpha_base
 
         ax.imshow(
             heat_up,
