@@ -338,22 +338,37 @@ def plot_comparison_simple(
 
         patch_grid = img_vals[:grid_h * grid_w].reshape(grid_h, grid_w)
         
-        # Interpolar el grid a una resolución más alta si tiene pocos parches
+        # Replicar el grid a una resolución más alta si tiene pocos parches
         # Esto asegura que modelos con patch_size grande (como PubMedCLIP con patch32)
         # tengan la misma granularidad visual que modelos con patch_size pequeño (como BioMedCLIP con patch16)
+        # Usamos replicación en lugar de interpolación para mantener la apariencia de parches discretos
         target_grid_size = 14  # Tamaño objetivo para que coincida con modelos patch16 (224/16 = 14)
-        heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        
         if patch_grid.shape[0] < target_grid_size or patch_grid.shape[1] < target_grid_size:
-            # Interpolar el grid a la resolución objetivo antes de interpolar a la imagen
-            heat_tensor = F.interpolate(
-                heat_tensor, 
-                size=(target_grid_size, target_grid_size), 
-                mode='bilinear', 
-                align_corners=False
-            )
+            # Calcular el factor de replicación necesario
+            h_orig, w_orig = patch_grid.shape[0], patch_grid.shape[1]
+            h_scale = target_grid_size / h_orig
+            w_scale = target_grid_size / w_orig
+            
+            # Replicar cada parche usando repeat_interleave para mantener parches discretos
+            patch_grid_tensor = torch.as_tensor(patch_grid, dtype=torch.float32)
+            # Replicar en altura
+            patch_grid_tensor = patch_grid_tensor.repeat_interleave(int(np.ceil(h_scale)), dim=0)
+            # Replicar en ancho
+            patch_grid_tensor = patch_grid_tensor.repeat_interleave(int(np.ceil(w_scale)), dim=1)
+            # Asegurar que tenga exactamente el tamaño objetivo
+            if patch_grid_tensor.shape[0] > target_grid_size:
+                patch_grid_tensor = patch_grid_tensor[:target_grid_size, :]
+            if patch_grid_tensor.shape[1] > target_grid_size:
+                patch_grid_tensor = patch_grid_tensor[:, :target_grid_size]
+            if patch_grid_tensor.shape[0] < target_grid_size or patch_grid_tensor.shape[1] < target_grid_size:
+                # Si aún es más pequeño, usar padding con el último valor
+                pad_h = target_grid_size - patch_grid_tensor.shape[0]
+                pad_w = target_grid_size - patch_grid_tensor.shape[1]
+                patch_grid_tensor = F.pad(patch_grid_tensor, (0, pad_w, 0, pad_h), mode='replicate')
+            patch_grid = patch_grid_tensor.numpy()
         
-        heat_up = F.interpolate(heat_tensor, size=(H, W), mode='bilinear', align_corners=False).squeeze().numpy()
+        heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        heat_up = F.interpolate(heat_tensor, size=(H, W), mode='nearest').squeeze().numpy()
 
         # Normalización del heatmap
         vmax = np.percentile(np.abs(heat_up), 95)
