@@ -16,7 +16,7 @@ _CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float
 _CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32)
 
 PLOT_ISA_IMG_PERCENTILE = 90   # escala robusta al percentil 90
-PLOT_ISA_ALPHA_IMG = 0.30      # opacidad del overlay (reducida para mejor visibilidad)
+PLOT_ISA_ALPHA_IMG = 0.50      # opacidad del overlay (reducida para mejor visibilidad)
 PLOT_ISA_COARSEN_G = 2        # tamaño de super-parches (3x3)
 
 
@@ -931,7 +931,7 @@ def plot_text_image_heatmaps(
         if hasattr(entry, 'was_replicated') and entry.get('was_replicated', False):
             # Reducir alpha más agresivamente para parches replicados
             # Aplicar reducción del 70% (multiplicar por 0.3) para que coincida mejor con otros modelos
-            alpha_to_use = alpha_to_use * 0.3
+            alpha_to_use = alpha_to_use * 0.1
         else:
             # Para modelos sin replicación, aumentar ligeramente el alpha para igualar con PubMedCLIP
             # Aumentar en ~15% para mejorar visibilidad y balance
