@@ -112,14 +112,26 @@ for col in df.columns:
 
 print(f"🤖 Modelos encontrados: {model_names}")
 
-# Crear diccionario con datos por modelo
+# Crear diccionario con datos por modelo (filtrando NaN)
 models_data = {}
 for model_name in model_names:
+    iscore_raw = df[f'Iscore_{model_name}'].values
+    tscore_raw = df[f'Tscore_{model_name}'].values
+    logit_raw = df[f'Logit_{model_name}'].values
+    
+    # Filtrar NaN y crear máscara de valores válidos
+    valid_mask = ~(np.isnan(iscore_raw) | np.isnan(tscore_raw) | np.isnan(logit_raw))
+    
     models_data[model_name] = {
-        'iscore': df[f'Iscore_{model_name}'].values,
-        'tscore': df[f'Tscore_{model_name}'].values,
-        'logit': df[f'Logit_{model_name}'].values,
+        'iscore': iscore_raw[valid_mask],
+        'tscore': tscore_raw[valid_mask],
+        'logit': logit_raw[valid_mask],
+        'valid_count': np.sum(valid_mask),
+        'total_count': len(iscore_raw)
     }
+    
+    if np.sum(valid_mask) < len(iscore_raw):
+        print(f"⚠️  {model_name}: {len(iscore_raw) - np.sum(valid_mask)} valores NaN encontrados y filtrados")
 
 # %% [markdown]
 # ## 1️⃣ Estadísticas Descriptivas por Modelo
@@ -136,45 +148,53 @@ for model_name in model_names:
     iscore = models_data[model_name]['iscore']
     tscore = models_data[model_name]['tscore']
     logit = models_data[model_name]['logit']
+    valid_count = models_data[model_name]['valid_count']
     
-    stats_list.append({
-        'Modelo': model_name,
-        'Métrica': 'IScore',
-        'Media': np.mean(iscore),
-        'Mediana': np.median(iscore),
-        'Desv. Est.': np.std(iscore),
-        'Mínimo': np.min(iscore),
-        'Máximo': np.max(iscore),
-        'Q25': np.percentile(iscore, 25),
-        'Q75': np.percentile(iscore, 75),
-        'CV (%)': (np.std(iscore) / np.mean(iscore)) * 100 if np.mean(iscore) > 0 else 0
-    })
-    
-    stats_list.append({
-        'Modelo': model_name,
-        'Métrica': 'TScore',
-        'Media': np.mean(tscore),
-        'Mediana': np.median(tscore),
-        'Desv. Est.': np.std(tscore),
-        'Mínimo': np.min(tscore),
-        'Máximo': np.max(tscore),
-        'Q25': np.percentile(tscore, 25),
-        'Q75': np.percentile(tscore, 75),
-        'CV (%)': (np.std(tscore) / np.mean(tscore)) * 100 if np.mean(tscore) > 0 else 0
-    })
-    
-    stats_list.append({
-        'Modelo': model_name,
-        'Métrica': 'Logit',
-        'Media': np.mean(logit),
-        'Mediana': np.median(logit),
-        'Desv. Est.': np.std(logit),
-        'Mínimo': np.min(logit),
-        'Máximo': np.max(logit),
-        'Q25': np.percentile(logit, 25),
-        'Q75': np.percentile(logit, 75),
-        'CV (%)': (np.std(logit) / np.mean(logit)) * 100 if np.mean(logit) > 0 else 0
-    })
+    # Usar funciones que manejan NaN correctamente
+    if len(iscore) > 0:
+        stats_list.append({
+            'Modelo': model_name,
+            'Métrica': 'IScore',
+            'Media': np.nanmean(iscore),
+            'Mediana': np.nanmedian(iscore),
+            'Desv. Est.': np.nanstd(iscore),
+            'Mínimo': np.nanmin(iscore),
+            'Máximo': np.nanmax(iscore),
+            'Q25': np.nanpercentile(iscore, 25),
+            'Q75': np.nanpercentile(iscore, 75),
+            'CV (%)': (np.nanstd(iscore) / np.nanmean(iscore)) * 100 if np.nanmean(iscore) > 0 else 0,
+            'N válidos': valid_count
+        })
+        
+        stats_list.append({
+            'Modelo': model_name,
+            'Métrica': 'TScore',
+            'Media': np.nanmean(tscore),
+            'Mediana': np.nanmedian(tscore),
+            'Desv. Est.': np.nanstd(tscore),
+            'Mínimo': np.nanmin(tscore),
+            'Máximo': np.nanmax(tscore),
+            'Q25': np.nanpercentile(tscore, 25),
+            'Q75': np.nanpercentile(tscore, 75),
+            'CV (%)': (np.nanstd(tscore) / np.nanmean(tscore)) * 100 if np.nanmean(tscore) > 0 else 0,
+            'N válidos': valid_count
+        })
+        
+        stats_list.append({
+            'Modelo': model_name,
+            'Métrica': 'Logit',
+            'Media': np.nanmean(logit),
+            'Mediana': np.nanmedian(logit),
+            'Desv. Est.': np.nanstd(logit),
+            'Mínimo': np.nanmin(logit),
+            'Máximo': np.nanmax(logit),
+            'Q25': np.nanpercentile(logit, 25),
+            'Q75': np.nanpercentile(logit, 75),
+            'CV (%)': (np.nanstd(logit) / np.nanmean(logit)) * 100 if np.nanmean(logit) > 0 else 0,
+            'N válidos': valid_count
+        })
+    else:
+        print(f"⚠️  {model_name}: No hay datos válidos para calcular estadísticas")
 
 df_stats = pd.DataFrame(stats_list)
 
