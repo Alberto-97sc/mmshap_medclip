@@ -15,9 +15,9 @@ class VQAMed2019Dataset(DatasetBase):
     """
     Dataset loader para VQA-Med 2019.
     
-    Lee archivos del ZIP ImageClef-2019-VQA-Med-Validation.zip:
+    Lee archivos del ZIP ImageClef-2019-VQA-Med-Training.zip o Validation.zip:
     - All_QA_Pairs_<split>.txt (contiene preguntas y respuestas)
-    - directorio <images_subdir>/ (por defecto Val_images/ para Validation)
+    - directorio <images_subdir>/ (por defecto Train_images/ para Training, Val_images/ para Validation)
     
     Infiere categorías de preguntas y construye candidatos automáticamente.
     """
@@ -32,9 +32,9 @@ class VQAMed2019Dataset(DatasetBase):
         """
         Args:
             zip_path: Ruta al archivo ZIP del dataset
-            split: Split a usar ('Validation', 'Test', etc.)
+            split: Split a usar ('Training', 'Validation', 'Test', etc.)
             images_subdir: Subdirectorio dentro del ZIP donde están las imágenes
-                          Si es None, se infiere: "Val_images" para Validation, "Test_images" para Test
+                          Si es None, se infiere: "Train_images" para Training, "Val_images" para Validation, "Test_images" para Test
             n_rows: Número de filas a cargar ("all" o un entero)
         """
         self.zip_path = zip_path
@@ -45,6 +45,8 @@ class VQAMed2019Dataset(DatasetBase):
         if images_subdir is None:
             if split.lower() == "validation":
                 self.images_subdir = "Val_images"
+            elif split.lower() == "training" or split.lower() == "train":
+                self.images_subdir = "Train_images"
             elif split.lower() == "test":
                 self.images_subdir = "Test_images"
             else:
@@ -59,8 +61,9 @@ class VQAMed2019Dataset(DatasetBase):
         # Cargar preguntas y respuestas desde el ZIP
         with zipfile.ZipFile(zip_path, "r") as zf:
             # Buscar archivo All_QA_Pairs_<split>.txt
+            # Para Training: All_QA_Pairs_train.txt
             # Para Validation: All_QA_Pairs_val.txt
-            # Para Test: All_QA_Pairs_test.txt (probablemente)
+            # Para Test: All_QA_Pairs_test.txt
             qa_file = None
             split_lower = split.lower()
             
@@ -68,8 +71,10 @@ class VQAMed2019Dataset(DatasetBase):
             possible_names = [
                 f"All_QA_Pairs_{split_lower}.txt",
                 f"All_QA_Pairs_val.txt",  # Para Validation
+                f"All_QA_Pairs_train.txt",  # Para Training
                 f"All_QA_Pairs_test.txt",  # Para Test
                 "All_QA_Pairs_val.txt",
+                "All_QA_Pairs_train.txt",
                 "All_QA_Pairs.txt",
             ]
             
@@ -114,16 +119,25 @@ class VQAMed2019Dataset(DatasetBase):
                         break
             
             # Estrategia 4: Buscar archivos por categoría y combinarlos
-            # Si no hay All_QA_Pairs, buscar archivos C1_Modality_val.txt, etc.
+            # Si no hay All_QA_Pairs, buscar archivos C1_Modality_train.txt, C2_Plane_val.txt, etc.
             category_files = []
             if qa_file is None:
                 for name in all_txt_files:
                     basename = os.path.basename(name)
-                    # Buscar archivos de categoría: C1_Modality_val.txt, C2_Plane_val.txt, etc.
+                    # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_val.txt, etc.
+                    # Buscar por split (train, val, test) o por número de categoría
                     if (basename.startswith("C") and 
-                        any(cat in basename.lower() for cat in ["modality", "plane", "organ", "abnormality"]) and
-                        split_lower in basename.lower()):
-                        category_files.append(name)
+                        any(cat in basename.lower() for cat in ["modality", "plane", "organ", "abnormality"])):
+                        # Verificar si coincide con el split (train/val/test)
+                        basename_lower = basename.lower()
+                        split_match = (
+                            split_lower in basename_lower or
+                            ("train" in basename_lower and split_lower in ["training", "train"]) or
+                            ("val" in basename_lower and split_lower == "validation") or
+                            ("test" in basename_lower and split_lower == "test")
+                        )
+                        if split_match:
+                            category_files.append(name)
                 
                 if category_files:
                     # Si encontramos archivos por categoría, los usaremos más adelante

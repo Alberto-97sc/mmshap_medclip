@@ -4,9 +4,9 @@ device: auto
 dataset:
   name: vqa_med_2019
   params:
-    zip_path: data/ImageClef-2019-VQA-Med-Validation.zip
-    split: Validation
-    images_subdir: Images
+    zip_path: data/ImageClef-2019-VQA-Med-Training.zip
+    split: Training
+    images_subdir: Train_images
     n_rows: all
 
 model:
