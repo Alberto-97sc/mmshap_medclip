@@ -211,57 +211,41 @@ print(f"\n💾 Estadísticas guardadas en: {stats_path}")
 # ## 2️⃣ Gráficas Comparativas
 
 # %% [markdown]
-# ### 2.1 Boxplots de IScore y TScore por Modelo
+# ### 2.1 Boxplot de IScore por Modelo
 
 # %%
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig, ax = plt.subplots(figsize=(12, 6))
 
 # Preparar datos para boxplot
 iscore_data = [models_data[model]['iscore'] for model in model_names]
-tscore_data = [models_data[model]['tscore'] for model in model_names]
 
 # Boxplot IScore
-bp1 = axes[0].boxplot(iscore_data, labels=model_names, patch_artist=True)
-axes[0].axhline(y=0.5, color='r', linestyle='--', linewidth=2, label='Balance ideal (50%)')
-axes[0].set_title('Distribución de IScore por Modelo', fontsize=14, fontweight='bold')
-axes[0].set_ylabel('IScore', fontsize=12)
-axes[0].set_xlabel('Modelo', fontsize=12)
-axes[0].grid(True, alpha=0.3)
-axes[0].legend()
-axes[0].set_ylim(0, 1)
+bp = ax.boxplot(iscore_data, labels=model_names, patch_artist=True)
+ax.axhline(y=0.5, color='r', linestyle='--', linewidth=2, label='Balance ideal (50%)')
+ax.set_title('Distribución de IScore por Modelo', fontsize=14, fontweight='bold')
+ax.set_ylabel('IScore', fontsize=12)
+ax.set_xlabel('Modelo', fontsize=12)
+ax.grid(True, alpha=0.3)
+ax.legend()
+ax.set_ylim(0, 1)
 
 # Colorear boxes
-colors = plt.cm.Set3(np.linspace(0, 1, len(bp1['boxes'])))
-for patch, color in zip(bp1['boxes'], colors):
-    patch.set_facecolor(color)
-    patch.set_alpha(0.7)
-
-# Boxplot TScore
-bp2 = axes[1].boxplot(tscore_data, labels=model_names, patch_artist=True)
-axes[1].axhline(y=0.5, color='r', linestyle='--', linewidth=2, label='Balance ideal (50%)')
-axes[1].set_title('Distribución de TScore por Modelo', fontsize=14, fontweight='bold')
-axes[1].set_ylabel('TScore', fontsize=12)
-axes[1].set_xlabel('Modelo', fontsize=12)
-axes[1].grid(True, alpha=0.3)
-axes[1].legend()
-axes[1].set_ylim(0, 1)
-
-# Colorear boxes
-for patch, color in zip(bp2['boxes'], colors):
+colors = plt.cm.Set3(np.linspace(0, 1, len(bp['boxes'])))
+for patch, color in zip(bp['boxes'], colors):
     patch.set_facecolor(color)
     patch.set_alpha(0.7)
 
 plt.tight_layout()
-boxplot_path = Path(OUTPUT_DIR) / "boxplots_iscore_tscore.png"
+boxplot_path = Path(OUTPUT_DIR) / "boxplot_iscore.png"
 plt.savefig(boxplot_path, dpi=300, bbox_inches='tight')
 print(f"💾 Gráfica guardada en: {boxplot_path}")
 plt.show()
 
 # %% [markdown]
-# ### 2.2 Violin Plots de IScore y TScore
+# ### 2.2 Violin Plot de IScore por Modelo
 
 # %%
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig, ax = plt.subplots(figsize=(12, 6))
 
 # Preparar datos en formato largo para seaborn
 iscore_df = pd.DataFrame({
@@ -269,33 +253,18 @@ iscore_df = pd.DataFrame({
     'IScore': np.concatenate(iscore_data)
 })
 
-tscore_df = pd.DataFrame({
-    'Modelo': np.repeat(model_names, [len(d) for d in tscore_data]),
-    'TScore': np.concatenate(tscore_data)
-})
-
 # Violin plot IScore
-sns.violinplot(data=iscore_df, x='Modelo', y='IScore', ax=axes[0], inner='box')
-axes[0].axhline(y=0.5, color='r', linestyle='--', linewidth=2, label='Balance ideal (50%)')
-axes[0].set_title('Distribución de IScore por Modelo (Violin Plot)', fontsize=14, fontweight='bold')
-axes[0].set_ylabel('IScore', fontsize=12)
-axes[0].set_xlabel('Modelo', fontsize=12)
-axes[0].grid(True, alpha=0.3)
-axes[0].legend()
-axes[0].set_ylim(0, 1)
-
-# Violin plot TScore
-sns.violinplot(data=tscore_df, x='Modelo', y='TScore', ax=axes[1], inner='box')
-axes[1].axhline(y=0.5, color='r', linestyle='--', linewidth=2, label='Balance ideal (50%)')
-axes[1].set_title('Distribución de TScore por Modelo (Violin Plot)', fontsize=14, fontweight='bold')
-axes[1].set_ylabel('TScore', fontsize=12)
-axes[1].set_xlabel('Modelo', fontsize=12)
-axes[1].grid(True, alpha=0.3)
-axes[1].legend()
-axes[1].set_ylim(0, 1)
+sns.violinplot(data=iscore_df, x='Modelo', y='IScore', ax=ax, inner='box')
+ax.axhline(y=0.5, color='r', linestyle='--', linewidth=2, label='Balance ideal (50%)')
+ax.set_title('Distribución de IScore por Modelo (Violin Plot)', fontsize=14, fontweight='bold')
+ax.set_ylabel('IScore', fontsize=12)
+ax.set_xlabel('Modelo', fontsize=12)
+ax.grid(True, alpha=0.3)
+ax.legend()
+ax.set_ylim(0, 1)
 
 plt.tight_layout()
-violin_path = Path(OUTPUT_DIR) / "violinplots_iscore_tscore.png"
+violin_path = Path(OUTPUT_DIR) / "violinplot_iscore.png"
 plt.savefig(violin_path, dpi=300, bbox_inches='tight')
 print(f"💾 Gráfica guardada en: {violin_path}")
 plt.show()
@@ -654,18 +623,18 @@ for patch, color in zip(bp['boxes'], colors):
     patch.set_facecolor(color)
     patch.set_alpha(0.7)
 
-# 2. Boxplot TScore (arriba centro)
+# 2. Balance Score (arriba centro)
 ax2 = fig.add_subplot(gs[0, 1])
-bp = ax2.boxplot(tscore_data, labels=model_names, patch_artist=True)
-ax2.axhline(y=0.5, color='r', linestyle='--', linewidth=2)
-ax2.set_title('Distribución TScore', fontweight='bold')
-ax2.set_ylabel('TScore')
-ax2.grid(True, alpha=0.3)
-for patch, color in zip(bp['boxes'], colors):
-    patch.set_facecolor(color)
-    patch.set_alpha(0.7)
+x_pos = np.arange(len(model_names))
+bars = ax2.barh(x_pos, df_balance['Balance Score (Media)'], color=colors[:len(model_names)])
+ax2.set_yticks(x_pos)
+ax2.set_yticklabels(df_balance['Modelo'])
+ax2.set_xlabel('Balance Score')
+ax2.set_title('Balance Multimodal', fontweight='bold')
+ax2.axvline(x=1.0, color='r', linestyle='--', linewidth=2)
+ax2.grid(True, alpha=0.3, axis='x')
 
-# 3. Balance Score (arriba derecha)
+# 3. Scatter IScore vs TScore (arriba derecha)
 ax3 = fig.add_subplot(gs[0, 2])
 x_pos = np.arange(len(model_names))
 bars = ax3.barh(x_pos, df_balance['Balance Score (Media)'], color=colors[:len(model_names)])
