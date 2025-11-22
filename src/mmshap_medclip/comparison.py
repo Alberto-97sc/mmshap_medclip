@@ -742,7 +742,8 @@ def batch_shap_analysis(
     start_idx: int = 0,
     end_idx: Optional[int] = None,
     csv_path: str = "outputs/batch_shap_results.csv",
-    verbose: bool = True
+    verbose: bool = True,
+    show_dataframe: bool = False
 ):
     """
     Ejecuta SHAP en múltiples muestras y guarda los resultados en un CSV.
@@ -757,6 +758,7 @@ def batch_shap_analysis(
         end_idx: Índice final de la muestra (exclusive). Si es None, usa len(dataset)
         csv_path: Ruta donde guardar/leer el CSV de resultados
         verbose: Si True, imprime progreso detallado
+        show_dataframe: Si True, imprime el DataFrame completo después de cada muestra procesada
 
     Returns:
         DataFrame con todos los resultados
@@ -914,6 +916,16 @@ def batch_shap_analysis(
                     print(f"💾 CSV guardado: {csv_path}")
                     print(f"📊 Progreso: {samples_processed} procesadas | {samples_skipped} saltadas | {samples_failed} fallidas")
                     print(f"⏱️  Tiempo transcurrido: {elapsed_time/60:.1f} min | Estimado restante: {estimated_time_remaining/60:.1f} min")
+                
+                # Mostrar DataFrame en tiempo real si está habilitado
+                if show_dataframe:
+                    print(f"\n{'='*80}")
+                    print(f"📋 DATAFRAME ACTUALIZADO (últimas {min(10, len(df_results))} filas):")
+                    print(f"{'='*80}")
+                    # Mostrar las últimas 10 filas o todas si hay menos de 10
+                    display_rows = min(10, len(df_results))
+                    print(df_results.tail(display_rows).to_string(index=False))
+                    print(f"{'='*80}\n")
 
             except Exception as e:
                 samples_failed += 1

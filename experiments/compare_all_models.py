@@ -180,7 +180,8 @@ df_batch_results = batch_shap_analysis(
     start_idx=START_IDX,
     end_idx=END_IDX,
     csv_path=CSV_PATH,
-    verbose=True
+    verbose=True,
+    show_dataframe=True  # Mostrar DataFrame en tiempo real después de cada muestra
 )
 
 # Mostrar primeras filas del DataFrame
