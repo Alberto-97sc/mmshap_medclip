@@ -791,11 +791,38 @@ def batch_shap_analysis(
         print(f"📝 Creando nuevo CSV: {csv_path}")
         df_existing = pd.DataFrame()
 
-    # Obtener lista de muestras ya procesadas
+    # Obtener lista de muestras ya procesadas (sin NaN en métricas)
     processed_samples = set()
+    samples_with_nan = set()
     if not df_existing.empty and 'sample_idx' in df_existing.columns:
-        processed_samples = set(df_existing['sample_idx'].unique())
-        print(f"   Muestras ya procesadas: {len(processed_samples)}")
+        # Identificar columnas de métricas (Iscore, Tscore, Logit para cada modelo)
+        model_names = [name for name in models.keys() if models[name] is not None]
+        metric_columns = []
+        for model_name in model_names:
+            metric_columns.extend([
+                f'Iscore_{model_name}',
+                f'Tscore_{model_name}',
+                f'Logit_{model_name}'
+            ])
+        
+        # Verificar cada muestra: está procesada solo si NO tiene NaN en ninguna métrica
+        for _, row in df_existing.iterrows():
+            sample_idx = row['sample_idx']
+            # Verificar si hay NaN en las columnas de métricas
+            has_nan = False
+            for col in metric_columns:
+                if col in row and pd.isna(row[col]):
+                    has_nan = True
+                    break
+            
+            if has_nan:
+                samples_with_nan.add(sample_idx)
+            else:
+                processed_samples.add(sample_idx)
+        
+        if samples_with_nan:
+            print(f"   ⚠️  Muestras con NaN detectadas: {len(samples_with_nan)} (serán re-procesadas)")
+        print(f"   ✅ Muestras completamente procesadas: {len(processed_samples)}")
 
     # Inicializar DataFrame de resultados
     if df_existing.empty:
@@ -813,16 +840,23 @@ def batch_shap_analysis(
     else:
         df_results = df_existing.copy()
 
-    # Encontrar dónde empezar (primera muestra no procesada)
+    # Asegurar que samples_with_nan esté definido incluso si no hay CSV existente
+    if 'samples_with_nan' not in locals():
+        samples_with_nan = set()
+
+    # Encontrar dónde empezar (primera muestra no procesada o con NaN)
     current_idx = start_idx
     for idx in range(start_idx, end_idx):
         if idx not in processed_samples:
             current_idx = idx
             break
     else:
-        # Todas las muestras ya fueron procesadas
-        print(f"✅ Todas las muestras en el rango [{start_idx}, {end_idx}) ya fueron procesadas")
-        return df_results
+        # Todas las muestras ya fueron procesadas (sin NaN)
+        if not samples_with_nan:
+            print(f"✅ Todas las muestras en el rango [{start_idx}, {end_idx}) ya fueron procesadas")
+            return df_results
+        # Si hay muestras con NaN, continuar procesándolas
+        current_idx = min(samples_with_nan)
 
     print(f"\n{'='*80}")
     print(f"🚀 INICIANDO ANÁLISIS BATCH DE SHAP")
@@ -830,7 +864,9 @@ def batch_shap_analysis(
     print(f"📊 Rango de muestras: [{start_idx}, {end_idx})")
     print(f"📍 Continuando desde muestra: {current_idx}")
     print(f"📈 Total a procesar: {total_samples}")
-    print(f"⏭️  Ya procesadas: {len(processed_samples)}")
+    print(f"⏭️  Ya procesadas (sin NaN): {len(processed_samples)}")
+    if samples_with_nan:
+        print(f"🔄 Con NaN (serán re-procesadas): {len(samples_with_nan)}")
     print(f"🔄 Pendientes: {total_samples - len(processed_samples)}")
     print(f"{'='*80}\n")
 
@@ -842,12 +878,17 @@ def batch_shap_analysis(
 
     try:
         for idx in range(current_idx, end_idx):
-            # Verificar si ya fue procesada
+            # Verificar si ya fue procesada (sin NaN)
             if idx in processed_samples:
                 samples_skipped += 1
                 if verbose:
-                    print(f"⏭️  Muestra #{idx}: Ya procesada, saltando...")
+                    print(f"⏭️  Muestra #{idx}: Ya procesada completamente, saltando...")
                 continue
+            
+            # Si tiene NaN, se procesará y sobrescribirá
+            is_reprocessing = idx in samples_with_nan
+            if is_reprocessing and verbose:
+                print(f"🔄 Muestra #{idx}: Tiene NaN, re-procesando y sobrescribiendo...")
 
             # Procesar muestra
             try:
@@ -887,11 +928,21 @@ def batch_shap_analysis(
                 row_data['caption_length'] = len(caption) if caption else 0
                 row_data['timestamp'] = time.strftime('%Y-%m-%d %H:%M:%S')
 
-                # Agregar fila al DataFrame
-                df_results = pd.concat(
-                    [df_results, pd.DataFrame([row_data])],
-                    ignore_index=True
-                )
+                # Verificar si la muestra ya existe en el DataFrame (para sobrescribir)
+                existing_mask = df_results['sample_idx'] == idx
+                if existing_mask.any():
+                    # Sobrescribir la fila existente con los nuevos datos
+                    for col, val in row_data.items():
+                        if col in df_results.columns:
+                            df_results.loc[existing_mask, col] = val
+                    if verbose:
+                        print(f"   ✏️  Sobrescribiendo datos existentes para muestra #{idx}")
+                else:
+                    # Agregar nueva fila
+                    df_results = pd.concat(
+                        [df_results, pd.DataFrame([row_data])],
+                        ignore_index=True
+                    )
 
                 # Guardar CSV después de cada muestra (blindado ante interrupciones)
                 df_results.to_csv(csv_path, index=False)
