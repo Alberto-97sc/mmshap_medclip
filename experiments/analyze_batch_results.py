@@ -336,8 +336,14 @@ plt.show()
 
 # %%
 # Calcular matriz de correlación de IScores entre modelos
-iscore_matrix = np.array([models_data[model]['iscore'] for model in model_names])
-correlation_matrix = np.corrcoef(iscore_matrix)
+# Usar solo las muestras que tienen datos válidos en TODOS los modelos
+# Crear DataFrame con IScores de todos los modelos
+iscore_df_corr = pd.DataFrame({
+    model: df[f'Iscore_{model}'] for model in model_names
+})
+
+# Calcular correlación usando pandas (maneja NaN automáticamente)
+correlation_matrix = iscore_df_corr.corr().values
 
 fig, ax = plt.subplots(figsize=(10, 8))
 sns.heatmap(
@@ -473,11 +479,21 @@ print(df_normality.to_string(index=False))
 # 4.2 Test de Kruskal-Wallis (comparación entre modelos)
 print("\n🔍 4.2 Test de Kruskal-Wallis (Comparación de IScores entre modelos):")
 print("-" * 80)
-iscore_groups = [models_data[model]['iscore'] for model in model_names]
-h_stat, p_value = kruskal(*iscore_groups)
-print(f"Estadístico H: {h_stat:.4f}")
-print(f"p-value: {p_value:.6f}")
-print(f"¿Hay diferencias significativas? {'Sí' if p_value < 0.05 else 'No'} (α=0.05)")
+# Usar solo muestras que tienen datos válidos en TODOS los modelos
+iscore_df_for_test = pd.DataFrame({
+    model: df[f'Iscore_{model}'] for model in model_names
+})
+# Filtrar filas donde TODOS los modelos tienen datos válidos
+valid_rows = iscore_df_for_test.dropna()
+iscore_groups = [valid_rows[model].values for model in model_names]
+if len(valid_rows) > 0:
+    h_stat, p_value = kruskal(*iscore_groups)
+    print(f"Estadístico H: {h_stat:.4f}")
+    print(f"p-value: {p_value:.6f}")
+    print(f"¿Hay diferencias significativas? {'Sí' if p_value < 0.05 else 'No'} (α=0.05)")
+    print(f"Muestras usadas: {len(valid_rows)} (de {len(df)} totales)")
+else:
+    print("⚠️  No hay suficientes datos válidos para realizar el test")
 
 # 4.3 Comparaciones pareadas (Wilcoxon)
 print("\n🔍 4.3 Comparaciones Pareadas (Wilcoxon):")
@@ -487,20 +503,35 @@ pairwise_results = []
 for i, model1 in enumerate(model_names):
     for j, model2 in enumerate(model_names):
         if i < j:
-            iscore1 = models_data[model1]['iscore']
-            iscore2 = models_data[model2]['iscore']
+            # Usar datos del DataFrame original para tener la misma longitud
+            iscore1 = df[f'Iscore_{model1}'].values
+            iscore2 = df[f'Iscore_{model2}'].values
             
-            # Asegurar que tienen la misma longitud
-            min_len = min(len(iscore1), len(iscore2))
-            stat, p_val = wilcoxon(iscore1[:min_len], iscore2[:min_len])
+            # Filtrar solo muestras válidas en ambos modelos
+            valid_mask = ~(np.isnan(iscore1) | np.isnan(iscore2))
+            iscore1_valid = iscore1[valid_mask]
+            iscore2_valid = iscore2[valid_mask]
             
-            pairwise_results.append({
-                'Modelo 1': model1,
-                'Modelo 2': model2,
-                'Estadístico': stat,
-                'p-value': p_val,
-                'Significativo?': 'Sí' if p_val < 0.05 else 'No'
-            })
+            if len(iscore1_valid) > 0 and len(iscore2_valid) > 0:
+                stat, p_val = wilcoxon(iscore1_valid, iscore2_valid)
+                
+                pairwise_results.append({
+                    'Modelo 1': model1,
+                    'Modelo 2': model2,
+                    'Estadístico': stat,
+                    'p-value': p_val,
+                    'Significativo?': 'Sí' if p_val < 0.05 else 'No',
+                    'N muestras válidas': len(iscore1_valid)
+                })
+            else:
+                pairwise_results.append({
+                    'Modelo 1': model1,
+                    'Modelo 2': model2,
+                    'Estadístico': np.nan,
+                    'p-value': np.nan,
+                    'Significativo?': 'N/A',
+                    'N muestras válidas': 0
+                })
 
 df_pairwise = pd.DataFrame(pairwise_results)
 print(df_pairwise.to_string(index=False))
