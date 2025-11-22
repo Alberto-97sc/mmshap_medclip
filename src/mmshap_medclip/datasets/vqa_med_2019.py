@@ -19,6 +19,8 @@ class VQAMed2019Dataset(DatasetBase):
     - All_QA_Pairs_<split>.txt (contiene preguntas y respuestas)
     - directorio <images_subdir>/ (por defecto Train_images/ para Training, Val_images/ para Validation)
     
+    También puede leer desde el ZIP padre (VQA-Med-2019.zip) que contiene los zips hijos.
+    
     Infiere categorías de preguntas y construye candidatos automáticamente.
     """
     
@@ -31,7 +33,7 @@ class VQAMed2019Dataset(DatasetBase):
     ):
         """
         Args:
-            zip_path: Ruta al archivo ZIP del dataset
+            zip_path: Ruta al archivo ZIP del dataset (puede ser el zip padre VQA-Med-2019.zip o el zip hijo)
             split: Split a usar ('Training', 'Validation', 'Test', etc.)
             images_subdir: Subdirectorio dentro del ZIP donde están las imágenes
                           Si es None, se infiere: "Train_images" para Training, "Val_images" para Validation, "Test_images" para Test
@@ -54,12 +56,60 @@ class VQAMed2019Dataset(DatasetBase):
         else:
             self.images_subdir = images_subdir
         
+        # Detectar si el zip_path es el zip padre (VQA-Med-2019.zip) que contiene zips hijos
+        # En ese caso, necesitamos abrir el zip hijo correspondiente
+        self.is_nested_zip = False
+        self.inner_zip_name = None
+        self.inner_zip_data = None  # Guardar el zip hijo en memoria para uso posterior
+        
+        # Verificar si es el zip padre
+        zip_basename = os.path.basename(zip_path).lower()
+        if "vqa-med-2019.zip" in zip_basename and zip_basename.endswith(".zip"):
+            self.is_nested_zip = True
+            # Determinar el nombre del zip hijo según el split
+            if split.lower() in ["training", "train"]:
+                self.inner_zip_name = "ImageClef-2019-VQA-Med-Training.zip"
+            elif split.lower() == "validation":
+                self.inner_zip_name = "ImageClef-2019-VQA-Med-Validation.zip"
+            elif split.lower() == "test":
+                self.inner_zip_name = "VQAMed2019Test.zip"
+            else:
+                # Intentar inferir desde el nombre del zip
+                self.inner_zip_name = f"ImageClef-2019-VQA-Med-{split}.zip"
+        
         # Detectar el prefijo de directorio raíz del ZIP si existe
         # Por ejemplo: "ImageClef-2019-VQA-Med-Validation/"
         self.zip_root_prefix = None
         
         # Cargar preguntas y respuestas desde el ZIP
-        with zipfile.ZipFile(zip_path, "r") as zf:
+        # Si es un zip anidado, abrir el zip padre y luego el zip hijo
+        if self.is_nested_zip:
+            # Abrir el zip padre
+            with zipfile.ZipFile(zip_path, "r") as parent_zip:
+                # Verificar que el zip hijo existe
+                if self.inner_zip_name not in parent_zip.namelist():
+                    # Buscar con variaciones
+                    found = False
+                    for name in parent_zip.namelist():
+                        if split.lower() in name.lower() and name.endswith(".zip"):
+                            self.inner_zip_name = name
+                            found = True
+                            break
+                    if not found:
+                        raise FileNotFoundError(
+                            f"No se encontró el zip hijo para split '{split}' en {zip_path}. "
+                            f"Archivos disponibles: {parent_zip.namelist()[:10]}"
+                        )
+                
+                # Leer el zip hijo en memoria y guardarlo para uso posterior
+                self.inner_zip_data = parent_zip.read(self.inner_zip_name)
+                # Abrir el zip hijo desde memoria
+                zf = zipfile.ZipFile(BytesIO(self.inner_zip_data), "r")
+        else:
+            # Abrir directamente el zip hijo
+            zf = zipfile.ZipFile(zip_path, "r")
+        
+        try:
             # Buscar archivo All_QA_Pairs_<split>.txt
             # Para Training: All_QA_Pairs_train.txt
             # Para Validation: All_QA_Pairs_val.txt
@@ -292,6 +342,10 @@ class VQAMed2019Dataset(DatasetBase):
             # Limitar número de muestras si se especifica
             if n_rows != "all":
                 self.samples = self.samples[:int(n_rows)]
+        finally:
+            # Cerrar el zip si fue abierto
+            if zf:
+                zf.close()
     
     def _infer_category(self, question: str) -> str:
         """
@@ -364,7 +418,15 @@ class VQAMed2019Dataset(DatasetBase):
         image_path = None
         image_filename = sample.get('image_filename')
         
-        with zipfile.ZipFile(self.zip_path, "r") as zf:
+        # Abrir el zip correcto (padre o hijo)
+        if self.is_nested_zip:
+            # Abrir el zip hijo desde memoria
+            zf = zipfile.ZipFile(BytesIO(self.inner_zip_data), "r")
+        else:
+            # Abrir directamente el zip hijo
+            zf = zipfile.ZipFile(self.zip_path, "r")
+        
+        try:
             # Estrategia 1: Si tenemos el nombre de imagen del archivo de preguntas
             if image_filename:
                 # Buscar en el subdirectorio de imágenes
@@ -416,6 +478,10 @@ class VQAMed2019Dataset(DatasetBase):
             # Cargar imagen
             with zf.open(image_path) as f:
                 image = Image.open(BytesIO(f.read())).convert("RGB")
+        finally:
+            # Cerrar el zip
+            if zf:
+                zf.close()
         
         return {
             "image": image,

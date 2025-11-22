@@ -229,8 +229,8 @@ echo "   📥 [4.2/5] Descargando dataset MedVQA 2019..."
 echo "      ⏱️  Tamaño del dataset: variable (puede tardar varios minutos)"
 echo ""
 
-if [ -f "data/ImageClef-2019-VQA-Med-Training.zip" ]; then
-    echo "      ℹ️  El dataset MedVQA 2019 Training ya existe en data/ImageClef-2019-VQA-Med-Training.zip"
+if [ -f "data/VQA-Med-2019.zip" ]; then
+    echo "      ℹ️  El dataset MedVQA 2019 ya existe en data/VQA-Med-2019.zip"
     read -p "      ¿Deseas volver a descargarlo? (s/N): " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Ss]$ ]]; then
@@ -239,9 +239,9 @@ if [ -f "data/ImageClef-2019-VQA-Med-Training.zip" ]; then
         echo ""
         python3 scripts/download_vqa_med_2019.py
         echo ""
-        echo "      ✅ Dataset MedVQA 2019 Training descargado nuevamente"
+        echo "      ✅ Dataset MedVQA 2019 descargado nuevamente"
     else
-        echo "      ↩️  Se usará el dataset MedVQA 2019 Training existente"
+        echo "      ↩️  Se usará el dataset MedVQA 2019 existente"
     fi
 else
     echo "      → Descargando dataset MedVQA 2019..."
