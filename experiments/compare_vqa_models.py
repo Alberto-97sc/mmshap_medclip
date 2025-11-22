@@ -66,10 +66,10 @@ device = get_device()
 # Construir dataset VQA-Med 2019 directamente
 # Ajusta estos parámetros según tu configuración
 dataset_params = {
-    "zip_path": "path/to/ImageClef-2019-VQA-Med-Validation.zip",  # Ajustar ruta
-    "split": "Validation",
-    "images_subdir": "Images",
-    "n_rows": "all"  # o un número para limitar muestras
+    "zip_path": "path/to/ImageClef-2019-VQA-Med-Validation.zip",  # Ajustar ruta al ZIP
+    "split": "Validation",  # "Validation" o "Test"
+    "images_subdir": "Val_images",  # "Val_images" para Validation, "Test_images" para Test
+    "n_rows": "all"  # o un número para limitar muestras (ej: 100)
 }
 
 from mmshap_medclip.registry import build_dataset

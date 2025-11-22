@@ -16,9 +16,8 @@ class VQAMed2019Dataset(DatasetBase):
     Dataset loader para VQA-Med 2019.
     
     Lee archivos del ZIP ImageClef-2019-VQA-Med-Validation.zip:
-    - VQAMed2019_<split>_Questions.txt
-    - VQAMed2019_<split>_Answers.txt
-    - directorio Images/
+    - All_QA_Pairs_<split>.txt (contiene preguntas y respuestas)
+    - directorio <images_subdir>/ (por defecto Val_images/ para Validation)
     
     Infiere categorías de preguntas y construye candidatos automáticamente.
     """
@@ -26,8 +25,8 @@ class VQAMed2019Dataset(DatasetBase):
     def __init__(
         self,
         zip_path: str,
-        split: str,
-        images_subdir: str = "Images",
+        split: str = "Validation",
+        images_subdir: str = None,
         n_rows: str = "all"
     ):
         """
@@ -35,90 +34,125 @@ class VQAMed2019Dataset(DatasetBase):
             zip_path: Ruta al archivo ZIP del dataset
             split: Split a usar ('Validation', 'Test', etc.)
             images_subdir: Subdirectorio dentro del ZIP donde están las imágenes
+                          Si es None, se infiere: "Val_images" para Validation, "Test_images" para Test
             n_rows: Número de filas a cargar ("all" o un entero)
         """
         self.zip_path = zip_path
         self.split = split
-        self.images_subdir = images_subdir
+        
+        # Inferir images_subdir si no se proporciona
+        if images_subdir is None:
+            if split.lower() == "validation":
+                self.images_subdir = "Val_images"
+            elif split.lower() == "test":
+                self.images_subdir = "Test_images"
+            else:
+                self.images_subdir = f"{split}_images"
+        else:
+            self.images_subdir = images_subdir
         
         # Cargar preguntas y respuestas desde el ZIP
         with zipfile.ZipFile(zip_path, "r") as zf:
-            # Buscar archivos de preguntas y respuestas
-            questions_file = None
-            answers_file = None
+            # Buscar archivo All_QA_Pairs_<split>.txt
+            # Para Validation: All_QA_Pairs_val.txt
+            # Para Test: All_QA_Pairs_test.txt (probablemente)
+            qa_file = None
+            split_lower = split.lower()
             
+            # Buscar el archivo de QA pairs
             for name in zf.namelist():
-                if f"VQAMed2019_{split}_Questions.txt" in name:
-                    questions_file = name
-                elif f"VQAMed2019_{split}_Answers.txt" in name:
-                    answers_file = name
+                if "All_QA_Pairs" in name and split_lower in name.lower() and name.endswith(".txt"):
+                    qa_file = name
+                    break
             
-            if questions_file is None:
+            # Si no se encuentra con el split, buscar cualquier All_QA_Pairs
+            if qa_file is None:
+                for name in zf.namelist():
+                    if "All_QA_Pairs" in name and name.endswith(".txt"):
+                        qa_file = name
+                        break
+            
+            if qa_file is None:
                 raise FileNotFoundError(
-                    f"No se encontró VQAMed2019_{split}_Questions.txt en el ZIP"
-                )
-            if answers_file is None:
-                raise FileNotFoundError(
-                    f"No se encontró VQAMed2019_{split}_Answers.txt en el ZIP"
+                    f"No se encontró All_QA_Pairs_*{split_lower}*.txt en el ZIP. "
+                    f"Archivos disponibles: {[n for n in zf.namelist() if '.txt' in n][:10]}"
                 )
             
-            # Leer preguntas
-            # Formato típico: Q1\timage_name.jpg\tquestion text
-            # o Q1\tquestion text (sin imagen)
-            questions_dict = {}
+            # Leer archivo de QA pairs
+            # Formato esperado: QID\tQuestion\tAnswer\t[ImageFilename] (o variaciones)
+            self.samples = []
             image_map = {}  # question_id -> image_filename
             
-            with zf.open(questions_file) as f:
-                for line in f:
+            with zf.open(qa_file) as f:
+                for line_num, line in enumerate(f, 1):
                     line = line.decode('utf-8').strip()
                     if not line:
                         continue
-                    # Intentar separar por tab (formato más común)
+                    
+                    # Intentar separar por tab primero (formato más común en datasets VQA)
                     parts = line.split('\t')
-                    if len(parts) >= 2:
+                    
+                    q_id = None
+                    question = None
+                    answer = None
+                    image_filename = None
+                    
+                    if len(parts) >= 3:
+                        # Formato: QID\tQuestion\tAnswer\t[ImageFilename]
                         q_id = parts[0].strip()
-                        # Si hay 3 partes: Q1, imagen, pregunta
-                        if len(parts) == 3:
-                            image_map[q_id] = parts[1].strip()
-                            question = parts[2].strip()
+                        question = parts[1].strip()
+                        answer = parts[2].strip()
+                        
+                        # Si hay 4 o más partes, la última puede ser el nombre de imagen
+                        if len(parts) >= 4:
+                            image_filename = parts[3].strip()
+                    elif len(parts) == 2:
+                        # Formato alternativo: QID\tQuestion|Answer
+                        q_id = parts[0].strip()
+                        rest = parts[1].strip()
+                        # Intentar separar pregunta y respuesta por '|' o por posición de '?'
+                        if '|' in rest:
+                            question, answer = rest.split('|', 1)
+                            question = question.strip()
+                            answer = answer.strip()
+                        elif '?' in rest:
+                            # Si hay signo de interrogación, separar ahí
+                            q_parts = rest.split('?', 1)
+                            question = q_parts[0].strip() + '?'
+                            answer = q_parts[1].strip() if len(q_parts) > 1 else "unknown"
                         else:
-                            # Si hay 2 partes: Q1, pregunta
-                            question = parts[1].strip()
-                    else:
-                        # Intentar separar por espacio si no hay tab
-                        parts = line.split(' ', 1)
-                        if len(parts) == 2:
-                            q_id = parts[0].strip()
-                            question = parts[1].strip()
-                        else:
-                            continue
-                    questions_dict[q_id] = question
-            
-            # Leer respuestas
-            answers_dict = {}
-            with zf.open(answers_file) as f:
-                for line in f:
-                    line = line.decode('utf-8').strip()
-                    if not line:
+                            # Si no hay separador claro, asumir que todo es pregunta
+                            question = rest
+                            answer = "unknown"
+                    elif len(parts) == 1:
+                        # Formato con espacios o sin separadores claros
+                        # Intentar separar por espacios: QID Question Answer
+                        parts_space = line.split(None, 2)  # Máximo 3 partes
+                        if len(parts_space) >= 3:
+                            q_id = parts_space[0].strip()
+                            question = parts_space[1].strip()
+                            answer = parts_space[2].strip()
+                        elif len(parts_space) == 2:
+                            q_id = parts_space[0].strip()
+                            rest = parts_space[1].strip()
+                            if '?' in rest:
+                                q_parts = rest.split('?', 1)
+                                question = q_parts[0].strip() + '?'
+                                answer = q_parts[1].strip() if len(q_parts) > 1 else "unknown"
+                            else:
+                                question = rest
+                                answer = "unknown"
+                    
+                    # Validar que tenemos los campos mínimos
+                    if not q_id or not question or not answer:
+                        # Saltar líneas que no se pueden parsear
+                        if line_num <= 5:  # Solo mostrar advertencia para las primeras líneas
+                            print(f"⚠️  Advertencia: No se pudo parsear la línea {line_num}: {line[:80]}")
                         continue
-                    # Formato esperado: Q1\tanswer text o Q1 answer text
-                    parts = line.split('\t', 1)
-                    if len(parts) == 2:
-                        q_id, answer = parts
-                    else:
-                        parts = line.split(' ', 1)
-                        if len(parts) == 2:
-                            q_id, answer = parts
-                        else:
-                            continue
-                    answers_dict[q_id.strip()] = answer.strip()
-            
-            # Emparejar preguntas y respuestas
-            self.samples = []
-            for q_id in questions_dict:
-                if q_id in answers_dict:
-                    question = questions_dict[q_id]
-                    answer = answers_dict[q_id]
+                    
+                    # Guardar imagen si se encontró
+                    if image_filename:
+                        image_map[q_id] = image_filename
                     
                     # Inferir categoría de la pregunta
                     category = self._infer_category(question)
@@ -137,7 +171,8 @@ class VQAMed2019Dataset(DatasetBase):
                 if name.endswith("/") or not name.lower().endswith((".jpg", ".jpeg", ".png")):
                     continue
                 base = os.path.basename(name)
-                score = int(images_subdir.lower() in name.lower())
+                # Priorizar imágenes en el subdirectorio correcto
+                score = int(self.images_subdir.lower() in name.lower())
                 prev = self._name_to_path.get(base)
                 if prev is None or score > prev[0]:
                     self._name_to_path[base] = (score, name)
@@ -154,26 +189,37 @@ class VQAMed2019Dataset(DatasetBase):
         """
         Infiere la categoría de la pregunta analizando su texto.
         
-        Categorías:
-        - "modality" → modality
-        - "plane" → plane
-        - "organ system" → organ_system
-        - "abnormality" → abnormality
+        Categorías según VQA-Med 2019:
+        - C1_Modality → modality
+        - C2_Plane → plane
+        - C3_Organ → organ_system
+        - C4_Abnormality → abnormality
         """
         question_lower = question.lower()
         
         # Buscar palabras clave para cada categoría
-        if "modality" in question_lower:
+        # Modality: tipo de modalidad (X-ray, CT, MRI, etc.)
+        modality_keywords = ["modality", "x-ray", "xray", "ct scan", "mri", "ultrasound", "pet", "spect"]
+        if any(kw in question_lower for kw in modality_keywords):
             return "modality"
-        elif "plane" in question_lower:
+        
+        # Plane: plano de la imagen (axial, sagittal, coronal, etc.)
+        plane_keywords = ["plane", "axial", "sagittal", "coronal", "transverse", "frontal"]
+        if any(kw in question_lower for kw in plane_keywords):
             return "plane"
-        elif "organ system" in question_lower or "organ" in question_lower:
+        
+        # Organ: sistema de órganos
+        organ_keywords = ["organ", "system", "lung", "heart", "liver", "kidney", "brain", "chest", "abdomen"]
+        if any(kw in question_lower for kw in organ_keywords):
             return "organ_system"
-        elif "abnormality" in question_lower or "abnormal" in question_lower:
+        
+        # Abnormality: anormalidades o patologías
+        abnormality_keywords = ["abnormality", "abnormal", "disease", "pathology", "lesion", "tumor", "fracture", "pneumonia"]
+        if any(kw in question_lower for kw in abnormality_keywords):
             return "abnormality"
-        else:
-            # Categoría por defecto si no se puede inferir
-            return "other"
+        
+        # Categoría por defecto si no se puede inferir
+        return "other"
     
     def _build_candidates_by_category(self) -> Dict[str, List[str]]:
         """
