@@ -208,6 +208,78 @@ df_stats.to_csv(stats_path, index=False)
 print(f"\n💾 Estadísticas guardadas en: {stats_path}")
 
 # %% [markdown]
+# ### 📊 Tabla Resumen: Promedio de IScore por Modelo
+
+# %%
+# Crear tabla resumen con promedio de IScore por modelo
+iscore_summary = []
+for model_name in model_names:
+    iscore = models_data[model_name]['iscore']
+    iscore_summary.append({
+        'Modelo': model_name,
+        'IScore Promedio': np.nanmean(iscore),
+        'IScore Mediana': np.nanmedian(iscore),
+        'IScore Desv. Est.': np.nanstd(iscore),
+        'IScore Mínimo': np.nanmin(iscore),
+        'IScore Máximo': np.nanmax(iscore),
+        'N Muestras Válidas': models_data[model_name]['valid_count']
+    })
+
+df_iscore_summary = pd.DataFrame(iscore_summary)
+# Ordenar por IScore promedio (de mayor a menor)
+df_iscore_summary = df_iscore_summary.sort_values('IScore Promedio', ascending=False)
+
+print("="*80)
+print("📊 RESUMEN: PROMEDIO DE ISCORE POR MODELO")
+print("="*80)
+print("\n" + df_iscore_summary.to_string(index=False))
+print("\n" + "="*80)
+
+# Guardar tabla
+iscore_summary_path = Path(OUTPUT_DIR) / "resumen_iscore_promedio.csv"
+df_iscore_summary.to_csv(iscore_summary_path, index=False)
+print(f"💾 Tabla guardada en: {iscore_summary_path}")
+
+# Visualización de la tabla
+fig, ax = plt.subplots(figsize=(14, 6))
+ax.axis('tight')
+ax.axis('off')
+
+# Formatear valores para mostrar
+table_data = df_iscore_summary.copy()
+table_data['IScore Promedio'] = table_data['IScore Promedio'].apply(lambda x: f'{x:.4f}')
+table_data['IScore Mediana'] = table_data['IScore Mediana'].apply(lambda x: f'{x:.4f}')
+table_data['IScore Desv. Est.'] = table_data['IScore Desv. Est.'].apply(lambda x: f'{x:.4f}')
+table_data['IScore Mínimo'] = table_data['IScore Mínimo'].apply(lambda x: f'{x:.4f}')
+table_data['IScore Máximo'] = table_data['IScore Máximo'].apply(lambda x: f'{x:.4f}')
+
+table = ax.table(
+    cellText=table_data.values,
+    colLabels=table_data.columns,
+    cellLoc='center',
+    loc='center',
+    bbox=[0, 0, 1, 1]
+)
+table.auto_set_font_size(False)
+table.set_fontsize(11)
+table.scale(1, 2.5)
+
+# Colorear la columna de IScore Promedio
+for i in range(len(table_data) + 1):
+    if i == 0:  # Header
+        table[(i, 1)].set_facecolor('#4CAF50')
+        table[(i, 1)].set_text_props(weight='bold', color='white')
+    else:  # Data rows
+        table[(i, 1)].set_facecolor('#E8F5E9')
+
+ax.set_title('Resumen: Promedio de IScore por Modelo', fontsize=16, fontweight='bold', pad=20)
+plt.tight_layout()
+iscore_table_path = Path(OUTPUT_DIR) / "tabla_iscore_promedio.png"
+plt.savefig(iscore_table_path, dpi=300, bbox_inches='tight')
+print(f"💾 Gráfica de tabla guardada en: {iscore_table_path}")
+plt.show()
+
+# %% [markdown]
 # ## 2️⃣ Gráficas Comparativas
 
 # %% [markdown]
