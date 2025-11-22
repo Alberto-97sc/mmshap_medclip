@@ -31,7 +31,34 @@ def prepare_batch(
 
     # tokenización con el processor del wrapper
     processor = model_wrapper.processor
-    inputs = processor(text=texts, images=images, return_tensors="pt", padding=padding)
+
+    # Para processors de Hugging Face (CLIPProcessor), agregar truncamiento explícito
+    # para evitar errores de max_position_embeddings
+    # Prioridad: usar max_position_embeddings del modelo (más confiable que model_max_length del tokenizer)
+    processor_kwargs = {}
+    max_length = None
+
+    # Primero intentar obtener max_position_embeddings del modelo (más confiable)
+    if hasattr(model_wrapper, 'model') and hasattr(model_wrapper.model, 'config'):
+        config = model_wrapper.model.config
+        if hasattr(config, 'text_config'):
+            max_length = getattr(config.text_config, 'max_position_embeddings', None)
+        else:
+            max_length = getattr(config, 'max_position_embeddings', None)
+
+    # Si no se encontró en el modelo, intentar desde el tokenizer
+    if max_length is None and hasattr(processor, 'tokenizer'):
+        tokenizer_max = getattr(processor.tokenizer, 'model_max_length', None)
+        # Solo usar si es un valor razonable (no el valor por defecto enorme)
+        if tokenizer_max is not None and tokenizer_max < 10000:
+            max_length = tokenizer_max
+
+    # Si encontramos un max_length válido, agregar truncamiento
+    if max_length is not None:
+        processor_kwargs['truncation'] = True
+        processor_kwargs['max_length'] = max_length
+
+    inputs = processor(text=texts, images=images, return_tensors="pt", padding=padding, **processor_kwargs)
 
     # mover al device del wrapper si no se pasó explícito
     if device is None:

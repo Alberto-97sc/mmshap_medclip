@@ -150,6 +150,59 @@ from mmshap_medclip.comparison import analyze_multiple_samples
 # print(df_results.head(10))
 
 # %% [markdown]
+# ## 🚀 Análisis Batch de SHAP (Sin Heatmaps)
+#
+# Esta sección permite ejecutar SHAP en múltiples muestras sin generar heatmaps,
+# guardando automáticamente los resultados en un CSV. La función está blindada ante
+# interrupciones: si se interrumpe la ejecución, puede continuar desde donde se quedó.
+#
+# **Características:**
+# - ✅ Guarda automáticamente después de cada muestra
+# - ✅ Salta muestras ya procesadas
+# - ✅ Continúa automáticamente desde donde se quedó
+# - ✅ Guarda: sample_idx, Iscore_[modelo], Tscore_[modelo], Logit_[modelo] para cada modelo
+# - ✅ Incluye variables adicionales útiles (caption_length, timestamp)
+# - ✅ Imprime estado de ejecución en tiempo real
+
+# %%
+from mmshap_medclip.comparison import batch_shap_analysis
+
+# 🎯 CONFIGURACIÓN: Ajustar estos valores según necesites
+START_IDX = 0          # Índice inicial de la muestra (inclusive)
+END_IDX = 100          # Índice final de la muestra (exclusive). None = hasta el final del dataset
+CSV_PATH = "outputs/batch_shap_results.csv"  # Ruta donde guardar los resultados
+
+# Ejecutar análisis batch
+df_batch_results = batch_shap_analysis(
+    models=loaded_models,
+    dataset=dataset,
+    device=device,
+    start_idx=START_IDX,
+    end_idx=END_IDX,
+    csv_path=CSV_PATH,
+    verbose=True,
+    show_dataframe=True  # Mostrar DataFrame en tiempo real después de cada muestra
+)
+
+# Mostrar primeras filas del DataFrame
+print("\n📊 Primeras filas del DataFrame de resultados:")
+print(df_batch_results.head(10))
+
+# Mostrar estadísticas resumidas
+if not df_batch_results.empty:
+    print("\n📈 Estadísticas resumidas:")
+    print(f"   Total de muestras procesadas: {len(df_batch_results)}")
+
+    # Calcular promedios de IScore por modelo
+    model_names = [name for name in loaded_models.keys() if loaded_models[name] is not None]
+    print("\n📊 IScore promedio por modelo:")
+    for model_name in model_names:
+        col_name = f'Iscore_{model_name}'
+        if col_name in df_batch_results.columns:
+            avg_iscore = df_batch_results[col_name].mean()
+            print(f"   {model_name}: {avg_iscore:.2%}")
+
+# %% [markdown]
 # ---
 #
 # ## 📝 Notas de Uso

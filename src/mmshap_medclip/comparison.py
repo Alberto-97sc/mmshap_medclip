@@ -6,7 +6,7 @@ Proporciona funciones para cargar múltiples modelos, ejecutar SHAP en todos ell
 y visualizar los resultados de manera comparativa.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -733,3 +733,282 @@ def analyze_multiple_samples(
     print(df.groupby('model')[['logit', 'tscore', 'iscore']].mean().round(4))
 
     return df
+
+
+def batch_shap_analysis(
+    models: Dict[str, Any],
+    dataset,
+    device,
+    start_idx: int = 0,
+    end_idx: Optional[int] = None,
+    csv_path: str = "outputs/batch_shap_results.csv",
+    verbose: bool = True,
+    show_dataframe: bool = False
+):
+    """
+    Ejecuta SHAP en múltiples muestras y guarda los resultados en un CSV.
+    Esta función está blindada ante interrupciones: si se interrumpe, puede
+    continuar desde donde se quedó verificando el CSV existente.
+
+    Args:
+        models: Diccionario con los modelos cargados
+        dataset: Dataset ROCO
+        device: Dispositivo (CPU/GPU)
+        start_idx: Índice inicial de la muestra (inclusive)
+        end_idx: Índice final de la muestra (exclusive). Si es None, usa len(dataset)
+        csv_path: Ruta donde guardar/leer el CSV de resultados
+        verbose: Si True, imprime progreso detallado
+        show_dataframe: Si True, imprime el DataFrame completo después de cada muestra procesada
+
+    Returns:
+        DataFrame con todos los resultados
+    """
+    import pandas as pd
+    from pathlib import Path
+    import time
+
+    # Asegurar que el directorio existe
+    csv_path_obj = Path(csv_path)
+    csv_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+    # Determinar rango de muestras
+    if end_idx is None:
+        end_idx = len(dataset)
+
+    total_samples = end_idx - start_idx
+
+    # Cargar CSV existente si existe
+    if csv_path_obj.exists():
+        try:
+            df_existing = pd.read_csv(csv_path)
+            print(f"📂 CSV existente encontrado: {csv_path}")
+            print(f"   Muestras ya procesadas: {len(df_existing)}")
+        except Exception as e:
+            print(f"⚠️  Error leyendo CSV existente: {e}")
+            print(f"   Creando nuevo DataFrame...")
+            df_existing = pd.DataFrame()
+    else:
+        print(f"📝 Creando nuevo CSV: {csv_path}")
+        df_existing = pd.DataFrame()
+
+    # Obtener lista de muestras ya procesadas (sin NaN en métricas)
+    processed_samples = set()
+    samples_with_nan = set()
+    if not df_existing.empty and 'sample_idx' in df_existing.columns:
+        # Identificar columnas de métricas (Iscore, Tscore, Logit para cada modelo)
+        model_names = [name for name in models.keys() if models[name] is not None]
+        metric_columns = []
+        for model_name in model_names:
+            metric_columns.extend([
+                f'Iscore_{model_name}',
+                f'Tscore_{model_name}',
+                f'Logit_{model_name}'
+            ])
+
+        # Verificar cada muestra: está procesada solo si NO tiene NaN en ninguna métrica
+        for _, row in df_existing.iterrows():
+            sample_idx = row['sample_idx']
+            # Verificar si hay NaN en las columnas de métricas
+            has_nan = False
+            for col in metric_columns:
+                if col in row and pd.isna(row[col]):
+                    has_nan = True
+                    break
+
+            if has_nan:
+                samples_with_nan.add(sample_idx)
+            else:
+                processed_samples.add(sample_idx)
+
+        if samples_with_nan:
+            print(f"   ⚠️  Muestras con NaN detectadas: {len(samples_with_nan)} (serán re-procesadas)")
+        print(f"   ✅ Muestras completamente procesadas: {len(processed_samples)}")
+
+    # Inicializar DataFrame de resultados
+    if df_existing.empty:
+        # Crear estructura inicial del DataFrame
+        model_names = [name for name in models.keys() if models[name] is not None]
+        columns = ['sample_idx']
+        for model_name in model_names:
+            columns.extend([
+                f'Iscore_{model_name}',
+                f'Tscore_{model_name}',
+                f'Logit_{model_name}'
+            ])
+        columns.extend(['caption_length', 'timestamp'])
+        df_results = pd.DataFrame(columns=columns)
+    else:
+        df_results = df_existing.copy()
+
+    # Asegurar que samples_with_nan esté definido incluso si no hay CSV existente
+    if 'samples_with_nan' not in locals():
+        samples_with_nan = set()
+
+    # Encontrar dónde empezar (primera muestra no procesada o con NaN)
+    current_idx = start_idx
+    for idx in range(start_idx, end_idx):
+        if idx not in processed_samples:
+            current_idx = idx
+            break
+    else:
+        # Todas las muestras ya fueron procesadas (sin NaN)
+        if not samples_with_nan:
+            print(f"✅ Todas las muestras en el rango [{start_idx}, {end_idx}) ya fueron procesadas")
+            return df_results
+        # Si hay muestras con NaN, continuar procesándolas
+        current_idx = min(samples_with_nan)
+
+    print(f"\n{'='*80}")
+    print(f"🚀 INICIANDO ANÁLISIS BATCH DE SHAP")
+    print(f"{'='*80}")
+    print(f"📊 Rango de muestras: [{start_idx}, {end_idx})")
+    print(f"📍 Continuando desde muestra: {current_idx}")
+    print(f"📈 Total a procesar: {total_samples}")
+    print(f"⏭️  Ya procesadas (sin NaN): {len(processed_samples)}")
+    if samples_with_nan:
+        print(f"🔄 Con NaN (serán re-procesadas): {len(samples_with_nan)}")
+    print(f"🔄 Pendientes: {total_samples - len(processed_samples)}")
+    print(f"{'='*80}\n")
+
+    # Procesar muestras
+    samples_processed = 0
+    samples_skipped = 0
+    samples_failed = 0
+    start_time = time.time()
+
+    try:
+        for idx in range(current_idx, end_idx):
+            # Verificar si ya fue procesada (sin NaN)
+            if idx in processed_samples:
+                samples_skipped += 1
+                if verbose:
+                    print(f"⏭️  Muestra #{idx}: Ya procesada completamente, saltando...")
+                continue
+
+            # Si tiene NaN, se procesará y sobrescribirá
+            is_reprocessing = idx in samples_with_nan
+            if is_reprocessing and verbose:
+                print(f"🔄 Muestra #{idx}: Tiene NaN, re-procesando y sobrescribiendo...")
+
+            # Procesar muestra
+            try:
+                if verbose:
+                    print(f"\n{'─'*80}")
+                    print(f"🔄 Procesando muestra #{idx} ({idx - start_idx + 1}/{total_samples})")
+                    print(f"{'─'*80}")
+
+                # Ejecutar SHAP sin imprimir heatmaps (verbose=False en run_shap_on_all_models)
+                results, _, caption = run_shap_on_all_models(
+                    models=models,
+                    sample_idx=idx,
+                    dataset=dataset,
+                    device=device,
+                    verbose=False  # No imprimir detalles por modelo
+                )
+
+                # Construir fila de resultados
+                row_data = {'sample_idx': idx}
+
+                # Agregar métricas por modelo
+                for model_name in models.keys():
+                    if models[model_name] is None:
+                        continue
+
+                    result = results.get(model_name)
+                    if result is not None:
+                        row_data[f'Iscore_{model_name}'] = result.get('iscore', 0.0)
+                        row_data[f'Tscore_{model_name}'] = result.get('tscore', 0.0)
+                        row_data[f'Logit_{model_name}'] = result.get('logit', 0.0)
+                    else:
+                        row_data[f'Iscore_{model_name}'] = None
+                        row_data[f'Tscore_{model_name}'] = None
+                        row_data[f'Logit_{model_name}'] = None
+
+                # Agregar información adicional
+                row_data['caption_length'] = len(caption) if caption else 0
+                row_data['timestamp'] = time.strftime('%Y-%m-%d %H:%M:%S')
+
+                # Verificar si la muestra ya existe en el DataFrame (para sobrescribir)
+                existing_mask = df_results['sample_idx'] == idx
+                if existing_mask.any():
+                    # Sobrescribir la fila existente con los nuevos datos
+                    for col, val in row_data.items():
+                        if col in df_results.columns:
+                            df_results.loc[existing_mask, col] = val
+                    if verbose:
+                        print(f"   ✏️  Sobrescribiendo datos existentes para muestra #{idx}")
+                else:
+                    # Agregar nueva fila
+                    df_results = pd.concat(
+                        [df_results, pd.DataFrame([row_data])],
+                        ignore_index=True
+                    )
+
+                # Guardar CSV después de cada muestra (blindado ante interrupciones)
+                df_results.to_csv(csv_path, index=False)
+
+                samples_processed += 1
+                processed_samples.add(idx)
+
+                # Imprimir estado
+                elapsed_time = time.time() - start_time
+                avg_time_per_sample = elapsed_time / samples_processed if samples_processed > 0 else 0
+                remaining_samples = total_samples - len(processed_samples)
+                estimated_time_remaining = avg_time_per_sample * remaining_samples
+
+                if verbose:
+                    print(f"✅ Muestra #{idx} completada")
+                    print(f"   IScores: ", end="")
+                    for model_name in models.keys():
+                        if models[model_name] is not None and results.get(model_name) is not None:
+                            iscore = results[model_name].get('iscore', 0.0)
+                            print(f"{model_name}={iscore:.2%} ", end="")
+                    print()
+                    print(f"💾 CSV guardado: {csv_path}")
+                    print(f"📊 Progreso: {samples_processed} procesadas | {samples_skipped} saltadas | {samples_failed} fallidas")
+                    print(f"⏱️  Tiempo transcurrido: {elapsed_time/60:.1f} min | Estimado restante: {estimated_time_remaining/60:.1f} min")
+
+                # Mostrar DataFrame en tiempo real si está habilitado
+                if show_dataframe:
+                    print(f"\n{'='*80}")
+                    print(f"📋 DATAFRAME ACTUALIZADO (últimas {min(10, len(df_results))} filas):")
+                    print(f"{'='*80}")
+                    # Mostrar las últimas 10 filas o todas si hay menos de 10
+                    display_rows = min(10, len(df_results))
+                    print(df_results.tail(display_rows).to_string(index=False))
+                    print(f"{'='*80}\n")
+
+            except Exception as e:
+                samples_failed += 1
+                print(f"\n❌ Error procesando muestra #{idx}: {e}")
+                print(f"   Continuando con la siguiente muestra...")
+
+                # Guardar CSV incluso si hay error (para no perder progreso)
+                try:
+                    df_results.to_csv(csv_path, index=False)
+                except:
+                    pass
+
+    except KeyboardInterrupt:
+        print(f"\n\n⚠️  Interrupción detectada (Ctrl+C)")
+        print(f"💾 Guardando progreso actual...")
+        df_results.to_csv(csv_path, index=False)
+        print(f"✅ Progreso guardado en: {csv_path}")
+        print(f"📍 Última muestra procesada: {current_idx}")
+        raise
+
+    # Resumen final
+    elapsed_time = time.time() - start_time
+    print(f"\n{'='*80}")
+    print(f"✅ ANÁLISIS BATCH COMPLETADO")
+    print(f"{'='*80}")
+    print(f"📊 Estadísticas:")
+    print(f"   • Muestras procesadas: {samples_processed}")
+    print(f"   • Muestras saltadas: {samples_skipped}")
+    print(f"   • Muestras fallidas: {samples_failed}")
+    print(f"   • Total en CSV: {len(df_results)}")
+    print(f"⏱️  Tiempo total: {elapsed_time/60:.1f} minutos")
+    print(f"💾 CSV guardado en: {csv_path}")
+    print(f"{'='*80}\n")
+
+    return df_results
