@@ -169,7 +169,7 @@ from mmshap_medclip.comparison import batch_shap_analysis
 
 # 🎯 CONFIGURACIÓN: Ajustar estos valores según necesites
 START_IDX = 0          # Índice inicial de la muestra (inclusive)
-END_IDX = 100          # Índice final de la muestra (exclusive). None = hasta el final del dataset
+END_IDX = None          # Índice final de la muestra (exclusive). None = hasta el final del dataset
 CSV_PATH = "outputs/batch_shap_results.csv"  # Ruta donde guardar los resultados
 
 # Ejecutar análisis batch
