@@ -192,7 +192,7 @@ print(df_batch_results.head(10))
 if not df_batch_results.empty:
     print("\n📈 Estadísticas resumidas:")
     print(f"   Total de muestras procesadas: {len(df_batch_results)}")
-    
+
     # Calcular promedios de IScore por modelo
     model_names = [name for name in loaded_models.keys() if loaded_models[name] is not None]
     print("\n📊 IScore promedio por modelo:")

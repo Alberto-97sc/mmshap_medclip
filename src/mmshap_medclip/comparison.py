@@ -774,7 +774,7 @@ def batch_shap_analysis(
     # Determinar rango de muestras
     if end_idx is None:
         end_idx = len(dataset)
-    
+
     total_samples = end_idx - start_idx
 
     # Cargar CSV existente si existe
@@ -804,7 +804,7 @@ def batch_shap_analysis(
                 f'Tscore_{model_name}',
                 f'Logit_{model_name}'
             ])
-        
+
         # Verificar cada muestra: está procesada solo si NO tiene NaN en ninguna métrica
         for _, row in df_existing.iterrows():
             sample_idx = row['sample_idx']
@@ -814,12 +814,12 @@ def batch_shap_analysis(
                 if col in row and pd.isna(row[col]):
                     has_nan = True
                     break
-            
+
             if has_nan:
                 samples_with_nan.add(sample_idx)
             else:
                 processed_samples.add(sample_idx)
-        
+
         if samples_with_nan:
             print(f"   ⚠️  Muestras con NaN detectadas: {len(samples_with_nan)} (serán re-procesadas)")
         print(f"   ✅ Muestras completamente procesadas: {len(processed_samples)}")
@@ -884,7 +884,7 @@ def batch_shap_analysis(
                 if verbose:
                     print(f"⏭️  Muestra #{idx}: Ya procesada completamente, saltando...")
                 continue
-            
+
             # Si tiene NaN, se procesará y sobrescribirá
             is_reprocessing = idx in samples_with_nan
             if is_reprocessing and verbose:
@@ -908,12 +908,12 @@ def batch_shap_analysis(
 
                 # Construir fila de resultados
                 row_data = {'sample_idx': idx}
-                
+
                 # Agregar métricas por modelo
                 for model_name in models.keys():
                     if models[model_name] is None:
                         continue
-                    
+
                     result = results.get(model_name)
                     if result is not None:
                         row_data[f'Iscore_{model_name}'] = result.get('iscore', 0.0)
@@ -946,7 +946,7 @@ def batch_shap_analysis(
 
                 # Guardar CSV después de cada muestra (blindado ante interrupciones)
                 df_results.to_csv(csv_path, index=False)
-                
+
                 samples_processed += 1
                 processed_samples.add(idx)
 
@@ -967,7 +967,7 @@ def batch_shap_analysis(
                     print(f"💾 CSV guardado: {csv_path}")
                     print(f"📊 Progreso: {samples_processed} procesadas | {samples_skipped} saltadas | {samples_failed} fallidas")
                     print(f"⏱️  Tiempo transcurrido: {elapsed_time/60:.1f} min | Estimado restante: {estimated_time_remaining/60:.1f} min")
-                
+
                 # Mostrar DataFrame en tiempo real si está habilitado
                 if show_dataframe:
                     print(f"\n{'='*80}")
@@ -982,7 +982,7 @@ def batch_shap_analysis(
                 samples_failed += 1
                 print(f"\n❌ Error procesando muestra #{idx}: {e}")
                 print(f"   Continuando con la siguiente muestra...")
-                
+
                 # Guardar CSV incluso si hay error (para no perder progreso)
                 try:
                     df_results.to_csv(csv_path, index=False)

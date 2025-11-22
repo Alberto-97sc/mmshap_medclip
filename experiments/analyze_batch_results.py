@@ -118,10 +118,10 @@ for model_name in model_names:
     iscore_raw = df[f'Iscore_{model_name}'].values
     tscore_raw = df[f'Tscore_{model_name}'].values
     logit_raw = df[f'Logit_{model_name}'].values
-    
+
     # Filtrar NaN y crear máscara de valores válidos
     valid_mask = ~(np.isnan(iscore_raw) | np.isnan(tscore_raw) | np.isnan(logit_raw))
-    
+
     models_data[model_name] = {
         'iscore': iscore_raw[valid_mask],
         'tscore': tscore_raw[valid_mask],
@@ -129,7 +129,7 @@ for model_name in model_names:
         'valid_count': np.sum(valid_mask),
         'total_count': len(iscore_raw)
     }
-    
+
     if np.sum(valid_mask) < len(iscore_raw):
         print(f"⚠️  {model_name}: {len(iscore_raw) - np.sum(valid_mask)} valores NaN encontrados y filtrados")
 
@@ -149,7 +149,7 @@ for model_name in model_names:
     tscore = models_data[model_name]['tscore']
     logit = models_data[model_name]['logit']
     valid_count = models_data[model_name]['valid_count']
-    
+
     # Usar funciones que manejan NaN correctamente
     if len(iscore) > 0:
         stats_list.append({
@@ -165,7 +165,7 @@ for model_name in model_names:
             'CV (%)': (np.nanstd(iscore) / np.nanmean(iscore)) * 100 if np.nanmean(iscore) > 0 else 0,
             'N válidos': valid_count
         })
-        
+
         stats_list.append({
             'Modelo': model_name,
             'Métrica': 'TScore',
@@ -179,7 +179,7 @@ for model_name in model_names:
             'CV (%)': (np.nanstd(tscore) / np.nanmean(tscore)) * 100 if np.nanmean(tscore) > 0 else 0,
             'N válidos': valid_count
         })
-        
+
         stats_list.append({
             'Modelo': model_name,
             'Métrica': 'Logit',
@@ -351,7 +351,7 @@ axes = axes.flatten()
 for idx, model_name in enumerate(model_names):
     iscore = models_data[model_name]['iscore']
     tscore = models_data[model_name]['tscore']
-    
+
     axes[idx].scatter(iscore, tscore, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
     axes[idx].plot([0, 1], [1, 0], 'r--', linewidth=2, label='Balance ideal (IScore + TScore = 1)')
     axes[idx].axhline(y=0.5, color='gray', linestyle=':', alpha=0.5)
@@ -421,20 +421,20 @@ balance_metrics = []
 for model_name in model_names:
     iscore = models_data[model_name]['iscore']
     tscore = models_data[model_name]['tscore']
-    
+
     # Balance Score: 1 - |IScore - 0.5| (más cercano a 1 = más balanceado)
     balance_score = 1 - np.abs(iscore - 0.5)
-    
+
     # Desviación del balance: |IScore - TScore|
     balance_deviation = np.abs(iscore - tscore)
-    
+
     # Ratio IScore/TScore (ideal = 1.0)
     ratio = iscore / (tscore + 1e-10)  # Evitar división por cero
-    
+
     # Porcentaje de muestras "balanceadas" (dentro de ±10% de 50/50)
     balanced_samples = np.sum(np.abs(iscore - 0.5) <= 0.1)
     balanced_percentage = (balanced_samples / len(iscore)) * 100
-    
+
     balance_metrics.append({
         'Modelo': model_name,
         'Balance Score (Media)': np.mean(balance_score),
@@ -466,7 +466,7 @@ bars = ax.barh(x_pos, df_balance['Balance Score (Media)'], color=colors[:len(mod
 ax.set_yticks(x_pos)
 ax.set_yticklabels(df_balance['Modelo'])
 ax.set_xlabel('Balance Score (Media)', fontsize=12)
-ax.set_title('Balance Multimodal por Modelo\n(Mayor = Más Balanceado, Ideal = 1.0)', 
+ax.set_title('Balance Multimodal por Modelo\n(Mayor = Más Balanceado, Ideal = 1.0)',
               fontsize=14, fontweight='bold')
 ax.axvline(x=1.0, color='r', linestyle='--', linewidth=2, label='Balance perfecto')
 ax.grid(True, alpha=0.3, axis='x')
@@ -498,12 +498,12 @@ normality_results = []
 for model_name in model_names:
     iscore = models_data[model_name]['iscore']
     tscore = models_data[model_name]['tscore']
-    
+
     # Test para IScore
     stat_iscore, p_iscore = shapiro(iscore)
     # Test para TScore
     stat_tscore, p_tscore = shapiro(tscore)
-    
+
     normality_results.append({
         'Modelo': model_name,
         'IScore - Estadístico': stat_iscore,
@@ -547,15 +547,15 @@ for i, model1 in enumerate(model_names):
             # Usar datos del DataFrame original para tener la misma longitud
             iscore1 = df[f'Iscore_{model1}'].values
             iscore2 = df[f'Iscore_{model2}'].values
-            
+
             # Filtrar solo muestras válidas en ambos modelos
             valid_mask = ~(np.isnan(iscore1) | np.isnan(iscore2))
             iscore1_valid = iscore1[valid_mask]
             iscore2_valid = iscore2[valid_mask]
-            
+
             if len(iscore1_valid) > 0 and len(iscore2_valid) > 0:
                 stat, p_val = wilcoxon(iscore1_valid, iscore2_valid)
-                
+
                 pairwise_results.append({
                     'Modelo 1': model1,
                     'Modelo 2': model2,
@@ -598,28 +598,28 @@ correlations = []
 for model_name in model_names:
     iscore_raw = df[f'Iscore_{model_name}'].values
     tscore_raw = df[f'Tscore_{model_name}'].values
-    
+
     # Filtrar NaN para tener arrays de la misma longitud
     valid_mask_iscore = ~np.isnan(iscore_raw)
     valid_mask_tscore = ~np.isnan(tscore_raw)
-    
+
     # Correlación de Pearson (solo con valores válidos)
     if np.sum(valid_mask_iscore) > 0:
         corr_iscore, p_iscore = stats.pearsonr(
-            caption_lengths[valid_mask_iscore], 
+            caption_lengths[valid_mask_iscore],
             iscore_raw[valid_mask_iscore]
         )
     else:
         corr_iscore, p_iscore = np.nan, np.nan
-    
+
     if np.sum(valid_mask_tscore) > 0:
         corr_tscore, p_tscore = stats.pearsonr(
-            caption_lengths[valid_mask_tscore], 
+            caption_lengths[valid_mask_tscore],
             tscore_raw[valid_mask_tscore]
         )
     else:
         corr_tscore, p_tscore = np.nan, np.nan
-    
+
     correlations.append({
         'Modelo': model_name,
         'Correlación IScore-Caption': corr_iscore,
@@ -649,20 +649,20 @@ for idx, model_name in enumerate(model_names):
     valid_mask = ~np.isnan(iscore_raw)
     iscore_valid = iscore_raw[valid_mask]
     caption_valid = caption_lengths[valid_mask]
-    
+
     axes[idx].scatter(caption_valid, iscore_valid, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
-    
+
     # Línea de regresión (solo con valores válidos)
     if len(iscore_valid) > 1:
         z = np.polyfit(caption_valid, iscore_valid, 1)
         p = np.poly1d(z)
         x_line = np.linspace(caption_valid.min(), caption_valid.max(), 100)
         axes[idx].plot(x_line, p(x_line), "r--", alpha=0.8, linewidth=2, label='Regresión lineal')
-    
+
     corr = df_correlations[df_correlations['Modelo'] == model_name]['Correlación IScore-Caption'].values[0]
     axes[idx].set_xlabel('Caption Length (caracteres)', fontsize=12)
     axes[idx].set_ylabel('IScore', fontsize=12)
-    axes[idx].set_title(f'{model_name}\nIScore vs Caption Length\n(r={corr:.3f})', 
+    axes[idx].set_title(f'{model_name}\nIScore vs Caption Length\n(r={corr:.3f})',
                         fontsize=13, fontweight='bold')
     axes[idx].grid(True, alpha=0.3)
     axes[idx].legend()
@@ -755,7 +755,7 @@ for model_name, color in zip(model_names, colors):
     # Usar datos originales y filtrar NaN
     iscore_raw = df[f'Iscore_{model_name}'].values
     valid_mask = ~np.isnan(iscore_raw)
-    ax6.scatter(caption_lengths[valid_mask], iscore_raw[valid_mask], 
+    ax6.scatter(caption_lengths[valid_mask], iscore_raw[valid_mask],
                 alpha=0.4, s=20, label=model_name, color=color)
 ax6.set_xlabel('Caption Length')
 ax6.set_ylabel('IScore')
@@ -793,23 +793,23 @@ fig, ax = plt.subplots(figsize=(12, 8))
 df_sorted = df_balance.sort_values('Balance Score (Media)', ascending=True)
 
 y_pos = np.arange(len(model_names))
-bars = ax.barh(y_pos, df_sorted['Balance Score (Media)'], 
+bars = ax.barh(y_pos, df_sorted['Balance Score (Media)'],
                color=plt.cm.viridis(np.linspace(0, 1, len(model_names))))
 
 ax.set_yticks(y_pos)
 ax.set_yticklabels(df_sorted['Modelo'])
 ax.set_xlabel('Balance Score (Media)', fontsize=14, fontweight='bold')
-ax.set_title('Ranking de Modelos por Balance Multimodal\n(Mayor = Más Balanceado)', 
+ax.set_title('Ranking de Modelos por Balance Multimodal\n(Mayor = Más Balanceado)',
              fontsize=16, fontweight='bold', pad=20)
 ax.axvline(x=1.0, color='r', linestyle='--', linewidth=2, label='Balance perfecto (1.0)')
 ax.grid(True, alpha=0.3, axis='x')
 ax.legend(fontsize=12)
 
 # Agregar valores y porcentaje de muestras balanceadas
-for i, (bar, value, pct) in enumerate(zip(bars, 
+for i, (bar, value, pct) in enumerate(zip(bars,
                                           df_sorted['Balance Score (Media)'],
                                           df_sorted['Muestras Balanceadas (%)'])):
-    ax.text(value + 0.01, i, f'{value:.3f}\n({pct:.1f}% balanceadas)', 
+    ax.text(value + 0.01, i, f'{value:.3f}\n({pct:.1f}% balanceadas)',
             va='center', fontweight='bold', fontsize=10)
 
 plt.tight_layout()
@@ -847,4 +847,3 @@ print("\n🎉 ¡Análisis completo! Revisa los archivos generados.")
 # ---
 #
 # **Proyecto de tesis: Medición del balance multimodal con SHAP en modelos CLIP médicos**
-
