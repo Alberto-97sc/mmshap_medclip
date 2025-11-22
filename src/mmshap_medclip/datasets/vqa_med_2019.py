@@ -41,6 +41,7 @@ class VQAMed2019Dataset(DatasetBase):
         self.split = split
         
         # Inferir images_subdir si no se proporciona
+        # Nota: El ZIP puede tener un directorio raíz, así que buscamos en cualquier ubicación
         if images_subdir is None:
             if split.lower() == "validation":
                 self.images_subdir = "Val_images"
@@ -51,6 +52,10 @@ class VQAMed2019Dataset(DatasetBase):
         else:
             self.images_subdir = images_subdir
         
+        # Detectar el prefijo de directorio raíz del ZIP si existe
+        # Por ejemplo: "ImageClef-2019-VQA-Med-Validation/"
+        self.zip_root_prefix = None
+        
         # Cargar preguntas y respuestas desde el ZIP
         with zipfile.ZipFile(zip_path, "r") as zf:
             # Buscar archivo All_QA_Pairs_<split>.txt
@@ -59,31 +64,103 @@ class VQAMed2019Dataset(DatasetBase):
             qa_file = None
             split_lower = split.lower()
             
-            # Buscar el archivo de QA pairs
-            for name in zf.namelist():
-                if "All_QA_Pairs" in name and split_lower in name.lower() and name.endswith(".txt"):
+            # Lista de nombres posibles para el archivo (buscar en cualquier ubicación)
+            possible_names = [
+                f"All_QA_Pairs_{split_lower}.txt",
+                f"All_QA_Pairs_val.txt",  # Para Validation
+                f"All_QA_Pairs_test.txt",  # Para Test
+                "All_QA_Pairs_val.txt",
+                "All_QA_Pairs.txt",
+            ]
+            
+            # También buscar en subdirectorios
+            all_txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
+            all_files = zf.namelist()  # Todos los archivos para debugging
+            
+            # Detectar prefijo de directorio raíz del ZIP (ej: "ImageClef-2019-VQA-Med-Validation/")
+            # Buscar el directorio más común en las rutas
+            if all_files:
+                # Obtener el primer directorio común
+                first_file = all_files[0]
+                if '/' in first_file:
+                    # Extraer el prefijo del directorio raíz
+                    parts = first_file.split('/')
+                    if len(parts) > 1:
+                        self.zip_root_prefix = parts[0] + '/'
+                        print(f"📂 Detectado prefijo de directorio en ZIP: {self.zip_root_prefix}")
+            
+            # Estrategia 1: Buscar por nombre exacto (con y sin prefijo de directorio)
+            # Buscar tanto en raíz como en subdirectorios
+            for name in all_txt_files:
+                basename = os.path.basename(name)
+                if basename in possible_names:
                     qa_file = name
                     break
             
-            # Si no se encuentra con el split, buscar cualquier All_QA_Pairs
+            # Estrategia 2: Buscar por patrón "All_QA_Pairs" + split (en cualquier ubicación)
             if qa_file is None:
-                for name in zf.namelist():
-                    if "All_QA_Pairs" in name and name.endswith(".txt"):
+                for name in all_txt_files:
+                    basename = os.path.basename(name)
+                    if "All_QA_Pairs" in basename and split_lower in basename.lower():
                         qa_file = name
                         break
             
+            # Estrategia 3: Buscar cualquier archivo con "All_QA_Pairs" (en cualquier ubicación)
             if qa_file is None:
-                raise FileNotFoundError(
-                    f"No se encontró All_QA_Pairs_*{split_lower}*.txt en el ZIP. "
-                    f"Archivos disponibles: {[n for n in zf.namelist() if '.txt' in n][:10]}"
-                )
+                for name in all_txt_files:
+                    basename = os.path.basename(name)
+                    if "All_QA_Pairs" in basename:
+                        qa_file = name
+                        break
             
-            # Leer archivo de QA pairs
+            # Estrategia 4: Buscar archivos por categoría y combinarlos
+            # Si no hay All_QA_Pairs, buscar archivos C1_Modality_val.txt, etc.
+            category_files = []
+            if qa_file is None:
+                for name in all_txt_files:
+                    basename = os.path.basename(name)
+                    # Buscar archivos de categoría: C1_Modality_val.txt, C2_Plane_val.txt, etc.
+                    if (basename.startswith("C") and 
+                        any(cat in basename.lower() for cat in ["modality", "plane", "organ", "abnormality"]) and
+                        split_lower in basename.lower()):
+                        category_files.append(name)
+                
+                if category_files:
+                    # Si encontramos archivos por categoría, los usaremos más adelante
+                    # Por ahora, usamos el primero como referencia
+                    qa_file = category_files[0]
+                    print(f"⚠️  No se encontró All_QA_Pairs, usando archivos por categoría: {category_files}")
+            
+            if qa_file is None:
+                # Mostrar todos los archivos disponibles para debugging
+                txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
+                # Mostrar también estructura de directorios
+                dirs = sorted(set([os.path.dirname(n) for n in zf.namelist() if os.path.dirname(n)]))
+                
+                error_msg = (
+                    f"No se encontró archivo All_QA_Pairs_*{split_lower}*.txt en el ZIP.\n"
+                    f"Archivos .txt disponibles ({len(txt_files)}):\n" +
+                    "\n".join(f"  - {f}" for f in txt_files[:20]) +
+                    (f"\n  ... y {len(txt_files) - 20} más" if len(txt_files) > 20 else "") +
+                    f"\n\nDirectorios en el ZIP ({len(dirs)}):\n" +
+                    "\n".join(f"  - {d}" for d in dirs[:10]) +
+                    (f"\n  ... y {len(dirs) - 10} más" if len(dirs) > 10 else "")
+                )
+                raise FileNotFoundError(error_msg)
+            
+            # Leer archivo(s) de QA pairs
+            # Si encontramos archivos por categoría, leer todos y combinarlos
+            files_to_read = [qa_file]
+            if category_files and qa_file in category_files:
+                # Si qa_file es uno de los archivos de categoría, leer todos
+                files_to_read = category_files
+            
             # Formato esperado: QID\tQuestion\tAnswer\t[ImageFilename] (o variaciones)
             self.samples = []
             image_map = {}  # question_id -> image_filename
             
-            with zf.open(qa_file) as f:
+            for file_to_read in files_to_read:
+                with zf.open(file_to_read) as f:
                 for line_num, line in enumerate(f, 1):
                     line = line.decode('utf-8').strip()
                     if not line:
@@ -155,7 +232,19 @@ class VQAMed2019Dataset(DatasetBase):
                         image_map[q_id] = image_filename
                     
                     # Inferir categoría de la pregunta
+                    # Si estamos leyendo archivos por categoría, intentar inferir desde el nombre del archivo
                     category = self._infer_category(question)
+                    if category_files and file_to_read in category_files:
+                        # Intentar inferir categoría desde el nombre del archivo
+                        basename = os.path.basename(file_to_read).lower()
+                        if "modality" in basename or "c1" in basename:
+                            category = "modality"
+                        elif "plane" in basename or "c2" in basename:
+                            category = "plane"
+                        elif "organ" in basename or "c3" in basename:
+                            category = "organ_system"
+                        elif "abnormality" in basename or "c4" in basename:
+                            category = "abnormality"
                     
                     self.samples.append({
                         'question_id': q_id,
@@ -166,13 +255,18 @@ class VQAMed2019Dataset(DatasetBase):
                     })
             
             # Construir índice de imágenes (basename -> ruta completa)
+            # Buscar en cualquier ubicación, pero priorizar el subdirectorio correcto
             self._name_to_path = {}
             for name in zf.namelist():
                 if name.endswith("/") or not name.lower().endswith((".jpg", ".jpeg", ".png")):
                     continue
                 base = os.path.basename(name)
-                # Priorizar imágenes en el subdirectorio correcto
+                # Priorizar imágenes en el subdirectorio correcto (puede estar en cualquier nivel)
+                # Buscar "Val_images" o "images_subdir" en cualquier parte de la ruta
                 score = int(self.images_subdir.lower() in name.lower())
+                # Bonus si está en el directorio raíz detectado
+                if self.zip_root_prefix and name.startswith(self.zip_root_prefix):
+                    score += 1
                 prev = self._name_to_path.get(base)
                 if prev is None or score > prev[0]:
                     self._name_to_path[base] = (score, name)
