@@ -1,0 +1,15 @@
+experiment_name: vqa_med_2019_pubmedclip
+device: auto
+
+dataset:
+  name: vqa_med_2019
+  params:
+    zip_path: data/ImageClef-2019-VQA-Med-Validation.zip
+    split: Validation
+    images_subdir: Images
+    n_rows: all
+
+model:
+  name: pubmedclip-vit-b32
+  params: {}
+
