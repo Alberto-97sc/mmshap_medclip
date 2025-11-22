@@ -68,8 +68,26 @@ class VQAMed2019Dataset(DatasetBase):
         # Verificar si es el zip padre
         zip_basename = os.path.basename(zip_path).lower()
         # Detectar si es el zip padre (VQA-Med-2019.zip)
-        if "vqa-med-2019" in zip_basename and zip_basename.endswith(".zip"):
-            self.is_nested_zip = True
+        # También verificar si el archivo existe y si contiene zips hijos
+        is_vqa_med_2019_zip = "vqa-med-2019" in zip_basename and zip_basename.endswith(".zip")
+        
+        if is_vqa_med_2019_zip:
+            # Verificar que el archivo existe y contiene zips hijos
+            if os.path.exists(zip_path):
+                try:
+                    with zipfile.ZipFile(zip_path, "r") as test_zip:
+                        has_nested_zips = any(name.endswith(".zip") for name in test_zip.namelist())
+                        if has_nested_zips:
+                            self.is_nested_zip = True
+                except:
+                    # Si no se puede abrir, asumir que no es anidado
+                    self.is_nested_zip = False
+            else:
+                self.is_nested_zip = False
+        else:
+            self.is_nested_zip = False
+        
+        if self.is_nested_zip:
             # Determinar el nombre del zip hijo según el split
             if split.lower() in ["training", "train"]:
                 self.inner_zip_name = "ImageClef-2019-VQA-Med-Training.zip"
