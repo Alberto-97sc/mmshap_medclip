@@ -144,42 +144,26 @@ class VQAMed2019Dataset(DatasetBase):
                         self.zip_root_prefix = parts[0] + '/'
                         print(f"📂 Detectado prefijo de directorio en ZIP: {self.zip_root_prefix}")
             
-            # Estrategia 1: Buscar por nombre exacto (con y sin prefijo de directorio)
-            # Buscar tanto en raíz como en subdirectorios
-            for name in all_txt_files:
-                basename = os.path.basename(name)
-                if basename in possible_names:
-                    qa_file = name
-                    break
-            
-            # Estrategia 2: Buscar por patrón "All_QA_Pairs" + split (en cualquier ubicación)
-            if qa_file is None:
-                for name in all_txt_files:
-                    basename = os.path.basename(name)
-                    if "All_QA_Pairs" in basename and split_lower in basename.lower():
-                        qa_file = name
-                        break
-            
-            # Estrategia 3: Buscar cualquier archivo con "All_QA_Pairs" (en cualquier ubicación)
-            if qa_file is None:
-                for name in all_txt_files:
-                    basename = os.path.basename(name)
-                    if "All_QA_Pairs" in basename:
-                        qa_file = name
-                        break
-            
-            # Estrategia 4: Buscar archivos QAPairsByCategory (C1_Modality_*, C2_Plane_*, etc.)
-            # Priorizar archivos por categoría sobre All_QA_Pairs
+            # PRIORIDAD 1: Buscar archivos QAPairsByCategory (C1_Modality_*, C2_Plane_*, etc.)
+            # Estos archivos tienen prioridad sobre All_QA_Pairs
             category_files = []
             for name in all_txt_files:
                 basename = os.path.basename(name)
                 # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_val.txt, etc.
                 # Verificar formato C1_*, C2_*, C3_*, C4_*
+                # También verificar que estén en QAPairsByCategory o que el basename empiece con C
                 if basename.startswith("C") and len(basename) > 1:
                     # Verificar si coincide con el split (train/val/test)
                     basename_lower = basename.lower()
+                    # Normalizar split_lower para matching
+                    split_normalized = split_lower
+                    if split_lower in ["training", "train"]:
+                        split_normalized = "train"
+                    elif split_lower == "validation":
+                        split_normalized = "val"
+                    
                     split_match = (
-                        split_lower in basename_lower or
+                        split_normalized in basename_lower or
                         ("train" in basename_lower and split_lower in ["training", "train"]) or
                         ("val" in basename_lower and split_lower == "validation") or
                         ("test" in basename_lower and split_lower == "test")
@@ -187,19 +171,46 @@ class VQAMed2019Dataset(DatasetBase):
                     if split_match:
                         category_files.append(name)
             
-            # Si encontramos archivos por categoría, usarlos en lugar de All_QA_Pairs
+            # Si encontramos archivos por categoría, usarlos (tienen prioridad)
             if category_files:
                 qa_file = None  # Forzar uso de archivos por categoría
                 print(f"📁 Usando archivos por categoría: {len(category_files)} archivos encontrados")
+                print(f"   Archivos: {[os.path.basename(f) for f in category_files]}")
+            else:
+                # Estrategia 1: Buscar por nombre exacto (con y sin prefijo de directorio)
+                # Buscar tanto en raíz como en subdirectorios
+                for name in all_txt_files:
+                    basename = os.path.basename(name)
+                    if basename in possible_names:
+                        qa_file = name
+                        break
+                
+                # Estrategia 2: Buscar por patrón "All_QA_Pairs" + split (en cualquier ubicación)
+                if qa_file is None:
+                    for name in all_txt_files:
+                        basename = os.path.basename(name)
+                        if "All_QA_Pairs" in basename and split_lower in basename.lower():
+                            qa_file = name
+                            break
+                
+                # Estrategia 3: Buscar cualquier archivo con "All_QA_Pairs" (en cualquier ubicación)
+                if qa_file is None:
+                    for name in all_txt_files:
+                        basename = os.path.basename(name)
+                        if "All_QA_Pairs" in basename:
+                            qa_file = name
+                            break
             
-            if qa_file is None:
+            # Si no encontramos archivos por categoría ni All_QA_Pairs, mostrar error
+            if not category_files and qa_file is None:
                 # Mostrar todos los archivos disponibles para debugging
                 txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
                 # Mostrar también estructura de directorios
                 dirs = sorted(set([os.path.dirname(n) for n in zf.namelist() if os.path.dirname(n)]))
                 
                 error_msg = (
-                    f"No se encontró archivo All_QA_Pairs_*{split_lower}*.txt en el ZIP.\n"
+                    f"No se encontraron archivos de QA pairs para split '{split}' en el ZIP.\n"
+                    f"Buscando archivos QAPairsByCategory (C1_*, C2_*, C3_*, C4_*) o All_QA_Pairs_*{split_lower}*.txt\n"
                     f"Archivos .txt disponibles ({len(txt_files)}):\n" +
                     "\n".join(f"  - {f}" for f in txt_files[:20]) +
                     (f"\n  ... y {len(txt_files) - 20} más" if len(txt_files) > 20 else "") +
