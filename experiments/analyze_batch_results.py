@@ -552,14 +552,32 @@ print("="*80)
 caption_lengths = df['caption_length'].values
 
 # Calcular correlaciones
+# Usar datos originales del DataFrame para mantener la misma longitud
 correlations = []
 for model_name in model_names:
-    iscore = models_data[model_name]['iscore']
-    tscore = models_data[model_name]['tscore']
+    iscore_raw = df[f'Iscore_{model_name}'].values
+    tscore_raw = df[f'Tscore_{model_name}'].values
     
-    # Correlación de Pearson
-    corr_iscore, p_iscore = stats.pearsonr(caption_lengths, iscore)
-    corr_tscore, p_tscore = stats.pearsonr(caption_lengths, tscore)
+    # Filtrar NaN para tener arrays de la misma longitud
+    valid_mask_iscore = ~np.isnan(iscore_raw)
+    valid_mask_tscore = ~np.isnan(tscore_raw)
+    
+    # Correlación de Pearson (solo con valores válidos)
+    if np.sum(valid_mask_iscore) > 0:
+        corr_iscore, p_iscore = stats.pearsonr(
+            caption_lengths[valid_mask_iscore], 
+            iscore_raw[valid_mask_iscore]
+        )
+    else:
+        corr_iscore, p_iscore = np.nan, np.nan
+    
+    if np.sum(valid_mask_tscore) > 0:
+        corr_tscore, p_tscore = stats.pearsonr(
+            caption_lengths[valid_mask_tscore], 
+            tscore_raw[valid_mask_tscore]
+        )
+    else:
+        corr_tscore, p_tscore = np.nan, np.nan
     
     correlations.append({
         'Modelo': model_name,
@@ -585,14 +603,20 @@ fig, axes = plt.subplots(2, 2, figsize=(16, 14))
 axes = axes.flatten()
 
 for idx, model_name in enumerate(model_names):
-    iscore = models_data[model_name]['iscore']
+    # Usar datos originales y filtrar NaN
+    iscore_raw = df[f'Iscore_{model_name}'].values
+    valid_mask = ~np.isnan(iscore_raw)
+    iscore_valid = iscore_raw[valid_mask]
+    caption_valid = caption_lengths[valid_mask]
     
-    axes[idx].scatter(caption_lengths, iscore, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+    axes[idx].scatter(caption_valid, iscore_valid, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
     
-    # Línea de regresión
-    z = np.polyfit(caption_lengths, iscore, 1)
-    p = np.poly1d(z)
-    axes[idx].plot(caption_lengths, p(caption_lengths), "r--", alpha=0.8, linewidth=2, label='Regresión lineal')
+    # Línea de regresión (solo con valores válidos)
+    if len(iscore_valid) > 1:
+        z = np.polyfit(caption_valid, iscore_valid, 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(caption_valid.min(), caption_valid.max(), 100)
+        axes[idx].plot(x_line, p(x_line), "r--", alpha=0.8, linewidth=2, label='Regresión lineal')
     
     corr = df_correlations[df_correlations['Modelo'] == model_name]['Correlación IScore-Caption'].values[0]
     axes[idx].set_xlabel('Caption Length (caracteres)', fontsize=12)
@@ -687,8 +711,11 @@ ax5.set_title('Correlación entre Modelos', fontweight='bold')
 # 6. Caption Length vs IScore (centro derecha)
 ax6 = fig.add_subplot(gs[1, 2])
 for model_name, color in zip(model_names, colors):
-    iscore = models_data[model_name]['iscore']
-    ax6.scatter(caption_lengths, iscore, alpha=0.4, s=20, label=model_name, color=color)
+    # Usar datos originales y filtrar NaN
+    iscore_raw = df[f'Iscore_{model_name}'].values
+    valid_mask = ~np.isnan(iscore_raw)
+    ax6.scatter(caption_lengths[valid_mask], iscore_raw[valid_mask], 
+                alpha=0.4, s=20, label=model_name, color=color)
 ax6.set_xlabel('Caption Length')
 ax6.set_ylabel('IScore')
 ax6.set_title('IScore vs Caption Length', fontweight='bold')
