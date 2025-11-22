@@ -301,11 +301,18 @@ class VQAMed2019Dataset(DatasetBase):
                                     print(f"⚠️  Advertencia: Campos vacíos en línea {line_num}: {line[:80]}")
                                 continue
                             
+                            # La categoría ya viene normalizada desde el nombre del archivo
+                            # Asegurar que siempre sea una de las categorías válidas
+                            if category not in ["modality", "plane", "organ_system"]:
+                                # Esto no debería ocurrir, pero por seguridad
+                                print(f"⚠️  Advertencia: Categoría inesperada '{category}' en archivo {file_to_read}, saltando muestra")
+                                continue
+                            
                             self.samples.append({
                                 'question_id': image_id,  # Usar image_id como question_id
                                 'question': question,
                                 'answer': answer,
-                                'category': category,  # Categoría desde nombre de archivo
+                                'category': category,  # Categoría normalizada desde nombre de archivo
                                 'image_filename': image_id  # image_id es el nombre de la imagen
                             })
                         except Exception as e:
@@ -408,6 +415,22 @@ class VQAMed2019Dataset(DatasetBase):
             if self.samples:
                 print(f"   Primera muestra: {self.samples[0]}")
         
+        # Verificar que las claves de candidates_per_cat coinciden con las categorías en samples
+        categories_in_samples = set(s.get('category') for s in self.samples if s.get('category') != "abnormality")
+        categories_in_candidates = set(self.candidates_per_cat.keys())
+        
+        print(f"📊 Verificación de categorías:")
+        print(f"   Categorías en samples: {sorted(categories_in_samples)}")
+        print(f"   Categorías en candidates_per_cat: {sorted(categories_in_candidates)}")
+        
+        if categories_in_samples != categories_in_candidates:
+            missing_in_candidates = categories_in_samples - categories_in_candidates
+            missing_in_samples = categories_in_candidates - categories_in_samples
+            if missing_in_candidates:
+                print(f"⚠️  ADVERTENCIA: Categorías en samples pero no en candidates_per_cat: {sorted(missing_in_candidates)}")
+            if missing_in_samples:
+                print(f"⚠️  ADVERTENCIA: Categorías en candidates_per_cat pero no en samples: {sorted(missing_in_samples)}")
+        
         return self.candidates_per_cat
     
     def __len__(self):
@@ -417,21 +440,36 @@ class VQAMed2019Dataset(DatasetBase):
         sample = self.samples[idx]
         question = sample['question']
         answer = sample['answer']
-        category = sample['category']
-        question_id = sample['question_id']
+        # SIEMPRE asignar category y candidates como se especifica
+        # La categoría ya debería estar normalizada al construir samples
+        category = sample.get('category', '').strip()
+        question_id = sample.get('question_id', '')
+        image_filename = sample.get('image_filename', '')
         
-        # Obtener candidatos para esta categoría (no globales, solo de esta categoría)
         # Asegurar que candidates_per_cat esté inicializado
         if not hasattr(self, 'candidates_per_cat') or self.candidates_per_cat is None:
             self._build_candidates_by_category()
         
+        # Obtener candidatos para esta categoría (no globales, solo de esta categoría)
         candidates = self.candidates_per_cat.get(category, [])
         
-        # Debug si no hay candidatos
+        # Si no hay candidatos, hacer log de advertencia con información de la muestra
         if not candidates:
-            print(f"⚠️  Advertencia: No se encontraron candidatos para categoría '{category}'")
-            print(f"   Categorías disponibles: {list(self.candidates_per_cat.keys())}")
-            print(f"   Total muestras: {len(self.samples)}")
+            print(f"⚠️  ADVERTENCIA CRÍTICA: No se encontraron candidatos para categoría '{category}'")
+            print(f"   Muestra idx={idx}:")
+            print(f"   - image_id: {question_id}")
+            print(f"   - question: {question[:80]}...")
+            print(f"   - category: '{category}'")
+            print(f"   - answer: {answer}")
+            print(f"   Categorías disponibles en candidates_per_cat: {sorted(self.candidates_per_cat.keys())}")
+            print(f"   Total muestras en dataset: {len(self.samples)}")
+            # Esta muestra no debería estar en el dataset si no tiene candidatos
+            # Lanzar error para que el código que llama pueda manejarlo
+            raise ValueError(
+                f"Muestra {idx} (image_id={question_id}) tiene categoría '{category}' sin candidatos. "
+                f"Esto indica un problema en la construcción del dataset. "
+                f"Categorías disponibles: {sorted(self.candidates_per_cat.keys())}"
+            )
         
         # Intentar encontrar la imagen asociada
         image_path = None

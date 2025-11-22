@@ -89,8 +89,20 @@ def run_vqa_shap_on_models(
     image = sample['image']
     question = sample['question']
     answer = sample.get('answer')
+    # Usar SOLO los candidatos del dataset, sin modificar ni filtrar
     candidates = sample.get('candidates', [])
     category = sample.get('category', 'unknown')
+    
+    # Validar que los candidatos no estén vacíos
+    if not candidates:
+        error_msg = (
+            f"⚠️  ERROR: Muestra {sample_idx} tiene lista de candidatos vacía. "
+            f"Categoría: {category}. "
+            f"Esto no debería ocurrir si el dataset está correctamente construido."
+        )
+        if verbose:
+            print(error_msg)
+        raise ValueError(error_msg)
 
     if verbose:
         print(f"📝 Pregunta: {question}")
