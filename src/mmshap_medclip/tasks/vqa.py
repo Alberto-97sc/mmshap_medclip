@@ -1,9 +1,15 @@
 # src/mmshap_medclip/tasks/vqa.py
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import torch
 import numpy as np
+import shap
 
-from mmshap_medclip.tasks.utils import prepare_batch
+from mmshap_medclip.tasks.utils import (
+    prepare_batch, compute_text_token_lengths, make_image_token_ids, concat_text_image_tokens
+)
+from mmshap_medclip.shap_tools.masker import build_masker
+from mmshap_medclip.shap_tools.vqa_predictor import VQAPredictor
+from mmshap_medclip.metrics import compute_mm_score, compute_iscore
 
 def run_vqa_one(
     model,
@@ -12,6 +18,9 @@ def run_vqa_one(
     candidates: List[str],
     device,
     answer: Optional[str] = None,
+    explain: bool = True,
+    plot: bool = False,
+    target_logit: str = "correct",
     amp_if_cuda: bool = True,
 ) -> Dict[str, Any]:
     """
@@ -30,6 +39,9 @@ def run_vqa_one(
         candidates: Lista de candidatos (respuestas posibles)
         device: Dispositivo (cuda/cpu)
         answer: Respuesta correcta (opcional, para evaluación)
+        explain: Si True, calcula explicaciones SHAP
+        plot: Si True, genera visualización (requiere explain=True)
+        target_logit: "correct" o "predicted" - qué logit explicar con SHAP
         amp_if_cuda: Usar mixed precision si está en CUDA
         
     Returns:
@@ -39,6 +51,7 @@ def run_vqa_one(
         - candidate_scores: Dict {candidato: similitud}
         - correct: bool (si answer fue proporcionado)
         - logits: Tensor con logits de similitud
+        - shap_values, mm_scores, iscores (si explain=True)
     """
     if not candidates:
         raise ValueError("La lista de candidatos no puede estar vacía")
@@ -82,7 +95,7 @@ def run_vqa_one(
     if answer is not None:
         correct = (prediction.lower().strip() == answer.lower().strip())
     
-    return {
+    out: Dict[str, Any] = {
         "prediction": prediction,
         "prediction_idx": pred_idx,
         "similarities": similarities.tolist(),
@@ -93,7 +106,50 @@ def run_vqa_one(
         "candidates": candidates,
         "answer": answer,
         "model_wrapper": model,
+        "image": image,
     }
+    
+    # Preparar inputs base para explicabilidad
+    # Para SHAP, usamos solo la pregunta (sin candidatos)
+    # El predictor VQA construirá los prompts con candidatos internamente
+    base_inputs, _ = prepare_batch(
+        model,
+        [question],  # Solo la pregunta, sin "Question:" ni "Answer:"
+        [image],
+        device=device,
+        debug_tokens=False,
+        amp_if_cuda=amp_if_cuda
+    )
+    out["inputs"] = base_inputs
+    
+    if not (explain or plot):
+        return out
+    
+    # Calcular explicaciones SHAP
+    explanation = explain_vqa(
+        model,
+        base_inputs,
+        question,
+        candidates,
+        device=device,
+        answer=answer,
+        target_logit=target_logit,
+        amp_if_cuda=amp_if_cuda,
+        original_text=question,
+    )
+    out.update(explanation)
+    
+    if plot and "shap_values" in out:
+        fig = plot_vqa(
+            image=image,
+            question=question,
+            vqa_output=out,
+            model_wrapper=model,
+            display_plot=True,
+        )
+        out["fig"] = fig
+    
+    return out
 
 
 def run_vqa_batch(
@@ -231,4 +287,199 @@ def evaluate_vqa_dataset(
         "category_metrics": category_metrics,
         "results": all_results,
     }
+
+
+def explain_vqa(
+    model,
+    inputs: Dict[str, Any],
+    question: str,
+    candidates: List[str],
+    device,
+    answer: Optional[str] = None,
+    target_logit: str = "correct",
+    amp_if_cuda: bool = True,
+    original_text: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Calcula explicaciones VQA para un batch preparado."""
+    shap_values, mm_scores, iscores, text_len = _compute_vqa_shap(
+        model,
+        inputs,
+        question,
+        candidates,
+        device=device,
+        answer=answer,
+        target_logit=target_logit,
+        amp_if_cuda=amp_if_cuda,
+        original_text=original_text,
+    )
+
+    out: Dict[str, Any] = {
+        "shap_values": shap_values,
+        "mm_scores": mm_scores,
+        "iscores": [float(s) for s in iscores],
+        "text_len": text_len,
+    }
+
+    if len(mm_scores) == 1:
+        tscore, _ = mm_scores[0]
+        out.update({
+            "tscore": float(tscore),
+            "iscore": float(iscores[0]),
+        })
+
+    return out
+
+
+def plot_vqa(
+    image,
+    question: str,
+    vqa_output: Dict[str, Any],
+    model_wrapper=None,
+    display_plot: bool = True,
+):
+    """Genera la figura de heatmaps para un resultado VQA."""
+    from mmshap_medclip.vis.heatmaps import plot_text_image_heatmaps
+
+    if model_wrapper is None:
+        model_wrapper = vqa_output.get("model_wrapper")
+    if model_wrapper is None:
+        raise ValueError("Se requiere el wrapper del modelo para plot_vqa.")
+
+    shap_values = vqa_output.get("shap_values")
+    mm_scores = vqa_output.get("mm_scores")
+    inputs = vqa_output.get("inputs")
+    text_len = vqa_output.get("text_len")
+    if shap_values is None or mm_scores is None or inputs is None:
+        raise ValueError("plot_vqa necesita 'shap_values', 'mm_scores' e 'inputs' en vqa_output.")
+
+    fig = plot_text_image_heatmaps(
+        shap_values=shap_values,
+        inputs=inputs,
+        tokenizer=model_wrapper.tokenizer,
+        images=image,
+        texts=[question],
+        mm_scores=mm_scores,
+        model_wrapper=model_wrapper,
+        return_fig=True,
+        text_len=text_len,
+    )
+
+    if display_plot:
+        fig.show()
+
+    return fig
+
+
+def _compute_vqa_shap(
+    model,
+    inputs: Dict[str, Any],
+    question: str,
+    candidates: List[str],
+    device,
+    answer: Optional[str] = None,
+    target_logit: str = "correct",
+    amp_if_cuda: bool = True,
+    original_text: Optional[str] = None,
+) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float], int]:
+    """Aplica SHAP al batch dado para VQA y retorna valores por muestra y text_len."""
+    nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
+    image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
+
+    # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
+    X_clean, text_len = concat_text_image_tokens(
+        inputs, image_token_ids_expanded, device=device,
+        nb_text_tokens=nb_text_tokens_tensor, tokenizer=model.tokenizer
+    )
+
+    masker = build_masker(nb_text_tokens_tensor, tokenizer=model.tokenizer)
+    predict_fn = VQAPredictor(
+        model,
+        inputs,
+        question=question,
+        candidates=candidates,
+        answer_correct=answer,
+        target_logit=target_logit,
+        patch_size=imginfo["patch_size"],
+        device=device,
+        use_amp=amp_if_cuda,
+        text_len=text_len,
+    )
+
+    # --- Ajuste automático del presupuesto para el Permutation explainer ---
+    def _as_hw_tuple(value):
+        if value is None:
+            return None, None
+        if isinstance(value, (list, tuple)):
+            if len(value) == 0:
+                return None, None
+            if len(value) == 1:
+                val = int(value[0])
+                return val, val
+            return int(value[0]), int(value[1])
+        val = int(value)
+        return val, val
+
+    n_tokens = int(inputs["input_ids"].shape[1])
+
+    n_patches = int(imginfo.get("num_patches") or 0)
+    if n_patches <= 0:
+        patch = getattr(model, "vision_patch_size", None)
+        if patch is None:
+            patch = getattr(model, "patch_size", None)
+        if patch is None and "patch_size" in imginfo:
+            patch = imginfo["patch_size"]
+
+        img_sz = getattr(model, "vision_input_size", None)
+        if img_sz is None:
+            img_sz = getattr(model, "image_size", None)
+        if img_sz is None and hasattr(model, "config") and hasattr(model.config, "vision_config"):
+            img_sz = getattr(model.config.vision_config, "image_size", None)
+
+        patch_h, patch_w = _as_hw_tuple(patch)
+        img_h, img_w = _as_hw_tuple(img_sz)
+
+        if patch_h is None or patch_w is None:
+            patch_h = patch_w = 14
+        if img_h is None or img_w is None:
+            _, _, img_h, img_w = inputs["pixel_values"].shape
+
+        if patch_h <= 0 or patch_w <= 0:
+            patch_h = patch_w = 14
+
+        n_patches = max(1, (img_h // patch_h) * (img_w // patch_w))
+
+    n_features = n_tokens + n_patches
+    min_needed = 2 * n_features + 1
+
+    call_kwargs = {}
+    maybe_call_kwargs = getattr(model, "shap_call_kwargs", None)
+    if isinstance(maybe_call_kwargs, dict):
+        call_kwargs.update(maybe_call_kwargs)
+    maybe_call_kwargs = inputs.get("shap_call_kwargs") if isinstance(inputs, dict) else None
+    if isinstance(maybe_call_kwargs, dict):
+        call_kwargs.update(maybe_call_kwargs)
+
+    desired = call_kwargs.get("max_evals", 0) or 0
+    max_evals = max(int(desired), int(min_needed))
+    call_kwargs["max_evals"] = max_evals
+
+    explainer = shap.Explainer(predict_fn, masker, silent=True)
+    shap_values = explainer(X_clean.cpu(), **call_kwargs)
+
+    batch_size = inputs["input_ids"].shape[0]
+    # Pasar text_len y original_texts para que compute_mm_score use el texto original cuando esté disponible
+    mm_scores = [
+        compute_mm_score(
+            shap_values,
+            model.tokenizer,
+            inputs,
+            i=i,
+            text_length=text_len,
+            original_text=original_text if original_text else None
+        )
+        for i in range(batch_size)
+    ]
+    iscores = [compute_iscore(shap_values, inputs, i=i, text_length=text_len) for i in range(batch_size)]
+
+    return shap_values, mm_scores, iscores, text_len
 
