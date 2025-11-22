@@ -42,6 +42,9 @@ class VQAMed2019Dataset(DatasetBase):
         self.zip_path = zip_path
         self.split = split
         
+        # Inicializar candidates_per_cat como dict vacío
+        self.candidates_per_cat = {}
+        
         # Inferir images_subdir si no se proporciona
         # Nota: El ZIP puede tener un directorio raíz, así que buscamos en cualquier ubicación
         if images_subdir is None:
@@ -350,16 +353,23 @@ class VQAMed2019Dataset(DatasetBase):
         candidates_by_category = defaultdict(set)
         
         for sample in self.samples:
-            category = sample['category']
-            answer = sample['answer']
-            # Agregar respuesta a los candidatos de su categoría
-            candidates_by_category[category].add(answer)
+            category = sample.get('category')
+            answer = sample.get('answer')
+            if category and answer:
+                # Agregar respuesta a los candidatos de su categoría
+                candidates_by_category[category].add(answer)
         
         # Convertir sets a listas ordenadas
         self.candidates_per_cat = {
             category: sorted(list(answers))
             for category, answers in candidates_by_category.items()
         }
+        
+        # Debug: mostrar estadísticas
+        if self.candidates_per_cat:
+            print(f"📊 Candidatos construidos por categoría:")
+            for cat, cands in self.candidates_per_cat.items():
+                print(f"   {cat}: {len(cands)} candidatos")
         
         return self.candidates_per_cat
     
@@ -374,7 +384,17 @@ class VQAMed2019Dataset(DatasetBase):
         question_id = sample['question_id']
         
         # Obtener candidatos para esta categoría (no globales, solo de esta categoría)
+        # Asegurar que candidates_per_cat esté inicializado
+        if not hasattr(self, 'candidates_per_cat') or self.candidates_per_cat is None:
+            self._build_candidates_by_category()
+        
         candidates = self.candidates_per_cat.get(category, [])
+        
+        # Debug si no hay candidatos
+        if not candidates:
+            print(f"⚠️  Advertencia: No se encontraron candidatos para categoría '{category}'")
+            print(f"   Categorías disponibles: {list(self.candidates_per_cat.keys())}")
+            print(f"   Total muestras: {len(self.samples)}")
         
         # Intentar encontrar la imagen asociada
         image_path = None
