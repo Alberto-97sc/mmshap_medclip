@@ -309,12 +309,14 @@ class VQAMed2019Dataset(DatasetBase):
             
             # Construir candidatos por categoría
             # Esto inicializa self.candidates_per_cat
+            print(f"📊 Construyendo candidatos... Total muestras: {len(self.samples)}")
             self._build_candidates_by_category()
             
             # Limitar número de muestras si se especifica
             if n_rows != "all":
                 self.samples = self.samples[:int(n_rows)]
                 # Reconstruir candidatos después de limitar muestras
+                print(f"📊 Reconstruyendo candidatos después de limitar a {n_rows} muestras...")
                 self._build_candidates_by_category()
         finally:
             # Cerrar el zip si fue abierto
@@ -366,10 +368,17 @@ class VQAMed2019Dataset(DatasetBase):
         }
         
         # Debug: mostrar estadísticas
+        print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras...")
         if self.candidates_per_cat:
             print(f"📊 Candidatos construidos por categoría:")
             for cat, cands in self.candidates_per_cat.items():
                 print(f"   {cat}: {len(cands)} candidatos")
+                if len(cands) <= 10:
+                    print(f"      Ejemplos: {cands[:5]}")
+        else:
+            print(f"⚠️  ADVERTENCIA: No se construyeron candidatos. Muestras: {len(self.samples)}")
+            if self.samples:
+                print(f"   Primera muestra: {self.samples[0]}")
         
         return self.candidates_per_cat
     
