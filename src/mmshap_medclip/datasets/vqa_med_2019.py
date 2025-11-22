@@ -168,32 +168,29 @@ class VQAMed2019Dataset(DatasetBase):
                         qa_file = name
                         break
             
-            # Estrategia 4: Buscar archivos por categoría y combinarlos
-            # Si no hay All_QA_Pairs, buscar archivos C1_Modality_train.txt, C2_Plane_val.txt, etc.
+            # Estrategia 4: Buscar archivos QAPairsByCategory (C1_Modality_*, C2_Plane_*, etc.)
+            # Priorizar archivos por categoría sobre All_QA_Pairs
             category_files = []
-            if qa_file is None:
-                for name in all_txt_files:
-                    basename = os.path.basename(name)
-                    # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_val.txt, etc.
-                    # Buscar por split (train, val, test) o por número de categoría
-                    if (basename.startswith("C") and 
-                        any(cat in basename.lower() for cat in ["modality", "plane", "organ", "abnormality"])):
-                        # Verificar si coincide con el split (train/val/test)
-                        basename_lower = basename.lower()
-                        split_match = (
-                            split_lower in basename_lower or
-                            ("train" in basename_lower and split_lower in ["training", "train"]) or
-                            ("val" in basename_lower and split_lower == "validation") or
-                            ("test" in basename_lower and split_lower == "test")
-                        )
-                        if split_match:
-                            category_files.append(name)
-                
-                if category_files:
-                    # Si encontramos archivos por categoría, los usaremos más adelante
-                    # Por ahora, usamos el primero como referencia
-                    qa_file = category_files[0]
-                    print(f"⚠️  No se encontró All_QA_Pairs, usando archivos por categoría: {category_files}")
+            for name in all_txt_files:
+                basename = os.path.basename(name)
+                # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_val.txt, etc.
+                # Verificar formato C1_*, C2_*, C3_*, C4_*
+                if basename.startswith("C") and len(basename) > 1:
+                    # Verificar si coincide con el split (train/val/test)
+                    basename_lower = basename.lower()
+                    split_match = (
+                        split_lower in basename_lower or
+                        ("train" in basename_lower and split_lower in ["training", "train"]) or
+                        ("val" in basename_lower and split_lower == "validation") or
+                        ("test" in basename_lower and split_lower == "test")
+                    )
+                    if split_match:
+                        category_files.append(name)
+            
+            # Si encontramos archivos por categoría, usarlos en lugar de All_QA_Pairs
+            if category_files:
+                qa_file = None  # Forzar uso de archivos por categoría
+                print(f"📁 Usando archivos por categoría: {len(category_files)} archivos encontrados")
             
             if qa_file is None:
                 # Mostrar todos los archivos disponibles para debugging
@@ -213,110 +210,69 @@ class VQAMed2019Dataset(DatasetBase):
                 raise FileNotFoundError(error_msg)
             
             # Leer archivo(s) de QA pairs
-            # Si encontramos archivos por categoría, leer todos y combinarlos
-            files_to_read = [qa_file]
-            if category_files and qa_file in category_files:
-                # Si qa_file es uno de los archivos de categoría, leer todos
-                files_to_read = category_files
+            # Priorizar archivos por categoría si existen
+            files_to_read = category_files if category_files else ([qa_file] if qa_file else [])
             
-            # Formato esperado: QID\tQuestion\tAnswer\t[ImageFilename] (o variaciones)
+            if not files_to_read:
+                raise FileNotFoundError("No se encontraron archivos de QA pairs para leer")
+            
+            # Formato esperado: image_id|question|answer
             self.samples = []
-            image_map = {}  # question_id -> image_filename
             
             for file_to_read in files_to_read:
+                # Inferir categoría desde el nombre del archivo
+                basename = os.path.basename(file_to_read).lower()
+                category = None
+                
+                if "c1" in basename or "modality" in basename:
+                    category = "modality"
+                elif "c2" in basename or "plane" in basename:
+                    category = "plane"
+                elif "c3" in basename or "organ" in basename:
+                    category = "organ_system"
+                elif "c4" in basename or "abnormality" in basename:
+                    category = "abnormality"
+                
+                if category is None:
+                    # Si no se puede inferir desde el nombre, saltar este archivo
+                    print(f"⚠️  Advertencia: No se pudo inferir categoría desde {file_to_read}, saltando...")
+                    continue
+                
                 with zf.open(file_to_read) as f:
                     for line_num, line in enumerate(f, 1):
                         line = line.decode('utf-8').strip()
                         if not line:
                             continue
                         
-                        # Intentar separar por tab primero (formato más común en datasets VQA)
-                        parts = line.split('\t')
-                        
-                        q_id = None
-                        question = None
-                        answer = None
-                        image_filename = None
-                        
-                        if len(parts) >= 3:
-                            # Formato: QID\tQuestion\tAnswer\t[ImageFilename]
-                            q_id = parts[0].strip()
+                        # Parsear formato: image_id|question|answer
+                        try:
+                            parts = line.split("|")
+                            if len(parts) != 3:
+                                if line_num <= 5:
+                                    print(f"⚠️  Advertencia: Línea {line_num} no tiene formato image_id|question|answer: {line[:80]}")
+                                continue
+                            
+                            image_id = parts[0].strip()
                             question = parts[1].strip()
                             answer = parts[2].strip()
                             
-                            # Si hay 4 o más partes, la última puede ser el nombre de imagen
-                            if len(parts) >= 4:
-                                image_filename = parts[3].strip()
-                        elif len(parts) == 2:
-                            # Formato alternativo: QID\tQuestion|Answer
-                            q_id = parts[0].strip()
-                            rest = parts[1].strip()
-                            # Intentar separar pregunta y respuesta por '|' o por posición de '?'
-                            if '|' in rest:
-                                question, answer = rest.split('|', 1)
-                                question = question.strip()
-                                answer = answer.strip()
-                            elif '?' in rest:
-                                # Si hay signo de interrogación, separar ahí
-                                q_parts = rest.split('?', 1)
-                                question = q_parts[0].strip() + '?'
-                                answer = q_parts[1].strip() if len(q_parts) > 1 else "unknown"
-                            else:
-                                # Si no hay separador claro, asumir que todo es pregunta
-                                question = rest
-                                answer = "unknown"
-                        elif len(parts) == 1:
-                            # Formato con espacios o sin separadores claros
-                            # Intentar separar por espacios: QID Question Answer
-                            parts_space = line.split(None, 2)  # Máximo 3 partes
-                            if len(parts_space) >= 3:
-                                q_id = parts_space[0].strip()
-                                question = parts_space[1].strip()
-                                answer = parts_space[2].strip()
-                            elif len(parts_space) == 2:
-                                q_id = parts_space[0].strip()
-                                rest = parts_space[1].strip()
-                                if '?' in rest:
-                                    q_parts = rest.split('?', 1)
-                                    question = q_parts[0].strip() + '?'
-                                    answer = q_parts[1].strip() if len(q_parts) > 1 else "unknown"
-                                else:
-                                    question = rest
-                                    answer = "unknown"
-                        
-                        # Validar que tenemos los campos mínimos
-                        if not q_id or not question or not answer:
-                            # Saltar líneas que no se pueden parsear
-                            if line_num <= 5:  # Solo mostrar advertencia para las primeras líneas
-                                print(f"⚠️  Advertencia: No se pudo parsear la línea {line_num}: {line[:80]}")
+                            # Validar que tenemos los campos mínimos
+                            if not image_id or not question or not answer:
+                                if line_num <= 5:
+                                    print(f"⚠️  Advertencia: Campos vacíos en línea {line_num}: {line[:80]}")
+                                continue
+                            
+                            self.samples.append({
+                                'question_id': image_id,  # Usar image_id como question_id
+                                'question': question,
+                                'answer': answer,
+                                'category': category,  # Categoría desde nombre de archivo
+                                'image_filename': image_id  # image_id es el nombre de la imagen
+                            })
+                        except Exception as e:
+                            if line_num <= 5:
+                                print(f"⚠️  Error parseando línea {line_num}: {e} - {line[:80]}")
                             continue
-                        
-                        # Guardar imagen si se encontró
-                        if image_filename:
-                            image_map[q_id] = image_filename
-                        
-                        # Inferir categoría de la pregunta
-                        # Si estamos leyendo archivos por categoría, intentar inferir desde el nombre del archivo
-                        category = self._infer_category(question)
-                        if category_files and file_to_read in category_files:
-                            # Intentar inferir categoría desde el nombre del archivo
-                            basename = os.path.basename(file_to_read).lower()
-                            if "modality" in basename or "c1" in basename:
-                                category = "modality"
-                            elif "plane" in basename or "c2" in basename:
-                                category = "plane"
-                            elif "organ" in basename or "c3" in basename:
-                                category = "organ_system"
-                            elif "abnormality" in basename or "c4" in basename:
-                                category = "abnormality"
-                        
-                        self.samples.append({
-                            'question_id': q_id,
-                            'question': question,
-                            'answer': answer,
-                            'category': category,
-                            'image_filename': image_map.get(q_id)  # Puede ser None
-                        })
             
             # Construir índice de imágenes (basename -> ruta completa)
             # Buscar en cualquier ubicación, pero priorizar el subdirectorio correcto
@@ -337,51 +293,42 @@ class VQAMed2019Dataset(DatasetBase):
             self._name_to_path = {k: v[1] for k, v in self._name_to_path.items()}
             
             # Construir candidatos por categoría
-            self._candidates_by_category = self._build_candidates_by_category()
+            # Esto inicializa self.candidates_per_cat
+            self._build_candidates_by_category()
             
             # Limitar número de muestras si se especifica
             if n_rows != "all":
                 self.samples = self.samples[:int(n_rows)]
+                # Reconstruir candidatos después de limitar muestras
+                self._build_candidates_by_category()
         finally:
             # Cerrar el zip si fue abierto
             if zf:
                 zf.close()
     
-    def _infer_category(self, question: str) -> str:
+    def _infer_category_from_filename(self, filename: str) -> str:
         """
-        Infiere la categoría de la pregunta analizando su texto.
+        Infiere la categoría desde el nombre del archivo.
         
         Categorías según VQA-Med 2019:
-        - C1_Modality → modality
-        - C2_Plane → plane
-        - C3_Organ → organ_system
-        - C4_Abnormality → abnormality
+        - C1_Modality_* → "modality"
+        - C2_Plane_* → "plane"
+        - C3_Organ_* → "organ_system"
+        - C4_Abnormality_* → "abnormality"
         """
-        question_lower = question.lower()
+        basename = os.path.basename(filename).lower()
         
-        # Buscar palabras clave para cada categoría
-        # Modality: tipo de modalidad (X-ray, CT, MRI, etc.)
-        modality_keywords = ["modality", "x-ray", "xray", "ct scan", "mri", "ultrasound", "pet", "spect"]
-        if any(kw in question_lower for kw in modality_keywords):
+        if "c1" in basename or "modality" in basename:
             return "modality"
-        
-        # Plane: plano de la imagen (axial, sagittal, coronal, etc.)
-        plane_keywords = ["plane", "axial", "sagittal", "coronal", "transverse", "frontal"]
-        if any(kw in question_lower for kw in plane_keywords):
+        elif "c2" in basename or "plane" in basename:
             return "plane"
-        
-        # Organ: sistema de órganos
-        organ_keywords = ["organ", "system", "lung", "heart", "liver", "kidney", "brain", "chest", "abdomen"]
-        if any(kw in question_lower for kw in organ_keywords):
+        elif "c3" in basename or "organ" in basename:
             return "organ_system"
-        
-        # Abnormality: anormalidades o patologías
-        abnormality_keywords = ["abnormality", "abnormal", "disease", "pathology", "lesion", "tumor", "fracture", "pneumonia"]
-        if any(kw in question_lower for kw in abnormality_keywords):
+        elif "c4" in basename or "abnormality" in basename:
             return "abnormality"
         
-        # Categoría por defecto si no se puede inferir
-        return "other"
+        # No usar "other", lanzar error si no se puede inferir
+        raise ValueError(f"No se pudo inferir categoría desde el nombre de archivo: {filename}")
     
     def _build_candidates_by_category(self) -> Dict[str, List[str]]:
         """
@@ -393,13 +340,16 @@ class VQAMed2019Dataset(DatasetBase):
         for sample in self.samples:
             category = sample['category']
             answer = sample['answer']
+            # Agregar respuesta a los candidatos de su categoría
             candidates_by_category[category].add(answer)
         
         # Convertir sets a listas ordenadas
-        return {
+        self.candidates_per_cat = {
             category: sorted(list(answers))
             for category, answers in candidates_by_category.items()
         }
+        
+        return self.candidates_per_cat
     
     def __len__(self):
         return len(self.samples)
@@ -411,8 +361,8 @@ class VQAMed2019Dataset(DatasetBase):
         category = sample['category']
         question_id = sample['question_id']
         
-        # Obtener candidatos para esta categoría
-        candidates = self._candidates_by_category.get(category, [])
+        # Obtener candidatos para esta categoría (no globales, solo de esta categoría)
+        candidates = self.candidates_per_cat.get(category, [])
         
         # Intentar encontrar la imagen asociada
         image_path = None

@@ -210,9 +210,18 @@ class VQAPredictor:
                 )
                 
                 # Extraer similitudes
-                similarities = logits_batch.squeeze().cpu()
+                # logits_batch tiene forma [B, 1] donde B es el número de candidatos
+                similarities = logits_batch.squeeze(-1).cpu()  # [B] - quitar la dimensión 1
+                
+                # Asegurar que similarities sea 1D
                 if similarities.ndim == 0:
                     similarities = similarities.unsqueeze(0)
+                elif similarities.ndim > 1:
+                    # Si por alguna razón es 2D, aplanarlo
+                    similarities = similarities.flatten()
+                
+                # Convertir a numpy para evitar problemas con .item()
+                similarities_np = similarities.numpy()
                 
                 # Determinar qué logit retornar
                 if self.target_logit == "correct" and self.answer_correct is not None:
@@ -222,15 +231,21 @@ class VQAPredictor:
                             i for i, cand in enumerate(self.candidates)
                             if cand.lower().strip() == self.answer_correct.lower().strip()
                         )
-                        target_logit_value = float(similarities[correct_idx].item())
-                    except StopIteration:
+                        # Asegurar que correct_idx esté dentro del rango
+                        if 0 <= correct_idx < len(similarities_np):
+                            target_logit_value = float(similarities_np[correct_idx])
+                        else:
+                            # Si el índice está fuera de rango, usar el predicho
+                            pred_idx = int(np.argmax(similarities_np))
+                            target_logit_value = float(similarities_np[pred_idx])
+                    except (StopIteration, IndexError):
                         # Si no se encuentra, usar el predicho
-                        pred_idx = int(torch.argmax(similarities).item())
-                        target_logit_value = float(similarities[pred_idx].item())
+                        pred_idx = int(np.argmax(similarities_np))
+                        target_logit_value = float(similarities_np[pred_idx])
                 else:
                     # Usar el predicho (mayor similitud)
-                    pred_idx = int(torch.argmax(similarities).item())
-                    target_logit_value = float(similarities[pred_idx].item())
+                    pred_idx = int(np.argmax(similarities_np))
+                    target_logit_value = float(similarities_np[pred_idx])
                 
                 out[i] = target_logit_value
 

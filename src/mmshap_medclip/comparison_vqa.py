@@ -133,10 +133,22 @@ def run_vqa_shap_on_models(
                 correct_str = "✅" if correct else "❌" if correct is False else "?"
                 print(f"✅ {model_name}: Predicción={prediction} {correct_str} | TScore={tscore:.2%} | IScore={iscore:.2%}")
 
+            # Limpiar memoria GPU después de cada modelo
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+                # Forzar sincronización para liberar memoria inmediatamente
+                torch.cuda.synchronize()
+
         except Exception as e:
             if verbose:
                 print(f"❌ Error en {model_name}: {e}")
+                import traceback
+                traceback.print_exc()
             results[model_name] = None
+            
+            # Limpiar memoria GPU incluso si hay error
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
 
     if verbose:
         print(f"\n{'='*60}\n")
