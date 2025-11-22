@@ -166,17 +166,22 @@ class VQAMed2019Dataset(DatasetBase):
                         self.zip_root_prefix = parts[0] + '/'
                         print(f"📂 Detectado prefijo de directorio en ZIP: {self.zip_root_prefix}")
             
-            # PRIORIDAD 1: Buscar archivos QAPairsByCategory (C1_Modality_*, C2_Plane_*, etc.)
+            # PRIORIDAD 1: Buscar archivos QAPairsByCategory (C1_Modality_*, C2_Plane_*, C3_Organ_*)
+            # IGNORAR C4_Abnormality_* completamente
             # Estos archivos tienen prioridad sobre All_QA_Pairs
             category_files = []
             for name in all_txt_files:
                 basename = os.path.basename(name)
                 # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_val.txt, etc.
-                # Verificar formato C1_*, C2_*, C3_*, C4_*
+                # Verificar formato C1_*, C2_*, C3_* (IGNORAR C4_*)
                 # También verificar que estén en QAPairsByCategory o que el basename empiece con C
                 if basename.startswith("C") and len(basename) > 1:
-                    # Verificar si coincide con el split (train/val/test)
+                    # IGNORAR archivos de abnormality (C4_*)
                     basename_lower = basename.lower()
+                    if "c4" in basename_lower or "abnormality" in basename_lower:
+                        continue  # Saltar archivos de abnormality
+                    
+                    # Verificar si coincide con el split (train/val/test)
                     # Normalizar split_lower para matching
                     split_normalized = split_lower
                     if split_lower in ["training", "train"]:
@@ -264,7 +269,8 @@ class VQAMed2019Dataset(DatasetBase):
                 elif "c3" in basename or "organ" in basename:
                     category = "organ_system"
                 elif "c4" in basename or "abnormality" in basename:
-                    category = "abnormality"
+                    # IGNORAR archivos de abnormality completamente
+                    continue
                 
                 if category is None:
                     # Si no se puede inferir desde el nombre, saltar este archivo
@@ -369,12 +375,16 @@ class VQAMed2019Dataset(DatasetBase):
         """
         Construye la lista de candidatos válidos por categoría.
         Todas las respuestas únicas de esa categoría dentro del split.
+        IGNORA la categoría "abnormality" completamente.
         """
         candidates_by_category = defaultdict(set)
         
         for sample in self.samples:
             category = sample.get('category')
             answer = sample.get('answer')
+            # IGNORAR muestras de abnormality
+            if category == "abnormality":
+                continue
             if category and answer:
                 # Agregar respuesta a los candidatos de su categoría
                 candidates_by_category[category].add(answer)
