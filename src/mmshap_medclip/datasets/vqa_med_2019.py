@@ -64,7 +64,8 @@ class VQAMed2019Dataset(DatasetBase):
         
         # Verificar si es el zip padre
         zip_basename = os.path.basename(zip_path).lower()
-        if "vqa-med-2019.zip" in zip_basename and zip_basename.endswith(".zip"):
+        # Detectar si es el zip padre (VQA-Med-2019.zip)
+        if "vqa-med-2019" in zip_basename and zip_basename.endswith(".zip"):
             self.is_nested_zip = True
             # Determinar el nombre del zip hijo según el split
             if split.lower() in ["training", "train"]:
