@@ -161,98 +161,98 @@ class VQAMed2019Dataset(DatasetBase):
             
             for file_to_read in files_to_read:
                 with zf.open(file_to_read) as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.decode('utf-8').strip()
-                    if not line:
-                        continue
-                    
-                    # Intentar separar por tab primero (formato más común en datasets VQA)
-                    parts = line.split('\t')
-                    
-                    q_id = None
-                    question = None
-                    answer = None
-                    image_filename = None
-                    
-                    if len(parts) >= 3:
-                        # Formato: QID\tQuestion\tAnswer\t[ImageFilename]
-                        q_id = parts[0].strip()
-                        question = parts[1].strip()
-                        answer = parts[2].strip()
+                    for line_num, line in enumerate(f, 1):
+                        line = line.decode('utf-8').strip()
+                        if not line:
+                            continue
                         
-                        # Si hay 4 o más partes, la última puede ser el nombre de imagen
-                        if len(parts) >= 4:
-                            image_filename = parts[3].strip()
-                    elif len(parts) == 2:
-                        # Formato alternativo: QID\tQuestion|Answer
-                        q_id = parts[0].strip()
-                        rest = parts[1].strip()
-                        # Intentar separar pregunta y respuesta por '|' o por posición de '?'
-                        if '|' in rest:
-                            question, answer = rest.split('|', 1)
-                            question = question.strip()
-                            answer = answer.strip()
-                        elif '?' in rest:
-                            # Si hay signo de interrogación, separar ahí
-                            q_parts = rest.split('?', 1)
-                            question = q_parts[0].strip() + '?'
-                            answer = q_parts[1].strip() if len(q_parts) > 1 else "unknown"
-                        else:
-                            # Si no hay separador claro, asumir que todo es pregunta
-                            question = rest
-                            answer = "unknown"
-                    elif len(parts) == 1:
-                        # Formato con espacios o sin separadores claros
-                        # Intentar separar por espacios: QID Question Answer
-                        parts_space = line.split(None, 2)  # Máximo 3 partes
-                        if len(parts_space) >= 3:
-                            q_id = parts_space[0].strip()
-                            question = parts_space[1].strip()
-                            answer = parts_space[2].strip()
-                        elif len(parts_space) == 2:
-                            q_id = parts_space[0].strip()
-                            rest = parts_space[1].strip()
-                            if '?' in rest:
+                        # Intentar separar por tab primero (formato más común en datasets VQA)
+                        parts = line.split('\t')
+                        
+                        q_id = None
+                        question = None
+                        answer = None
+                        image_filename = None
+                        
+                        if len(parts) >= 3:
+                            # Formato: QID\tQuestion\tAnswer\t[ImageFilename]
+                            q_id = parts[0].strip()
+                            question = parts[1].strip()
+                            answer = parts[2].strip()
+                            
+                            # Si hay 4 o más partes, la última puede ser el nombre de imagen
+                            if len(parts) >= 4:
+                                image_filename = parts[3].strip()
+                        elif len(parts) == 2:
+                            # Formato alternativo: QID\tQuestion|Answer
+                            q_id = parts[0].strip()
+                            rest = parts[1].strip()
+                            # Intentar separar pregunta y respuesta por '|' o por posición de '?'
+                            if '|' in rest:
+                                question, answer = rest.split('|', 1)
+                                question = question.strip()
+                                answer = answer.strip()
+                            elif '?' in rest:
+                                # Si hay signo de interrogación, separar ahí
                                 q_parts = rest.split('?', 1)
                                 question = q_parts[0].strip() + '?'
                                 answer = q_parts[1].strip() if len(q_parts) > 1 else "unknown"
                             else:
+                                # Si no hay separador claro, asumir que todo es pregunta
                                 question = rest
                                 answer = "unknown"
-                    
-                    # Validar que tenemos los campos mínimos
-                    if not q_id or not question or not answer:
-                        # Saltar líneas que no se pueden parsear
-                        if line_num <= 5:  # Solo mostrar advertencia para las primeras líneas
-                            print(f"⚠️  Advertencia: No se pudo parsear la línea {line_num}: {line[:80]}")
-                        continue
-                    
-                    # Guardar imagen si se encontró
-                    if image_filename:
-                        image_map[q_id] = image_filename
-                    
-                    # Inferir categoría de la pregunta
-                    # Si estamos leyendo archivos por categoría, intentar inferir desde el nombre del archivo
-                    category = self._infer_category(question)
-                    if category_files and file_to_read in category_files:
-                        # Intentar inferir categoría desde el nombre del archivo
-                        basename = os.path.basename(file_to_read).lower()
-                        if "modality" in basename or "c1" in basename:
-                            category = "modality"
-                        elif "plane" in basename or "c2" in basename:
-                            category = "plane"
-                        elif "organ" in basename or "c3" in basename:
-                            category = "organ_system"
-                        elif "abnormality" in basename or "c4" in basename:
-                            category = "abnormality"
-                    
-                    self.samples.append({
-                        'question_id': q_id,
-                        'question': question,
-                        'answer': answer,
-                        'category': category,
-                        'image_filename': image_map.get(q_id)  # Puede ser None
-                    })
+                        elif len(parts) == 1:
+                            # Formato con espacios o sin separadores claros
+                            # Intentar separar por espacios: QID Question Answer
+                            parts_space = line.split(None, 2)  # Máximo 3 partes
+                            if len(parts_space) >= 3:
+                                q_id = parts_space[0].strip()
+                                question = parts_space[1].strip()
+                                answer = parts_space[2].strip()
+                            elif len(parts_space) == 2:
+                                q_id = parts_space[0].strip()
+                                rest = parts_space[1].strip()
+                                if '?' in rest:
+                                    q_parts = rest.split('?', 1)
+                                    question = q_parts[0].strip() + '?'
+                                    answer = q_parts[1].strip() if len(q_parts) > 1 else "unknown"
+                                else:
+                                    question = rest
+                                    answer = "unknown"
+                        
+                        # Validar que tenemos los campos mínimos
+                        if not q_id or not question or not answer:
+                            # Saltar líneas que no se pueden parsear
+                            if line_num <= 5:  # Solo mostrar advertencia para las primeras líneas
+                                print(f"⚠️  Advertencia: No se pudo parsear la línea {line_num}: {line[:80]}")
+                            continue
+                        
+                        # Guardar imagen si se encontró
+                        if image_filename:
+                            image_map[q_id] = image_filename
+                        
+                        # Inferir categoría de la pregunta
+                        # Si estamos leyendo archivos por categoría, intentar inferir desde el nombre del archivo
+                        category = self._infer_category(question)
+                        if category_files and file_to_read in category_files:
+                            # Intentar inferir categoría desde el nombre del archivo
+                            basename = os.path.basename(file_to_read).lower()
+                            if "modality" in basename or "c1" in basename:
+                                category = "modality"
+                            elif "plane" in basename or "c2" in basename:
+                                category = "plane"
+                            elif "organ" in basename or "c3" in basename:
+                                category = "organ_system"
+                            elif "abnormality" in basename or "c4" in basename:
+                                category = "abnormality"
+                        
+                        self.samples.append({
+                            'question_id': q_id,
+                            'question': question,
+                            'answer': answer,
+                            'category': category,
+                            'image_filename': image_map.get(q_id)  # Puede ser None
+                        })
             
             # Construir índice de imágenes (basename -> ruta completa)
             # Buscar en cualquier ubicación, pero priorizar el subdirectorio correcto
