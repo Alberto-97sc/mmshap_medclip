@@ -26,6 +26,8 @@ class VQAMed2019Dataset(DatasetBase):
     Infiere categorías desde el nombre del archivo y construye candidatos por categoría.
     """
     
+    VALID_CATEGORIES = {"modality", "plane", "organ_system"}
+
     def __init__(
         self,
         zip_path: str,
@@ -353,6 +355,8 @@ class VQAMed2019Dataset(DatasetBase):
             # Esto inicializa self.candidates_per_cat
             print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras del split TRAINING...")
             self._build_candidates_by_category()
+            self._filter_samples_without_candidates()
+            self._build_candidates_by_category()
             
             # Limitar número de muestras si se especifica
             if n_rows != "all":
@@ -360,28 +364,8 @@ class VQAMed2019Dataset(DatasetBase):
                 # Reconstruir candidatos después de limitar muestras
                 print(f"📊 Reconstruyendo candidatos después de limitar a {n_rows} muestras...")
                 self._build_candidates_by_category()
-            
-            # Verificar que todas las muestras tienen categorías válidas con candidatos
-            # ANTES de devolver cualquier muestra, verificar que sample["category"] exista en candidates_per_cat
-            samples_to_remove = []
-            for idx, sample in enumerate(self.samples):
-                category = sample.get('category')
-                if category not in self.candidates_per_cat:
-                    print(f"⚠️  ADVERTENCIA: Muestra {idx} tiene categoría '{category}' que no existe en candidates_per_cat")
-                    print(f"   - image_id: {sample.get('question_id', 'N/A')}")
-                    print(f"   - question: {sample.get('question', 'N/A')[:80]}...")
-                    print(f"   - answer: {sample.get('answer', 'N/A')}")
-                    print(f"   Categorías disponibles: {sorted(self.candidates_per_cat.keys())}")
-                    samples_to_remove.append(idx)
-            
-            # Remover muestras sin categorías válidas (en orden inverso para no afectar índices)
-            if samples_to_remove:
-                print(f"⚠️  Removiendo {len(samples_to_remove)} muestras sin categorías válidas...")
-                for idx in reversed(samples_to_remove):
-                    self.samples.pop(idx)
-                # Reconstruir candidatos después de remover muestras inválidas
+                self._filter_samples_without_candidates()
                 self._build_candidates_by_category()
-                print(f"✅ Dataset final: {len(self.samples)} muestras válidas")
         finally:
             # Cerrar el zip si fue abierto
             if zf:
@@ -435,12 +419,12 @@ class VQAMed2019Dataset(DatasetBase):
             for category, answers in candidates_by_category.items()
         }
         
-        # Debug: mostrar estadísticas
+        # Debug: mostrar estadísticas y resumen solicitado
         print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras...")
         if self.candidates_per_cat:
-            print(f"📊 Candidatos construidos por categoría:")
+            print("Resumen de candidatos por categoría:")
             for cat, cands in self.candidates_per_cat.items():
-                print(f"   {cat}: {len(cands)} candidatos")
+                print(f"  - {cat}: {len(cands)} candidatos")
                 if len(cands) <= 10:
                     print(f"      Ejemplos: {cands[:5]}")
         else:
@@ -465,6 +449,23 @@ class VQAMed2019Dataset(DatasetBase):
                 print(f"⚠️  ADVERTENCIA: Categorías en candidates_per_cat pero no en samples: {sorted(missing_in_samples)}")
         
         return self.candidates_per_cat
+
+    def _filter_samples_without_candidates(self) -> None:
+        """
+        Elimina cualquier muestra cuya categoría no tenga candidatos disponibles.
+        """
+        filtered_samples = []
+        for sample in self.samples:
+            cat = sample.get("category")
+            if cat not in self.candidates_per_cat or len(self.candidates_per_cat[cat]) == 0:
+                answer = sample.get("answer")
+                print(f"⚠️ Eliminando muestra sin candidatos: cat={cat}, answer={answer}")
+                continue
+            if cat not in self.VALID_CATEGORIES:
+                print(f"⚠️ Eliminando muestra con categoría inválida: cat={cat}")
+                continue
+            filtered_samples.append(sample)
+        self.samples = filtered_samples
     
     def __len__(self):
         return len(self.samples)
@@ -473,11 +474,18 @@ class VQAMed2019Dataset(DatasetBase):
         sample = self.samples[idx]
         question = sample['question']
         answer = sample['answer']
-        # SIEMPRE asignar category y candidates como se especifica
-        # La categoría ya debería estar normalizada al construir samples
-        category = sample.get('category', '').strip()
-        question_id = sample.get('question_id', '')
-        image_filename = sample.get('image_filename', '')
+        category = sample.get('category')
+        if not category:
+            raise ValueError(f"Muestra {idx} carece de categoría válida.")
+        category = category.strip()
+        if category not in self.VALID_CATEGORIES:
+            raise ValueError(
+                f"Muestra {idx} tiene categoría '{category}' fuera del conjunto permitido {sorted(self.VALID_CATEGORIES)}."
+            )
+        question_id = sample.get('question_id')
+        if not question_id:
+            raise ValueError(f"Muestra {idx} carece de question_id.")
+        image_filename = sample.get('image_filename')
         
         # Asegurar que candidates_per_cat esté inicializado
         if not hasattr(self, 'candidates_per_cat') or self.candidates_per_cat is None:
@@ -490,32 +498,16 @@ class VQAMed2019Dataset(DatasetBase):
             print(f"   - question: {question[:80]}...")
             print(f"   - answer: {answer}")
             print(f"   Categorías disponibles: {sorted(self.candidates_per_cat.keys())}")
-            # Descartar esta muestra con un warning (no debería llegar aquí si el filtrado funcionó)
             raise ValueError(
                 f"Muestra {idx} (image_id={question_id}) tiene categoría '{category}' que no existe en candidates_per_cat. "
                 f"Esta muestra debería haber sido filtrada durante la construcción del dataset. "
                 f"Categorías disponibles: {sorted(self.candidates_per_cat.keys())}"
             )
         
-        # Obtener candidatos para esta categoría (no globales, solo de esta categoría)
-        candidates = self.candidates_per_cat.get(category, [])
-        
-        # Verificación final: si no hay candidatos, esto es un error crítico
+        candidates = self.candidates_per_cat.get(category)
         if not candidates:
-            print(f"⚠️  ADVERTENCIA CRÍTICA: No se encontraron candidatos para categoría '{category}'")
-            print(f"   Muestra idx={idx}:")
-            print(f"   - image_id: {question_id}")
-            print(f"   - question: {question[:80]}...")
-            print(f"   - category: '{category}'")
-            print(f"   - answer: {answer}")
-            print(f"   Categorías disponibles en candidates_per_cat: {sorted(self.candidates_per_cat.keys())}")
-            print(f"   Total muestras en dataset: {len(self.samples)}")
-            # Esta muestra no debería estar en el dataset si no tiene candidatos
-            # Lanzar error para que el código que llama pueda manejarlo
             raise ValueError(
-                f"Muestra {idx} (image_id={question_id}) tiene categoría '{category}' sin candidatos. "
-                f"Esto indica un problema en la construcción del dataset. "
-                f"Categorías disponibles: {sorted(self.candidates_per_cat.keys())}"
+                f"Dataset inconsistente: categoría {category} no tiene candidatos."
             )
         
         # Intentar encontrar la imagen asociada
