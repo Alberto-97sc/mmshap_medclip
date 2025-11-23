@@ -103,6 +103,31 @@ class VQAMed2019Dataset(DatasetBase):
         # Por ejemplo: "ImageClef-2019-VQA-Med-Validation/"
         self.zip_root_prefix = None
         
+        # Identificar el split desde el nombre del directorio/archivo
+        # Si el path contiene "ImageClef-2019-VQA-Med-Training" → usar solo *train.txt
+        # Si contiene "ImageClef-2019-VQA-Med-Validation" → usar solo *val.txt
+        self.detected_split = None
+        split_lower = split.lower()
+        if split_lower in ["training", "train"]:
+            self.detected_split = "train"
+        elif split_lower == "validation":
+            self.detected_split = "val"
+        elif split_lower == "test":
+            self.detected_split = "test"
+        else:
+            # Intentar inferir desde el split
+            if "train" in split_lower:
+                self.detected_split = "train"
+            elif "val" in split_lower:
+                self.detected_split = "val"
+            elif "test" in split_lower:
+                self.detected_split = "test"
+        
+        if self.detected_split is None:
+            raise ValueError(f"No se pudo identificar el split desde '{split}'. Debe ser 'Training', 'Validation' o 'Test'")
+        
+        print(f"📊 Split detectado: '{split}' → '{self.detected_split}' (usará solo archivos *{self.detected_split}.txt)")
+        
         # Cargar preguntas y respuestas desde el ZIP
         # Si es un zip anidado, abrir el zip padre y luego el zip hijo
         if self.is_nested_zip:
@@ -168,35 +193,31 @@ class VQAMed2019Dataset(DatasetBase):
             
             # PRIORIDAD 1: Buscar archivos QAPairsByCategory (C1_Modality_*, C2_Plane_*, C3_Organ_*)
             # IGNORAR C4_Abnormality_* completamente
+            # FILTRAR ESTRICTAMENTE por split: solo *train.txt para Training, *val.txt para Validation
             # Estos archivos tienen prioridad sobre All_QA_Pairs
             category_files = []
             for name in all_txt_files:
                 basename = os.path.basename(name)
                 # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_val.txt, etc.
                 # Verificar formato C1_*, C2_*, C3_* (IGNORAR C4_*)
-                # También verificar que estén en QAPairsByCategory o que el basename empiece con C
                 if basename.startswith("C") and len(basename) > 1:
                     # IGNORAR archivos de abnormality (C4_*)
                     basename_lower = basename.lower()
                     if "c4" in basename_lower or "abnormality" in basename_lower:
                         continue  # Saltar archivos de abnormality
                     
-                    # Verificar si coincide con el split (train/val/test)
-                    # Normalizar split_lower para matching
-                    split_normalized = split_lower
-                    if split_lower in ["training", "train"]:
-                        split_normalized = "train"
-                    elif split_lower == "validation":
-                        split_normalized = "val"
+                    # FILTRAR ESTRICTAMENTE por split: debe terminar en *{detected_split}.txt
+                    # NO mezclar train y val bajo ningún criterio
+                    if not basename_lower.endswith(f"{self.detected_split}.txt"):
+                        continue  # Saltar archivos que no coinciden con el split
                     
-                    split_match = (
-                        split_normalized in basename_lower or
-                        ("train" in basename_lower and split_lower in ["training", "train"]) or
-                        ("val" in basename_lower and split_lower == "validation") or
-                        ("test" in basename_lower and split_lower == "test")
-                    )
-                    if split_match:
+                    # Verificar que el archivo pertenece al split correcto
+                    # Asegurar que contiene el sufijo del split en el nombre
+                    if f"_{self.detected_split}.txt" in basename_lower or f"-{self.detected_split}.txt" in basename_lower:
                         category_files.append(name)
+                    else:
+                        # Log para debugging si hay archivos que casi coinciden
+                        pass  # Silenciosamente saltar archivos que no coinciden con el split
             
             # Si encontramos archivos por categoría, usarlos (tienen prioridad)
             if category_files:
@@ -248,11 +269,36 @@ class VQAMed2019Dataset(DatasetBase):
                 raise FileNotFoundError(error_msg)
             
             # Leer archivo(s) de QA pairs
-            # Priorizar archivos por categoría si existen
-            files_to_read = category_files if category_files else ([qa_file] if qa_file else [])
+            # IMPORTANTE: Solo usar archivos que coincidan con el split detectado
+            # NO mezclar train y val bajo ningún criterio
+            files_to_read = []
+            
+            if category_files:
+                # category_files ya está filtrado por split, pero verificamos nuevamente por seguridad
+                for f in category_files:
+                    basename_lower = os.path.basename(f).lower()
+                    # Verificar que termina en {detected_split}.txt
+                    if basename_lower.endswith(f"{self.detected_split}.txt"):
+                        files_to_read.append(f)
+                    else:
+                        print(f"⚠️  Saltando archivo '{os.path.basename(f)}' (no termina en '{self.detected_split}.txt')")
+            elif qa_file:
+                # Verificar que qa_file también coincida con el split
+                basename_lower = os.path.basename(qa_file).lower()
+                if self.detected_split in basename_lower:
+                    files_to_read = [qa_file]
+                else:
+                    print(f"⚠️  Archivo All_QA_Pairs '{os.path.basename(qa_file)}' no coincide con split '{self.detected_split}'")
             
             if not files_to_read:
-                raise FileNotFoundError("No se encontraron archivos de QA pairs para leer")
+                raise FileNotFoundError(
+                    f"No se encontraron archivos de QA pairs para split '{self.detected_split}' (split original: '{split}'). "
+                    f"Archivos encontrados pero filtrados: {len(category_files) if category_files else 0} archivos de categoría"
+                )
+            
+            print(f"📁 Archivos a leer para split '{self.detected_split}': {len(files_to_read)} archivos")
+            for f in files_to_read:
+                print(f"   - {os.path.basename(f)}")
             
             # Formato esperado: image_id|question|answer
             self.samples = []
@@ -338,9 +384,9 @@ class VQAMed2019Dataset(DatasetBase):
                     self._name_to_path[base] = (score, name)
             self._name_to_path = {k: v[1] for k, v in self._name_to_path.items()}
             
-            # Construir candidatos por categoría
+            # Construir candidatos por categoría DESPUÉS de aplicar el filtrado por split y categoría
             # Esto inicializa self.candidates_per_cat
-            print(f"📊 Construyendo candidatos... Total muestras: {len(self.samples)}")
+            print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras del split '{self.detected_split}'...")
             self._build_candidates_by_category()
             
             # Limitar número de muestras si se especifica
@@ -349,6 +395,28 @@ class VQAMed2019Dataset(DatasetBase):
                 # Reconstruir candidatos después de limitar muestras
                 print(f"📊 Reconstruyendo candidatos después de limitar a {n_rows} muestras...")
                 self._build_candidates_by_category()
+            
+            # Verificar que todas las muestras tienen categorías válidas con candidatos
+            # ANTES de devolver cualquier muestra, verificar que sample["category"] exista en candidates_per_cat
+            samples_to_remove = []
+            for idx, sample in enumerate(self.samples):
+                category = sample.get('category')
+                if category not in self.candidates_per_cat:
+                    print(f"⚠️  ADVERTENCIA: Muestra {idx} tiene categoría '{category}' que no existe en candidates_per_cat")
+                    print(f"   - image_id: {sample.get('question_id', 'N/A')}")
+                    print(f"   - question: {sample.get('question', 'N/A')[:80]}...")
+                    print(f"   - answer: {sample.get('answer', 'N/A')}")
+                    print(f"   Categorías disponibles: {sorted(self.candidates_per_cat.keys())}")
+                    samples_to_remove.append(idx)
+            
+            # Remover muestras sin categorías válidas (en orden inverso para no afectar índices)
+            if samples_to_remove:
+                print(f"⚠️  Removiendo {len(samples_to_remove)} muestras sin categorías válidas...")
+                for idx in reversed(samples_to_remove):
+                    self.samples.pop(idx)
+                # Reconstruir candidatos después de remover muestras inválidas
+                self._build_candidates_by_category()
+                print(f"✅ Dataset final: {len(self.samples)} muestras válidas")
         finally:
             # Cerrar el zip si fue abierto
             if zf:
@@ -450,10 +518,24 @@ class VQAMed2019Dataset(DatasetBase):
         if not hasattr(self, 'candidates_per_cat') or self.candidates_per_cat is None:
             self._build_candidates_by_category()
         
+        # ANTES de devolver la muestra: verificar que category existe en candidates_per_cat
+        if category not in self.candidates_per_cat:
+            print(f"⚠️  ADVERTENCIA: Muestra {idx} tiene categoría '{category}' que no existe en candidates_per_cat")
+            print(f"   - image_id: {question_id}")
+            print(f"   - question: {question[:80]}...")
+            print(f"   - answer: {answer}")
+            print(f"   Categorías disponibles: {sorted(self.candidates_per_cat.keys())}")
+            # Descartar esta muestra con un warning (no debería llegar aquí si el filtrado funcionó)
+            raise ValueError(
+                f"Muestra {idx} (image_id={question_id}) tiene categoría '{category}' que no existe en candidates_per_cat. "
+                f"Esta muestra debería haber sido filtrada durante la construcción del dataset. "
+                f"Categorías disponibles: {sorted(self.candidates_per_cat.keys())}"
+            )
+        
         # Obtener candidatos para esta categoría (no globales, solo de esta categoría)
         candidates = self.candidates_per_cat.get(category, [])
         
-        # Si no hay candidatos, hacer log de advertencia con información de la muestra
+        # Verificación final: si no hay candidatos, esto es un error crítico
         if not candidates:
             print(f"⚠️  ADVERTENCIA CRÍTICA: No se encontraron candidatos para categoría '{category}'")
             print(f"   Muestra idx={idx}:")
