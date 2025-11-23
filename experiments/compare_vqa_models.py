@@ -66,9 +66,9 @@ device = get_device()
 # Construir dataset VQA-Med 2019 directamente
 # Ajusta estos parámetros según tu configuración
 dataset_params = {
-    "zip_path": "data/VQA-Med-2019.zip",  # Ruta al ZIP padre que contiene Training.zip, Validation.zip, etc.
-    "split": "Training",  # "Training", "Validation" o "Test"
-    "images_subdir": "Train_images",  # "Train_images" para Training, "Val_images" para Validation (se infiere automáticamente)
+    "zip_path": "data/VQA-Med-2019.zip",  # Ruta al ZIP padre que contiene Training.zip
+    "split": "Training",  # SOLO se soporta "Training" o "train"
+    "images_subdir": "Train_images",  # SOLO se soporta "Train_images" para el split Training
     "n_rows": "all"  # o un número para limitar muestras (ej: 100)
 }
 

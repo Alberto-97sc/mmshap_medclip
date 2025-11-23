@@ -15,49 +15,60 @@ class VQAMed2019Dataset(DatasetBase):
     """
     Dataset loader para VQA-Med 2019.
     
-    Lee archivos del ZIP ImageClef-2019-VQA-Med-Training.zip o Validation.zip:
-    - All_QA_Pairs_<split>.txt (contiene preguntas y respuestas)
-    - directorio <images_subdir>/ (por defecto Train_images/ para Training, Val_images/ para Validation)
+    SOLO soporta el split TRAINING.
+    
+    Lee archivos del ZIP ImageClef-2019-VQA-Med-Training.zip:
+    - Archivos QAPairsByCategory/*_train.txt (C1_Modality_train.txt, C2_Plane_train.txt, C3_Organ_train.txt)
+    - Directorio Train_images/
     
     También puede leer desde el ZIP padre (VQA-Med-2019.zip) que contiene los zips hijos.
     
-    Infiere categorías de preguntas y construye candidatos automáticamente.
+    Infiere categorías desde el nombre del archivo y construye candidatos por categoría.
     """
     
     def __init__(
         self,
         zip_path: str,
-        split: str = "Validation",
+        split: str = "Training",
         images_subdir: str = None,
         n_rows: str = "all"
     ):
         """
         Args:
             zip_path: Ruta al archivo ZIP del dataset (puede ser el zip padre VQA-Med-2019.zip o el zip hijo)
-            split: Split a usar ('Training', 'Validation', 'Test', etc.)
+            split: Split a usar (SOLO se soporta 'Training' o 'train')
             images_subdir: Subdirectorio dentro del ZIP donde están las imágenes
-                          Si es None, se infiere: "Train_images" para Training, "Val_images" para Validation, "Test_images" para Test
+                          Si es None, se usa "Train_images" (único soportado)
             n_rows: Número de filas a cargar ("all" o un entero)
         """
+        # FORZAR split a Training - solo se soporta training
+        split_lower = split.lower()
+        if split_lower not in ["training", "train"]:
+            raise ValueError(
+                f"El split '{split}' no está soportado. "
+                f"Este dataset solo soporta el split TRAINING. "
+                f"Especifica split='Training' o split='train'."
+            )
+        
+        # Normalizar a "Training"
+        self.split = "Training"
         self.zip_path = zip_path
-        self.split = split
         
         # Inicializar candidates_per_cat como dict vacío
         self.candidates_per_cat = {}
         
         # Inferir images_subdir si no se proporciona
-        # Nota: El ZIP puede tener un directorio raíz, así que buscamos en cualquier ubicación
+        # SOLO se soporta Train_images (split Training)
         if images_subdir is None:
-            if split.lower() == "validation":
-                self.images_subdir = "Val_images"
-            elif split.lower() == "training" or split.lower() == "train":
-                self.images_subdir = "Train_images"
-            elif split.lower() == "test":
-                self.images_subdir = "Test_images"
-            else:
-                self.images_subdir = f"{split}_images"
+            self.images_subdir = "Train_images"
         else:
             self.images_subdir = images_subdir
+            # Verificar que no se esté intentando usar Val_images u otro directorio
+            if "val" in images_subdir.lower() or "validation" in images_subdir.lower():
+                raise ValueError(
+                    f"El subdirectorio '{images_subdir}' no está soportado. "
+                    f"Este dataset solo soporta 'Train_images' para el split Training."
+                )
         
         # Detectar si el zip_path es el zip padre (VQA-Med-2019.zip) que contiene zips hijos
         # En ese caso, necesitamos abrir el zip hijo correspondiente
@@ -88,63 +99,34 @@ class VQAMed2019Dataset(DatasetBase):
             self.is_nested_zip = False
         
         if self.is_nested_zip:
-            # Determinar el nombre del zip hijo según el split
-            if split.lower() in ["training", "train"]:
-                self.inner_zip_name = "ImageClef-2019-VQA-Med-Training.zip"
-            elif split.lower() == "validation":
-                self.inner_zip_name = "ImageClef-2019-VQA-Med-Validation.zip"
-            elif split.lower() == "test":
-                self.inner_zip_name = "VQAMed2019Test.zip"
-            else:
-                # Intentar inferir desde el nombre del zip
-                self.inner_zip_name = f"ImageClef-2019-VQA-Med-{split}.zip"
+            # SOLO se soporta Training
+            self.inner_zip_name = "ImageClef-2019-VQA-Med-Training.zip"
         
         # Detectar el prefijo de directorio raíz del ZIP si existe
-        # Por ejemplo: "ImageClef-2019-VQA-Med-Validation/"
+        # Por ejemplo: "ImageClef-2019-VQA-Med-Training/"
         self.zip_root_prefix = None
         
-        # Identificar el split desde el nombre del directorio/archivo
-        # Si el path contiene "ImageClef-2019-VQA-Med-Training" → usar solo *train.txt
-        # Si contiene "ImageClef-2019-VQA-Med-Validation" → usar solo *val.txt
-        self.detected_split = None
-        split_lower = split.lower()
-        if split_lower in ["training", "train"]:
-            self.detected_split = "train"
-        elif split_lower == "validation":
-            self.detected_split = "val"
-        elif split_lower == "test":
-            self.detected_split = "test"
-        else:
-            # Intentar inferir desde el split
-            if "train" in split_lower:
-                self.detected_split = "train"
-            elif "val" in split_lower:
-                self.detected_split = "val"
-            elif "test" in split_lower:
-                self.detected_split = "test"
-        
-        if self.detected_split is None:
-            raise ValueError(f"No se pudo identificar el split desde '{split}'. Debe ser 'Training', 'Validation' o 'Test'")
-        
-        print(f"📊 Split detectado: '{split}' → '{self.detected_split}' (usará solo archivos *{self.detected_split}.txt)")
+        # SOLO se soporta Training - forzar split a "train"
+        self.detected_split = "train"
+        print(f"📊 Split: TRAINING (usará solo archivos *train.txt)")
         
         # Cargar preguntas y respuestas desde el ZIP
         # Si es un zip anidado, abrir el zip padre y luego el zip hijo
         if self.is_nested_zip:
             # Abrir el zip padre
             with zipfile.ZipFile(zip_path, "r") as parent_zip:
-                # Verificar que el zip hijo existe
+                # Verificar que el zip hijo Training existe
                 if self.inner_zip_name not in parent_zip.namelist():
-                    # Buscar con variaciones
+                    # Buscar solo Training (no validation ni test)
                     found = False
                     for name in parent_zip.namelist():
-                        if split.lower() in name.lower() and name.endswith(".zip"):
+                        if "training" in name.lower() and name.endswith(".zip"):
                             self.inner_zip_name = name
                             found = True
                             break
                     if not found:
                         raise FileNotFoundError(
-                            f"No se encontró el zip hijo para split '{split}' en {zip_path}. "
+                            f"No se encontró el zip hijo ImageClef-2019-VQA-Med-Training.zip en {zip_path}. "
                             f"Archivos disponibles: {parent_zip.namelist()[:10]}"
                         )
                 
@@ -157,29 +139,20 @@ class VQAMed2019Dataset(DatasetBase):
             zf = zipfile.ZipFile(zip_path, "r")
         
         try:
-            # Buscar archivo All_QA_Pairs_<split>.txt
-            # Para Training: All_QA_Pairs_train.txt
-            # Para Validation: All_QA_Pairs_val.txt
-            # Para Test: All_QA_Pairs_test.txt
+            # Buscar archivo All_QA_Pairs_train.txt (SOLO Training)
             qa_file = None
-            split_lower = split.lower()
             
-            # Lista de nombres posibles para el archivo (buscar en cualquier ubicación)
+            # Lista de nombres posibles para el archivo (SOLO train)
             possible_names = [
-                f"All_QA_Pairs_{split_lower}.txt",
-                f"All_QA_Pairs_val.txt",  # Para Validation
-                f"All_QA_Pairs_train.txt",  # Para Training
-                f"All_QA_Pairs_test.txt",  # Para Test
-                "All_QA_Pairs_val.txt",
                 "All_QA_Pairs_train.txt",
-                "All_QA_Pairs.txt",
+                "All_QA_Pairs_Training.txt",
             ]
             
             # También buscar en subdirectorios
             all_txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
             all_files = zf.namelist()  # Todos los archivos para debugging
             
-            # Detectar prefijo de directorio raíz del ZIP (ej: "ImageClef-2019-VQA-Med-Validation/")
+            # Detectar prefijo de directorio raíz del ZIP (ej: "ImageClef-2019-VQA-Med-Training/")
             # Buscar el directorio más común en las rutas
             if all_files:
                 # Obtener el primer directorio común
@@ -193,12 +166,12 @@ class VQAMed2019Dataset(DatasetBase):
             
             # PRIORIDAD 1: Buscar archivos QAPairsByCategory (C1_Modality_*, C2_Plane_*, C3_Organ_*)
             # IGNORAR C4_Abnormality_* completamente
-            # FILTRAR ESTRICTAMENTE por split: solo *train.txt para Training, *val.txt para Validation
+            # FILTRAR ESTRICTAMENTE por split: solo *train.txt (SOLO Training soportado)
             # Estos archivos tienen prioridad sobre All_QA_Pairs
             category_files = []
             for name in all_txt_files:
                 basename = os.path.basename(name)
-                # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_val.txt, etc.
+                # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_train.txt, C3_Organ_train.txt (SOLO train)
                 # Verificar formato C1_*, C2_*, C3_* (IGNORAR C4_*)
                 if basename.startswith("C") and len(basename) > 1:
                     # IGNORAR archivos de abnormality (C4_*)
@@ -233,19 +206,11 @@ class VQAMed2019Dataset(DatasetBase):
                         qa_file = name
                         break
                 
-                # Estrategia 2: Buscar por patrón "All_QA_Pairs" + split (en cualquier ubicación)
+                # Estrategia 2: Buscar por patrón "All_QA_Pairs" + "train" (SOLO Training)
                 if qa_file is None:
                     for name in all_txt_files:
                         basename = os.path.basename(name)
-                        if "All_QA_Pairs" in basename and split_lower in basename.lower():
-                            qa_file = name
-                            break
-                
-                # Estrategia 3: Buscar cualquier archivo con "All_QA_Pairs" (en cualquier ubicación)
-                if qa_file is None:
-                    for name in all_txt_files:
-                        basename = os.path.basename(name)
-                        if "All_QA_Pairs" in basename:
+                        if "All_QA_Pairs" in basename and "train" in basename.lower():
                             qa_file = name
                             break
             
@@ -257,8 +222,8 @@ class VQAMed2019Dataset(DatasetBase):
                 dirs = sorted(set([os.path.dirname(n) for n in zf.namelist() if os.path.dirname(n)]))
                 
                 error_msg = (
-                    f"No se encontraron archivos de QA pairs para split '{split}' en el ZIP.\n"
-                    f"Buscando archivos QAPairsByCategory (C1_*, C2_*, C3_*, C4_*) o All_QA_Pairs_*{split_lower}*.txt\n"
+                    f"No se encontraron archivos de QA pairs para split TRAINING en el ZIP.\n"
+                    f"Buscando archivos QAPairsByCategory (C1_*, C2_*, C3_*) con sufijo *_train.txt o All_QA_Pairs_train.txt\n"
                     f"Archivos .txt disponibles ({len(txt_files)}):\n" +
                     "\n".join(f"  - {f}" for f in txt_files[:20]) +
                     (f"\n  ... y {len(txt_files) - 20} más" if len(txt_files) > 20 else "") +
@@ -292,11 +257,11 @@ class VQAMed2019Dataset(DatasetBase):
             
             if not files_to_read:
                 raise FileNotFoundError(
-                    f"No se encontraron archivos de QA pairs para split '{self.detected_split}' (split original: '{split}'). "
+                    f"No se encontraron archivos de QA pairs para split TRAINING (*_train.txt). "
                     f"Archivos encontrados pero filtrados: {len(category_files) if category_files else 0} archivos de categoría"
                 )
             
-            print(f"📁 Archivos a leer para split '{self.detected_split}': {len(files_to_read)} archivos")
+            print(f"📁 Archivos a leer para split TRAINING: {len(files_to_read)} archivos")
             for f in files_to_read:
                 print(f"   - {os.path.basename(f)}")
             
@@ -374,7 +339,7 @@ class VQAMed2019Dataset(DatasetBase):
                     continue
                 base = os.path.basename(name)
                 # Priorizar imágenes en el subdirectorio correcto (puede estar en cualquier nivel)
-                # Buscar "Val_images" o "images_subdir" en cualquier parte de la ruta
+                # Buscar "Train_images" o "images_subdir" en cualquier parte de la ruta
                 score = int(self.images_subdir.lower() in name.lower())
                 # Bonus si está en el directorio raíz detectado
                 if self.zip_root_prefix and name.startswith(self.zip_root_prefix):
@@ -386,7 +351,7 @@ class VQAMed2019Dataset(DatasetBase):
             
             # Construir candidatos por categoría DESPUÉS de aplicar el filtrado por split y categoría
             # Esto inicializa self.candidates_per_cat
-            print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras del split '{self.detected_split}'...")
+            print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras del split TRAINING...")
             self._build_candidates_by_category()
             
             # Limitar número de muestras si se especifica
