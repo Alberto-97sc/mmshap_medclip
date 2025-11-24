@@ -384,6 +384,7 @@ def plot_vqa(
         model_wrapper=model_wrapper,
         return_fig=True,
         text_len=text_len,
+        target_grid_size=7,
     )
 
     if display_plot:

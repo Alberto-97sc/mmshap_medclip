@@ -16,7 +16,7 @@ import torch.nn.functional as F
 
 from mmshap_medclip.registry import build_model
 from mmshap_medclip.tasks.vqa import run_vqa_one
-from mmshap_medclip.vis.heatmaps import wrap_text
+from mmshap_medclip.vis.heatmaps import wrap_text, resize_patch_grid_for_display
 
 
 def load_vqa_models(device):
@@ -312,28 +312,7 @@ def plot_vqa_comparison(
 
         patch_grid = img_vals[:grid_h * grid_w].reshape(grid_h, grid_w)
 
-        # Replicar grid si es necesario (similar a comparison.py)
-        target_grid_size = 14
-        h_orig, w_orig = patch_grid.shape[0], patch_grid.shape[1]
-
-        if h_orig < target_grid_size or w_orig < target_grid_size:
-            h_scale = int(np.ceil(target_grid_size / h_orig)) if h_orig > 0 else 1
-            w_scale = int(np.ceil(target_grid_size / w_orig)) if w_orig > 0 else 1
-
-            patch_grid_tensor = torch.as_tensor(patch_grid, dtype=torch.float32)
-            patch_grid_tensor = patch_grid_tensor.repeat_interleave(h_scale, dim=0)
-            patch_grid_tensor = patch_grid_tensor.repeat_interleave(w_scale, dim=1)
-
-            if patch_grid_tensor.shape[0] > target_grid_size:
-                patch_grid_tensor = patch_grid_tensor[:target_grid_size, :]
-            if patch_grid_tensor.shape[1] > target_grid_size:
-                patch_grid_tensor = patch_grid_tensor[:, :target_grid_size]
-            if patch_grid_tensor.shape[0] < target_grid_size or patch_grid_tensor.shape[1] < target_grid_size:
-                pad_h = max(0, target_grid_size - patch_grid_tensor.shape[0])
-                pad_w = max(0, target_grid_size - patch_grid_tensor.shape[1])
-                if pad_h > 0 or pad_w > 0:
-                    patch_grid_tensor = F.pad(patch_grid_tensor, (0, pad_w, 0, pad_h), mode='replicate')
-            patch_grid = patch_grid_tensor.numpy()
+        patch_grid, _, _ = resize_patch_grid_for_display(patch_grid, target_size=7)
 
         heat_tensor = torch.as_tensor(patch_grid, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
         heat_up = F.interpolate(heat_tensor, size=(H, W), mode='nearest').squeeze().numpy()
