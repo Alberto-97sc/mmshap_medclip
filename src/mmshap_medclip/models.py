@@ -58,6 +58,56 @@ class OpenCLIPTokenizerAdapter:
         # Fallback: convertir IDs a strings (último recurso)
         return [str(int(i)) for i in ids]
 
+    def convert_tokens_to_string(self, tokens: Iterable[str]) -> str:
+        cleaned_tokens = []
+        specials = set(self.all_special_tokens or [])
+        for tok in tokens:
+            if tok is None:
+                continue
+            if tok in specials:
+                continue
+            tok_str = str(tok)
+            if tok_str.startswith("Ġ"):
+                tok_str = " " + tok_str[1:]
+            elif tok_str.startswith("▁"):
+                tok_str = " " + tok_str[1:]
+            cleaned_tokens.append(tok_str)
+        text = "".join(cleaned_tokens)
+        text = text.replace("  ", " ")
+        return text.strip()
+
+    def decode(
+        self,
+        ids,
+        skip_special_tokens: bool = True,
+        clean_up_tokenization_spaces: bool = True,
+    ):
+        if isinstance(ids, torch.Tensor):
+            ids = ids.detach().cpu().tolist()
+        if isinstance(ids, (list, tuple)) and ids and isinstance(ids[0], (list, tuple)):
+            return [
+                self.decode(seq, skip_special_tokens=skip_special_tokens,
+                            clean_up_tokenization_spaces=clean_up_tokenization_spaces)
+                for seq in ids
+            ]
+        ids = [int(i) for i in ids if i is not None]
+        text = None
+        raw_decode = getattr(self._tokenizer, "decode", None)
+        if callable(raw_decode):
+            try:
+                text = raw_decode(ids)
+            except Exception:
+                text = None
+        if text is None:
+            tokens = self.convert_ids_to_tokens(ids)
+            text = self.convert_tokens_to_string(tokens)
+        if skip_special_tokens:
+            for special in self.all_special_tokens:
+                text = text.replace(special, " ")
+        if clean_up_tokenization_spaces:
+            text = " ".join(text.split())
+        return text.strip()
+
     def __getattr__(self, item):
         return getattr(self._tokenizer, item)
 

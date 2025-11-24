@@ -141,91 +141,48 @@ class VQAMed2019Dataset(DatasetBase):
             zf = zipfile.ZipFile(zip_path, "r")
         
         try:
-            # Buscar archivo All_QA_Pairs_train.txt (SOLO Training)
-            qa_file = None
-            
-            # Lista de nombres posibles para el archivo (SOLO train)
-            possible_names = [
-                "All_QA_Pairs_train.txt",
-                "All_QA_Pairs_Training.txt",
-            ]
-            
-            # También buscar en subdirectorios
+            # Buscar archivos QA por categoría dentro de QAPairsByCategory
             all_txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
             all_files = zf.namelist()  # Todos los archivos para debugging
             
             # Detectar prefijo de directorio raíz del ZIP (ej: "ImageClef-2019-VQA-Med-Training/")
-            # Buscar el directorio más común en las rutas
             if all_files:
-                # Obtener el primer directorio común
                 first_file = all_files[0]
                 if '/' in first_file:
-                    # Extraer el prefijo del directorio raíz
                     parts = first_file.split('/')
                     if len(parts) > 1:
                         self.zip_root_prefix = parts[0] + '/'
                         print(f"📂 Detectado prefijo de directorio en ZIP: {self.zip_root_prefix}")
             
-            # PRIORIDAD 1: Buscar archivos QAPairsByCategory (C1_Modality_*, C2_Plane_*, C3_Organ_*)
-            # IGNORAR C4_Abnormality_* completamente
-            # FILTRAR ESTRICTAMENTE por split: solo *train.txt (SOLO Training soportado)
-            # Estos archivos tienen prioridad sobre All_QA_Pairs
             category_files = []
             for name in all_txt_files:
+                dirname = os.path.dirname(name).lower()
                 basename = os.path.basename(name)
-                # Buscar archivos de categoría: C1_Modality_train.txt, C2_Plane_train.txt, C3_Organ_train.txt (SOLO train)
-                # Verificar formato C1_*, C2_*, C3_* (IGNORAR C4_*)
-                if basename.startswith("C") and len(basename) > 1:
-                    # IGNORAR archivos de abnormality (C4_*)
-                    basename_lower = basename.lower()
-                    if "c4" in basename_lower or "abnormality" in basename_lower:
-                        continue  # Saltar archivos de abnormality
-                    
-                    # FILTRAR ESTRICTAMENTE por split: debe terminar en *{detected_split}.txt
-                    # NO mezclar train y val bajo ningún criterio
-                    if not basename_lower.endswith(f"{self.detected_split}.txt"):
-                        continue  # Saltar archivos que no coinciden con el split
-                    
-                    # Verificar que el archivo pertenece al split correcto
-                    # Asegurar que contiene el sufijo del split en el nombre
-                    if f"_{self.detected_split}.txt" in basename_lower or f"-{self.detected_split}.txt" in basename_lower:
-                        category_files.append(name)
-                    else:
-                        # Log para debugging si hay archivos que casi coinciden
-                        pass  # Silenciosamente saltar archivos que no coinciden con el split
-            
-            # Si encontramos archivos por categoría, usarlos (tienen prioridad)
-            if category_files:
-                qa_file = None  # Forzar uso de archivos por categoría
-                print(f"📁 Usando archivos por categoría: {len(category_files)} archivos encontrados")
-                print(f"   Archivos: {[os.path.basename(f) for f in category_files]}")
-            else:
-                # Estrategia 1: Buscar por nombre exacto (con y sin prefijo de directorio)
-                # Buscar tanto en raíz como en subdirectorios
-                for name in all_txt_files:
-                    basename = os.path.basename(name)
-                    if basename in possible_names:
-                        qa_file = name
-                        break
+                basename_lower = basename.lower()
                 
-                # Estrategia 2: Buscar por patrón "All_QA_Pairs" + "train" (SOLO Training)
-                if qa_file is None:
-                    for name in all_txt_files:
-                        basename = os.path.basename(name)
-                        if "All_QA_Pairs" in basename and "train" in basename.lower():
-                            qa_file = name
-                            break
+                # Asegurar que provenga de QAPairsByCategory y que sea de categorías C1-C3
+                if "qapairsbycategory" not in dirname:
+                    continue
+                if not basename.startswith("C") or len(basename) < 2:
+                    continue
+                if "c4" in basename_lower or "abnormality" in basename_lower:
+                    continue  # ignorar abnormality
+                
+                # Filtrar estrictamente por split train
+                if not basename_lower.endswith(f"{self.detected_split}.txt"):
+                    continue
+                if f"_{self.detected_split}.txt" not in basename_lower and f"-{self.detected_split}.txt" not in basename_lower:
+                    continue
+                
+                category_files.append(name)
             
-            # Si no encontramos archivos por categoría ni All_QA_Pairs, mostrar error
-            if not category_files and qa_file is None:
-                # Mostrar todos los archivos disponibles para debugging
+            if not category_files:
                 txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
-                # Mostrar también estructura de directorios
                 dirs = sorted(set([os.path.dirname(n) for n in zf.namelist() if os.path.dirname(n)]))
                 
                 error_msg = (
-                    f"No se encontraron archivos de QA pairs para split TRAINING en el ZIP.\n"
-                    f"Buscando archivos QAPairsByCategory (C1_*, C2_*, C3_*) con sufijo *_train.txt o All_QA_Pairs_train.txt\n"
+                    "No se encontraron archivos QAPairsByCategory para el split TRAINING.\n"
+                    "Se requieren archivos C1/C2/C3 *_train.txt dentro de QAPairsByCategory/.\n"
                     f"Archivos .txt disponibles ({len(txt_files)}):\n" +
                     "\n".join(f"  - {f}" for f in txt_files[:20]) +
                     (f"\n  ... y {len(txt_files) - 20} más" if len(txt_files) > 20 else "") +
@@ -235,32 +192,19 @@ class VQAMed2019Dataset(DatasetBase):
                 )
                 raise FileNotFoundError(error_msg)
             
-            # Leer archivo(s) de QA pairs
-            # IMPORTANTE: Solo usar archivos que coincidan con el split detectado
-            # NO mezclar train y val bajo ningún criterio
-            files_to_read = []
+            category_files = sorted(category_files)
+            print(f"📁 Usando archivos por categoría (TRAINING): {[os.path.basename(f) for f in category_files]}")
             
-            if category_files:
-                # category_files ya está filtrado por split, pero verificamos nuevamente por seguridad
-                for f in category_files:
-                    basename_lower = os.path.basename(f).lower()
-                    # Verificar que termina en {detected_split}.txt
-                    if basename_lower.endswith(f"{self.detected_split}.txt"):
-                        files_to_read.append(f)
-                    else:
-                        print(f"⚠️  Saltando archivo '{os.path.basename(f)}' (no termina en '{self.detected_split}.txt')")
-            elif qa_file:
-                # Verificar que qa_file también coincida con el split
-                basename_lower = os.path.basename(qa_file).lower()
-                if self.detected_split in basename_lower:
-                    files_to_read = [qa_file]
-                else:
-                    print(f"⚠️  Archivo All_QA_Pairs '{os.path.basename(qa_file)}' no coincide con split '{self.detected_split}'")
+            files_to_read = []
+            for f in category_files:
+                basename_lower = os.path.basename(f).lower()
+                if basename_lower.endswith(f"{self.detected_split}.txt"):
+                    files_to_read.append(f)
             
             if not files_to_read:
                 raise FileNotFoundError(
-                    f"No se encontraron archivos de QA pairs para split TRAINING (*_train.txt). "
-                    f"Archivos encontrados pero filtrados: {len(category_files) if category_files else 0} archivos de categoría"
+                    "No se pudo construir la lista de archivos *_train.txt para QAPairsByCategory.\n"
+                    f"Archivos detectados: {[os.path.basename(f) for f in category_files]}"
                 )
             
             print(f"📁 Archivos a leer para split TRAINING: {len(files_to_read)} archivos")
@@ -509,6 +453,8 @@ class VQAMed2019Dataset(DatasetBase):
             raise ValueError(
                 f"Dataset inconsistente: categoría {category} no tiene candidatos."
             )
+        # entregar copia para evitar mutaciones externas
+        candidates = list(candidates)
         
         # Intentar encontrar la imagen asociada
         image_path = None

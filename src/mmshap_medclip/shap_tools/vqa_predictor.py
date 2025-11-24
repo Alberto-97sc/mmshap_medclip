@@ -42,6 +42,9 @@ class VQAPredictor:
         self.candidates = candidates
         self.answer_correct = answer_correct
         self.target_logit = target_logit
+        self.tokenizer = getattr(model_wrapper, "tokenizer", None)
+        if self.tokenizer is None and hasattr(model_wrapper, "processor"):
+            self.tokenizer = getattr(model_wrapper.processor, "tokenizer", None)
 
         # Inferir patch_size si no viene
         ps = patch_size
@@ -81,7 +84,7 @@ class VQAPredictor:
         self.text_len = text_len if text_len is not None else self.base_inputs["input_ids"].shape[1]
 
         # Obtener vocab_size del tokenizer
-        tokenizer = getattr(model_wrapper, "tokenizer", None)
+        tokenizer = self.tokenizer
         self.vocab_size = None
 
         if tokenizer is not None:
@@ -171,9 +174,12 @@ class VQAPredictor:
                         c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
                         pix[:, :, r0:r1, c0:c1] = mask_value
 
+                # Reconstruir el texto de la pregunta (solo imagen + pregunta deben influir en SHAP)
+                question_text = self._tokens_to_question_text(masked["input_ids"][0])
+
                 # Construir prompts para todos los candidatos
                 prompts = [
-                    f"Question: {self.question} Answer: {candidate}"
+                    f"Question: {question_text} Answer: {candidate}"
                     for candidate in self.candidates
                 ]
                 
@@ -199,7 +205,6 @@ class VQAPredictor:
                 images_pil = [img_pil] * len(self.candidates)
                 
                 # Usar prepare_batch para procesar todos los candidatos a la vez
-                from mmshap_medclip.tasks.utils import prepare_batch
                 inputs_batch, logits_batch = prepare_batch(
                     self.wrapper,
                     prompts,
@@ -250,4 +255,44 @@ class VQAPredictor:
                 out[i] = target_logit_value
 
         return out.detach().cpu().numpy()
+
+    def _tokens_to_question_text(self, token_ids: torch.Tensor) -> str:
+        """
+        Convierte los input_ids (con máscaras aplicadas) en un texto legible que
+        solo contenga la pregunta. Si falla la decodificación, se usa la pregunta original.
+        """
+        ids_list = token_ids.detach().cpu().tolist()
+        question_text = None
+        tokenizer = self.tokenizer
+
+        if tokenizer is not None:
+            decode_fn = getattr(tokenizer, "decode", None)
+            if callable(decode_fn):
+                try:
+                    question_text = decode_fn(ids_list, skip_special_tokens=True)
+                    if isinstance(question_text, (list, tuple)):
+                        question_text = question_text[0]
+                except Exception:
+                    question_text = None
+
+            if (question_text is None or not question_text.strip()) and hasattr(tokenizer, "convert_ids_to_tokens"):
+                try:
+                    tokens = tokenizer.convert_ids_to_tokens(ids_list)
+                    specials = set(getattr(tokenizer, "all_special_tokens", []) or [])
+                    filtered_tokens = [t for t in tokens if t and t not in specials]
+                    if hasattr(tokenizer, "convert_tokens_to_string"):
+                        question_text = tokenizer.convert_tokens_to_string(filtered_tokens)
+                    else:
+                        question_text = " ".join(filtered_tokens)
+                except Exception:
+                    question_text = None
+
+        if question_text is None or not question_text.strip():
+            fallback_tokens = [str(i) for i in ids_list if i not in (0, self.pad_token_id)]
+            question_text = " ".join(fallback_tokens).strip()
+
+        if not question_text:
+            question_text = self.question
+
+        return question_text.strip()
 
