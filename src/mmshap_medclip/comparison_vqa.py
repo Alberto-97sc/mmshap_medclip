@@ -209,7 +209,7 @@ def plot_vqa_comparison(
     model_names = list(valid_results.keys())
 
     # Crear figura con GridSpec
-    fig = plt.figure(figsize=(12 * cols, 7 * n_models))
+    fig = plt.figure(figsize=(13 * cols, 7.5 * n_models))
 
     # Envolver la pregunta si es muy larga
     text_length = len(question)
@@ -225,57 +225,6 @@ def plot_vqa_comparison(
         title += f"\nRespuesta correcta: {answer}"
     fig.suptitle(title, fontsize=13, fontweight='bold', y=0.995)
 
-    # Calcular valores para normalización global
-    all_text_values = []
-    all_image_values = []
-
-    for model_name in model_names:
-        result = valid_results[model_name]
-        mm_scores = result.get("mm_scores")
-        shap_values = result.get("shap_values")
-        inputs = result.get("inputs")
-        text_len = result.get("text_len")
-
-        if mm_scores and shap_values is not None and inputs is not None:
-            # Valores de texto
-            _, word_shap_dict = mm_scores[0]
-            if word_shap_dict:
-                word_vals = np.array([word_shap_dict[w] for w in word_shap_dict.keys()])
-                all_text_values.append(word_vals)
-
-            # Valores de imagen
-            vals = shap_values.values if hasattr(shap_values, "values") else shap_values
-            if vals.ndim == 1:
-                vals = vals[None, :]
-            elif vals.ndim == 3:
-                vals = vals[:, 0, :]
-
-            if text_len is not None:
-                seq_len = text_len
-            else:
-                if "attention_mask" in inputs:
-                    seq_len = int(inputs["attention_mask"][0].sum().item())
-                else:
-                    seq_len = vals.shape[1] // 2
-
-            img_vals = vals[0, seq_len:]
-            all_image_values.append(img_vals)
-
-    # Normalización global para texto
-    text_concat = np.concatenate(all_text_values) if all_text_values else np.zeros((1,))
-    if np.any(text_concat < 0):
-        absmax_text = float(np.percentile(np.abs(text_concat), 95))
-        if absmax_text <= 0:
-            absmax_text = float(np.max(np.abs(text_concat))) if text_concat.size else 1e-6
-        absmax_text = max(absmax_text, 1e-6)
-        norm_text = TwoSlopeNorm(vmin=-absmax_text, vcenter=0.0, vmax=absmax_text)
-        cmap_text = plt.get_cmap("coolwarm")
-    else:
-        vmax_text = float(np.percentile(text_concat, 95)) if text_concat.size else 1e-6
-        vmax_text = max(vmax_text, 1e-6)
-        norm_text = Normalize(vmin=0.0, vmax=vmax_text)
-        cmap_text = plt.get_cmap("Reds")
-
     # Crear GridSpec
     num_rows_total = n_models * 2
     height_ratios = [4, 1] * n_models
@@ -287,7 +236,7 @@ def plot_vqa_comparison(
         wspace=0.15,
         height_ratios=height_ratios,
         top=0.94,
-        bottom=0.03
+        bottom=0.08
     )
 
     # Crear subplots para cada modelo
@@ -410,6 +359,20 @@ def plot_vqa_comparison(
             fontsize=13, fontweight='bold', pad=10
         )
         ax_img.axis('off')
+        
+        # Colorbar vertical por modelo para imagen
+        img_pos = ax_img.get_position()
+        cax_img = fig.add_axes([
+            img_pos.x1 + 0.01,
+            img_pos.y0,
+            0.012,
+            img_pos.height
+        ])
+        fig.colorbar(
+            plt.cm.ScalarMappable(cmap='coolwarm', norm=norm_img),
+            cax=cax_img,
+            label="Valor SHAP (imagen)"
+        )
 
         # ===== TEXTO CON PALABRAS COLOREADAS =====
         ax_txt.axis('off')
@@ -418,7 +381,18 @@ def plot_vqa_comparison(
 
         _, word_shap_dict = mm_scores[0]
         words = list(word_shap_dict.keys())
-        word_vals = np.array([word_shap_dict[w] for w in words])
+        word_vals = np.array([word_shap_dict[w] for w in words], dtype=np.float32)
+        
+        if np.any(word_vals < 0):
+            absmax_word = float(np.percentile(np.abs(word_vals), 95)) if word_vals.size else 0.0
+            absmax_word = max(absmax_word, 1e-6)
+            norm_text_local = TwoSlopeNorm(vmin=-absmax_word, vcenter=0.0, vmax=absmax_word)
+            cmap_text_local = plt.get_cmap("coolwarm")
+        else:
+            vmax_word = float(np.percentile(word_vals, 95)) if word_vals.size else 0.0
+            vmax_word = max(vmax_word, 1e-6)
+            norm_text_local = Normalize(vmin=0.0, vmax=vmax_word)
+            cmap_text_local = plt.get_cmap("Reds")
 
         if len(words) == 0:
             ax_txt.text(0.5, 0.5, "(sin palabras detectadas)",
@@ -494,7 +468,7 @@ def plot_vqa_comparison(
             y = start_y - line_idx * line_height
 
             for word, val, w in zip(line_words, line_vals, line_widths):
-                color = cmap_text(norm_text(val))
+                color = cmap_text_local(norm_text_local(val))
                 ax_txt.text(
                     x, y, word,
                     ha="left", va="center", fontsize=11, color="black",
@@ -508,6 +482,21 @@ def plot_vqa_comparison(
                     )
                 )
                 x += w + gap
+        
+        # Colorbar horizontal por modelo para texto
+        txt_pos = ax_txt.get_position()
+        cax_txt = fig.add_axes([
+            txt_pos.x0,
+            txt_pos.y0 - 0.03,
+            txt_pos.width,
+            0.012
+        ])
+        fig.colorbar(
+            plt.cm.ScalarMappable(cmap=cmap_text_local, norm=norm_text_local),
+            cax=cax_txt,
+            orientation="horizontal",
+            label="Valor SHAP (texto)"
+        )
 
     return fig
 
