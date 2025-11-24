@@ -15,6 +15,26 @@ from mmshap_medclip.metrics import compute_mm_score, compute_iscore
 
 VQA_PATCH_TARGET_GRID = 7
 
+
+def _extract_text_feature_from_inputs(model_wrapper, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+    model = getattr(model_wrapper, "model", model_wrapper)
+    text_kwargs = {"input_ids": inputs["input_ids"]}
+    if "attention_mask" in inputs:
+        text_kwargs["attention_mask"] = inputs["attention_mask"]
+
+    with torch.inference_mode():
+        if hasattr(model, "get_text_features"):
+            feat = model.get_text_features(**text_kwargs)
+        elif hasattr(model, "encode_text"):
+            feat = model.encode_text(text_kwargs["input_ids"])
+        else:
+            raise ValueError("El modelo no expone get_text_features/encode_text.")
+
+    ref_device = next(model.parameters()).device if isinstance(model, torch.nn.Module) else inputs["input_ids"].device
+    feat = feat.to(ref_device)
+    feat = feat / feat.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+    return feat.detach()
+
 def run_vqa_one(
     model,
     image,
@@ -407,26 +427,6 @@ def plot_vqa(
     return fig
 
 
-def _extract_text_feature_from_inputs(model_wrapper, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
-    model = getattr(model_wrapper, "model", model_wrapper)
-    text_kwargs = {"input_ids": inputs["input_ids"]}
-    if "attention_mask" in inputs:
-        text_kwargs["attention_mask"] = inputs["attention_mask"]
-
-    with torch.inference_mode():
-        if hasattr(model, "get_text_features"):
-            feat = model.get_text_features(**text_kwargs)
-        elif hasattr(model, "encode_text"):
-            feat = model.encode_text(text_kwargs["input_ids"])
-        else:
-            raise ValueError("El modelo no expone get_text_features/encode_text.")
-
-    ref_device = next(model.parameters()).device if isinstance(model, torch.nn.Module) else inputs["input_ids"].device
-    feat = feat.to(ref_device)
-    feat = feat / feat.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-    return feat.detach()
-
-
 def _build_patch_groups(grid_h: int, grid_w: int, target_grid: Optional[int]) -> Optional[List[List[int]]]:
     if not target_grid or grid_h <= target_grid or grid_w <= target_grid:
         return None
@@ -479,15 +479,17 @@ def _compute_vqa_shap(
             image_token_ids_expanded = _make_group_token_ids(image_token_ids_expanded, len(patch_groups))
 
     if text_feature is None and answer_text:
-        text_inputs, _ = prepare_batch(
-            model,
+        tokenizer = getattr(model.tokenizer if hasattr(model, "tokenizer") else model, "tokenizer", None)
+        if tokenizer is None:
+            raise ValueError("No se pudo obtener tokenizer para encodear la respuesta.")
+        text_tokens = tokenizer(
             [answer_text],
-            [inputs["pixel_values"][0]],
-            device=device,
-            debug_tokens=False,
-            amp_if_cuda=amp_if_cuda,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
         )
-        text_feature = _extract_text_feature_from_inputs(model, text_inputs)
+        text_tokens = {k: v.to(device) for k, v in text_tokens.items()}
+        text_feature = _extract_text_feature_from_inputs(model, text_tokens)
 
     # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
     X_clean, text_len = concat_text_image_tokens(
