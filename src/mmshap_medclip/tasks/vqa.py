@@ -75,8 +75,30 @@ def run_vqa_one(
         amp_if_cuda=amp_if_cuda
     )
     
-    # Extraer similitudes (logits son las similitudes imagen-texto)
-    similarities = logits.squeeze().cpu().detach().numpy()
+    # Extraer similitudes (logits_per_image es [n_imgs, n_texts])
+    logits_cpu = logits.detach().cpu()
+    if logits_cpu.ndim == 0:
+        similarities_tensor = logits_cpu.view(1)
+    elif logits_cpu.ndim == 1:
+        similarities_tensor = logits_cpu
+    elif logits_cpu.ndim == 2:
+        if logits_cpu.shape[0] == logits_cpu.shape[1]:
+            similarities_tensor = torch.diag(logits_cpu)
+        elif logits_cpu.shape[1] == 1:
+            similarities_tensor = logits_cpu.squeeze(1)
+        elif logits_cpu.shape[0] == 1:
+            similarities_tensor = logits_cpu.squeeze(0)
+        else:
+            raise ValueError(
+                f"Forma de logits inesperada {tuple(logits_cpu.shape)}; "
+                "se esperaba matriz cuadrada o vector por candidato."
+            )
+    else:
+        raise ValueError(
+            f"Dimensiones de logits no soportadas: {logits_cpu.ndim}"
+        )
+
+    similarities = similarities_tensor.numpy()
     if similarities.ndim == 0:
         similarities = np.array([similarities])
     

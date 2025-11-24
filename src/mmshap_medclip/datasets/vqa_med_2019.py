@@ -484,10 +484,12 @@ class VQAMed2019Dataset(DatasetBase):
                 
                 # Si aún no se encontró, buscar por nombre completo
                 if image_path is None:
-                    candidates = [n for n in zf.namelist() 
-                                if n.endswith(image_filename) or os.path.basename(n) == image_filename]
-                    if candidates:
-                        image_path = candidates[0]
+                    image_candidate_paths = [
+                        n for n in zf.namelist()
+                        if n.endswith(image_filename) or os.path.basename(n) == image_filename
+                    ]
+                    if image_candidate_paths:
+                        image_path = image_candidate_paths[0]
             
             # Estrategia 2: Si no hay nombre de imagen, buscar por question_id
             if image_path is None:
