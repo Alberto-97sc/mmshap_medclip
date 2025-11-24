@@ -197,8 +197,12 @@ class VQAPredictor:
                 pix = masked["pixel_values"].clone()         # [1, 3, H, W]
                 self._apply_mask(pix, mid)
 
-                question_text = self._tokens_to_question_text(masked["input_ids"][0])
-                question_ids, question_mask = self._tokenize_text(question_text)
+                question_ids = masked["input_ids"].clone()
+                question_mask = None
+                if "attention_mask" in masked:
+                    question_mask = masked["attention_mask"].clone()
+                else:
+                    question_mask = (question_ids != self.pad_token_id).long()
                 combined_ids, combined_mask = self._combine_question_answer_ids(question_ids, question_mask)
                 text_feature = self._encode_text_from_ids(combined_ids, combined_mask)
                 image_feature = self._encode_image_feature(pix)
