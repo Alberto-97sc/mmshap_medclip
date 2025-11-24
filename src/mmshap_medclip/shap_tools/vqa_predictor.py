@@ -131,10 +131,10 @@ class VQAPredictor:
             c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
             self._patch_coords.append((r0, r1, c0, c1))
 
-        if text_feature is None:
-            raise ValueError("Se requiere un embedding de texto precomputado para VQAPredictor.")
-        self.text_feature = text_feature.to(self.device)
-        self.text_feature = self.text_feature / self.text_feature.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        self.answer_text = answer_text or ""
+        self.answer_input_ids, self.answer_attention_mask = self._tokenize_text(self.answer_text)
+        self.bos_token_id = getattr(self.tokenizer, "bos_token_id", None) if self.tokenizer else None
+        self.eos_token_id = getattr(self.tokenizer, "eos_token_id", None) if self.tokenizer else None
         self.logit_scale = self._resolve_logit_scale()
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
@@ -181,8 +181,12 @@ class VQAPredictor:
                 pix = masked["pixel_values"].clone()         # [1, 3, H, W]
                 self._apply_mask(pix, mid)
 
+                question_text = self._tokens_to_question_text(masked["input_ids"][0])
+                question_ids, question_mask = self._tokenize_text(question_text)
+                combined_ids, combined_mask = self._combine_question_answer_ids(question_ids, question_mask)
+                text_feature = self._encode_text_from_ids(combined_ids, combined_mask)
                 image_feature = self._encode_image_feature(pix)
-                sim = torch.sum(image_feature * self.text_feature, dim=-1)
+                sim = torch.sum(image_feature * text_feature, dim=-1)
                 logit_value = (self.logit_scale * sim).reshape(-1)[0]
                 out[i] = logit_value
 
@@ -233,4 +237,128 @@ class VQAPredictor:
             return torch.tensor(float(scale), device=self.device, dtype=torch.float32)
         except Exception:
             return torch.tensor(1.0, device=self.device, dtype=torch.float32)
+
+    def _tokenize_text(self, text: str) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            raise ValueError("Se requiere tokenizer para procesar el texto.")
+        tokens = None
+        try:
+            tokens = tokenizer(
+                text if isinstance(text, str) else str(text),
+                return_tensors="pt",
+                padding=False,
+                truncation=True,
+            )
+        except TypeError:
+            tokens = tokenizer(text if isinstance(text, str) else str(text))
+        attention_mask = None
+        if isinstance(tokens, dict):
+            input_ids = tokens["input_ids"]
+            attention_mask = tokens.get("attention_mask")
+        elif isinstance(tokens, torch.Tensor):
+            input_ids = tokens
+        else:
+            input_ids = torch.as_tensor(tokens, dtype=torch.long)
+        if input_ids.dim() == 1:
+            input_ids = input_ids.unsqueeze(0)
+        input_ids = input_ids.to(self.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.device)
+        elif hasattr(tokenizer, "pad_token_id") and tokenizer.pad_token_id is not None:
+            attention_mask = (input_ids != tokenizer.pad_token_id).long()
+        return input_ids, attention_mask
+
+    def _combine_question_answer_ids(
+        self,
+        question_ids: torch.Tensor,
+        question_mask: Optional[torch.Tensor],
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        q_ids = question_ids
+        q_mask = question_mask
+        if self.eos_token_id is not None and q_ids.shape[1] > 1 and q_ids[0, -1].item() == self.eos_token_id:
+            q_ids = q_ids[:, :-1]
+            if q_mask is not None:
+                q_mask = q_mask[:, :-1]
+
+        a_ids = self.answer_input_ids
+        a_mask = self.answer_attention_mask
+        if a_ids is not None and a_ids.shape[1] > 0:
+            a_ids_trim = a_ids
+            a_mask_trim = a_mask
+            if self.bos_token_id is not None and a_ids_trim[0, 0].item() == self.bos_token_id and a_ids_trim.shape[1] > 1:
+                a_ids_trim = a_ids_trim[:, 1:]
+                if a_mask_trim is not None:
+                    a_mask_trim = a_mask_trim[:, 1:]
+        else:
+            a_ids_trim = None
+            a_mask_trim = None
+
+        if a_ids_trim is not None:
+            combined_ids = torch.cat([q_ids, a_ids_trim], dim=1)
+            if q_mask is not None and a_mask_trim is not None:
+                combined_mask = torch.cat([q_mask, a_mask_trim], dim=1)
+            elif q_mask is not None:
+                combined_mask = q_mask
+            else:
+                combined_mask = None
+        else:
+            combined_ids = q_ids
+            combined_mask = q_mask
+        return combined_ids, combined_mask
+
+    def _encode_text_from_ids(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        text_kwargs = {"input_ids": input_ids}
+        if attention_mask is not None:
+            text_kwargs["attention_mask"] = attention_mask
+        with torch.inference_mode():
+            if hasattr(self.model, "get_text_features"):
+                feat = self.model.get_text_features(**text_kwargs)
+            elif hasattr(self.model, "encode_text"):
+                feat = self.model.encode_text(input_ids)
+            else:
+                raise ValueError("El modelo no expone get_text_features/encode_text.")
+        feat = feat.to(self.device)
+        feat = feat / feat.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        return feat
+
+    def _tokens_to_question_text(self, token_ids: torch.Tensor) -> str:
+        ids_list = token_ids.detach().cpu().tolist()
+        question_text = None
+        tokenizer = self.tokenizer
+
+        if tokenizer is not None:
+            decode_fn = getattr(tokenizer, "decode", None)
+            if callable(decode_fn):
+                try:
+                    question_text = decode_fn(ids_list, skip_special_tokens=True)
+                    if isinstance(question_text, (list, tuple)):
+                        question_text = question_text[0]
+                except Exception:
+                    question_text = None
+
+            if (question_text is None or not question_text.strip()) and hasattr(tokenizer, "convert_ids_to_tokens"):
+                try:
+                    tokens = tokenizer.convert_ids_to_tokens(ids_list)
+                    specials = set(getattr(tokenizer, "all_special_tokens", []) or [])
+                    filtered_tokens = [t for t in tokens if t and t not in specials]
+                    if hasattr(tokenizer, "convert_tokens_to_string"):
+                        question_text = tokenizer.convert_tokens_to_string(filtered_tokens)
+                    else:
+                        question_text = " ".join(filtered_tokens)
+                except Exception:
+                    question_text = None
+
+        if question_text is None or not question_text.strip():
+            fallback_tokens = [str(i) for i in ids_list if i not in (0, self.pad_token_id)]
+            question_text = " ".join(fallback_tokens).strip()
+
+        if not question_text:
+            question_text = self.question
+
+        return question_text.strip()
 

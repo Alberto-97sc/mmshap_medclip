@@ -15,32 +15,6 @@ from mmshap_medclip.metrics import compute_mm_score, compute_iscore
 
 VQA_PATCH_TARGET_GRID = 7
 
-
-def _compute_text_feature(model_wrapper, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
-    """
-    Obtiene el embedding normalizado del texto usando el wrapper del modelo.
-    """
-    model = getattr(model_wrapper, "model", model_wrapper)
-    text_kwargs = {"input_ids": inputs["input_ids"]}
-    if "attention_mask" in inputs:
-        text_kwargs["attention_mask"] = inputs["attention_mask"]
-
-    with torch.inference_mode():
-        if hasattr(model, "get_text_features"):
-            feat = model.get_text_features(**text_kwargs)
-        elif hasattr(model, "encode_text"):
-            feat = model.encode_text(text_kwargs["input_ids"])
-        else:
-            raise ValueError("El modelo no expone get_text_features/encode_text.")
-
-    if isinstance(model_wrapper, torch.nn.Module):
-        ref_device = next(model_wrapper.parameters()).device
-    else:
-        ref_device = inputs["input_ids"].device
-    feat = feat.to(ref_device)
-    feat = feat / feat.norm(dim=-1, keepdim=True).clamp_min(1e-6)
-    return feat.detach()
-
 def run_vqa_one(
     model,
     image,
@@ -162,12 +136,13 @@ def run_vqa_one(
     }
     
     base_inputs = None
-    text_feature = None
+    answer_text = None
     if explain or plot:
         target_candidate = answer if (target_logit == "correct" and answer) else prediction
         if not target_candidate:
             target_candidate = prediction
-        target_prompt = f"Question: {question} Answer: {target_candidate}"
+        answer_text = f"Answer: {target_candidate}"
+        target_prompt = f"Question: {question}"
         base_inputs, _ = prepare_batch(
             model,
             [target_prompt],
@@ -176,7 +151,6 @@ def run_vqa_one(
             debug_tokens=False,
             amp_if_cuda=amp_if_cuda
         )
-        text_feature = _compute_text_feature(model, base_inputs)
         out["inputs"] = base_inputs
 
     if not (explain or plot):
@@ -193,7 +167,7 @@ def run_vqa_one(
         target_logit=target_logit,
         amp_if_cuda=amp_if_cuda,
         original_text=question,
-        text_feature=text_feature,
+        answer_text=answer_text,
     )
     out.update(explanation)
     
@@ -357,7 +331,7 @@ def explain_vqa(
     target_logit: str = "correct",
     amp_if_cuda: bool = True,
     original_text: Optional[str] = None,
-    text_feature: Optional[torch.Tensor] = None,
+    answer_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Calcula explicaciones VQA para un batch preparado."""
     shap_values, mm_scores, iscores, text_len = _compute_vqa_shap(
@@ -370,7 +344,7 @@ def explain_vqa(
         target_logit=target_logit,
         amp_if_cuda=amp_if_cuda,
         original_text=original_text,
-        text_feature=text_feature,
+        answer_text=answer_text,
     )
 
     out: Dict[str, Any] = {
@@ -467,11 +441,19 @@ def _compute_vqa_shap(
     target_logit: str = "correct",
     amp_if_cuda: bool = True,
     original_text: Optional[str] = None,
-    text_feature: Optional[torch.Tensor] = None,
+    answer_text: Optional[str] = None,
 ) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float], int]:
     """Aplica SHAP al batch dado para VQA y retorna valores por muestra y text_len."""
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
     image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
+    patch_groups = None
+    target_grid = VQA_PATCH_TARGET_GRID
+    grid_h = int(imginfo.get("grid_h") or 0)
+    grid_w = int(imginfo.get("grid_w") or 0)
+    if target_grid and grid_h > 0 and grid_w > 0:
+        patch_groups = _build_patch_groups(grid_h, grid_w, target_grid)
+        if patch_groups:
+            image_token_ids_expanded = _make_group_token_ids(image_token_ids_expanded, len(patch_groups))
     if text_feature is None:
         text_feature = _compute_text_feature(model, inputs)
     patch_groups = None
@@ -502,7 +484,7 @@ def _compute_vqa_shap(
         use_amp=amp_if_cuda,
         text_len=text_len,
         patch_groups=patch_groups,
-        text_feature=text_feature,
+        answer_text=answer_text or "",
     )
 
     # --- Ajuste automático del presupuesto para el Permutation explainer ---
