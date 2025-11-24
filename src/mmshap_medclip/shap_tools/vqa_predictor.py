@@ -29,6 +29,7 @@ class VQAPredictor:
         device: Optional[torch.device] = None,
         use_amp: bool = True,
         text_len: Optional[int] = None,
+        patch_groups: Optional[List[List[int]]] = None,
     ):
         self.wrapper = model_wrapper
         self.model = getattr(model_wrapper, "model", model_wrapper).eval()
@@ -78,7 +79,12 @@ class VQAPredictor:
             )
         self.grid_h = H // self.patch_h
         self.grid_w = W // self.patch_w
-        self.num_patches = self.grid_h * self.grid_w
+        self.original_num_patches = self.grid_h * self.grid_w
+        self.patch_groups = patch_groups if patch_groups else None
+        if self.patch_groups:
+            self.num_patches = len(self.patch_groups)
+        else:
+            self.num_patches = self.original_num_patches
 
         # Longitud de texto (para el split)
         self.text_len = text_len if text_len is not None else self.base_inputs["input_ids"].shape[1]
@@ -117,6 +123,15 @@ class VQAPredictor:
             self.pad_token_id = getattr(tokenizer, "pad_token_id", None) or 0
 
         self.use_amp = bool(use_amp and self.device.type == "cuda")
+
+        # Precomputar coordenadas de cada parche original para masking rápido
+        self._patch_coords: List[Tuple[int, int, int, int]] = []
+        for k in range(self.original_num_patches):
+            r = k // self.grid_w
+            c = k % self.grid_w
+            r0, r1 = r * self.patch_h, (r + 1) * self.patch_h
+            c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
+            self._patch_coords.append((r0, r1, c0, c1))
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
         """
@@ -166,13 +181,17 @@ class VQAPredictor:
                                          dtype=pix.dtype,
                                          device=pix.device).view(1, 3, 1, 1)
 
-                for k in range(self.num_patches):
-                    if mid[k].item() == 0:
-                        r = k // self.grid_w
-                        c = k %  self.grid_w
-                        r0, r1 = r * self.patch_h, (r + 1) * self.patch_h
-                        c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
-                        pix[:, :, r0:r1, c0:c1] = mask_value
+                if self.patch_groups:
+                    for group_idx, patch_list in enumerate(self.patch_groups):
+                        if mid[group_idx].item() == 0:
+                            for patch_idx in patch_list:
+                                r0, r1, c0, c1 = self._patch_coords[patch_idx]
+                                pix[:, :, r0:r1, c0:c1] = mask_value
+                else:
+                    for k in range(self.original_num_patches):
+                        if mid[k].item() == 0:
+                            r0, r1, c0, c1 = self._patch_coords[k]
+                            pix[:, :, r0:r1, c0:c1] = mask_value
 
                 # Reconstruir el texto de la pregunta (solo imagen + pregunta deben influir en SHAP)
                 question_text = self._tokens_to_question_text(masked["input_ids"][0])

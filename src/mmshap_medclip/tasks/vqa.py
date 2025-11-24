@@ -1,5 +1,6 @@
 # src/mmshap_medclip/tasks/vqa.py
 from typing import List, Dict, Any, Optional, Tuple
+import math
 import torch
 import numpy as np
 import shap
@@ -10,6 +11,9 @@ from mmshap_medclip.tasks.utils import (
 from mmshap_medclip.shap_tools.masker import build_masker
 from mmshap_medclip.shap_tools.vqa_predictor import VQAPredictor
 from mmshap_medclip.metrics import compute_mm_score, compute_iscore
+
+
+VQA_PATCH_TARGET_GRID = 7
 
 def run_vqa_one(
     model,
@@ -393,6 +397,32 @@ def plot_vqa(
     return fig
 
 
+def _build_patch_groups(grid_h: int, grid_w: int, target_grid: Optional[int]) -> Optional[List[List[int]]]:
+    if not target_grid or grid_h <= target_grid or grid_w <= target_grid:
+        return None
+
+    block_h = math.ceil(grid_h / target_grid)
+    block_w = math.ceil(grid_w / target_grid)
+
+    groups: List[List[int]] = []
+    for gh in range(0, grid_h, block_h):
+        for gw in range(0, grid_w, block_w):
+            indices: List[int] = []
+            for r in range(gh, min(gh + block_h, grid_h)):
+                for c in range(gw, min(gw + block_w, grid_w)):
+                    indices.append(r * grid_w + c)
+            if indices:
+                groups.append(indices)
+    return groups if groups else None
+
+
+def _make_group_token_ids(original_ids: torch.Tensor, num_groups: int) -> torch.Tensor:
+    device = original_ids.device
+    dtype = original_ids.dtype
+    base = torch.arange(1, num_groups + 1, device=device, dtype=dtype)
+    return base.unsqueeze(0).expand(original_ids.shape[0], -1).clone()
+
+
 def _compute_vqa_shap(
     model,
     inputs: Dict[str, Any],
@@ -407,6 +437,14 @@ def _compute_vqa_shap(
     """Aplica SHAP al batch dado para VQA y retorna valores por muestra y text_len."""
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
     image_token_ids_expanded, imginfo = make_image_token_ids(inputs, model)
+    patch_groups = None
+    target_grid = VQA_PATCH_TARGET_GRID
+    grid_h = int(imginfo.get("grid_h") or 0)
+    grid_w = int(imginfo.get("grid_w") or 0)
+    if target_grid and grid_h > 0 and grid_w > 0:
+        patch_groups = _build_patch_groups(grid_h, grid_w, target_grid)
+        if patch_groups:
+            image_token_ids_expanded = _make_group_token_ids(image_token_ids_expanded, len(patch_groups))
 
     # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
     X_clean, text_len = concat_text_image_tokens(
@@ -426,6 +464,7 @@ def _compute_vqa_shap(
         device=device,
         use_amp=amp_if_cuda,
         text_len=text_len,
+        patch_groups=patch_groups,
     )
 
     # --- Ajuste automático del presupuesto para el Permutation explainer ---
@@ -444,7 +483,7 @@ def _compute_vqa_shap(
 
     n_tokens = int(inputs["input_ids"].shape[1])
 
-    n_patches = int(imginfo.get("num_patches") or 0)
+    n_patches = len(patch_groups) if patch_groups else int(imginfo.get("num_patches") or 0)
     if n_patches <= 0:
         patch = getattr(model, "vision_patch_size", None)
         if patch is None:
