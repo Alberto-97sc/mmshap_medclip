@@ -479,20 +479,29 @@ def _compute_vqa_shap(
     tokenizer = getattr(model, "tokenizer", None)
     if tokenizer is None and hasattr(model, "processor"):
         tokenizer = getattr(model.processor, "tokenizer", None)
+    if tokenizer is None and hasattr(model, "tokenizer_fn"):
+        tokenizer = getattr(model, "tokenizer_fn")
     if tokenizer is None:
         raise ValueError("No se pudo obtener tokenizer para encodear la respuesta.")
     if not answer_text:
         raise ValueError("Se requiere answer_text para construir el prompt objetivo.")
-    answer_tokens = tokenizer(
-        [answer_text],
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-    )
-    answer_input_ids = answer_tokens["input_ids"].to(device)
-    answer_attention_mask = answer_tokens.get("attention_mask")
-    if answer_attention_mask is not None:
-        answer_attention_mask = answer_attention_mask.to(device)
+    answer_tokens = tokenizer([answer_text]) if callable(tokenizer) else None
+    if isinstance(answer_tokens, dict) and "input_ids" in answer_tokens:
+        answer_input_ids = torch.as_tensor(answer_tokens["input_ids"], dtype=torch.long, device=device)
+        answer_attention_mask = answer_tokens.get("attention_mask")
+        if answer_attention_mask is not None:
+            answer_attention_mask = torch.as_tensor(answer_attention_mask, dtype=torch.long, device=device)
+    else:
+        if isinstance(answer_tokens, torch.Tensor):
+            answer_input_ids = answer_tokens.to(device)
+            answer_attention_mask = None
+        elif isinstance(answer_tokens, list):
+            answer_input_ids = torch.as_tensor(answer_tokens, dtype=torch.long, device=device)
+            answer_attention_mask = None
+        else:
+            encoded = tokenizer.encode(answer_text)
+            answer_input_ids = torch.as_tensor([encoded], dtype=torch.long, device=device)
+            answer_attention_mask = None
 
     # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
     X_clean, text_len = concat_text_image_tokens(
