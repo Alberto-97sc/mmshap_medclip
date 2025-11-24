@@ -27,8 +27,7 @@ class VQAPredictor:
         use_amp: bool = True,
         text_len: Optional[int] = None,
         patch_groups: Optional[List[List[int]]] = None,
-        answer_input_ids: Optional[torch.Tensor] = None,
-        answer_attention_mask: Optional[torch.Tensor] = None,
+        answer_text: str = "",
     ):
         self.wrapper = model_wrapper
         self.model = getattr(model_wrapper, "model", model_wrapper).eval()
@@ -134,23 +133,7 @@ class VQAPredictor:
             c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
             self._patch_coords.append((r0, r1, c0, c1))
 
-        if answer_input_ids is None:
-            raise ValueError("Se requieren answer_input_ids para el candidato objetivo.")
-        self.answer_input_ids = answer_input_ids.to(self.device).long()
-        if answer_attention_mask is not None:
-            self.answer_attention_mask = answer_attention_mask.to(self.device).long()
-        else:
-            self.answer_attention_mask = None
-        self.bos_token_id = getattr(self.tokenizer, "bos_token_id", None) if self.tokenizer else None
-        self.eos_token_id = getattr(self.tokenizer, "eos_token_id", None) if self.tokenizer else None
-        if self.answer_input_ids.shape[1] > 0 and self.bos_token_id is not None and self.answer_input_ids[0, 0].item() == self.bos_token_id:
-            self.answer_input_ids = self.answer_input_ids[:, 1:]
-            if self.answer_attention_mask is not None:
-                self.answer_attention_mask = self.answer_attention_mask[:, 1:]
-        if self.answer_input_ids.shape[1] > 0 and self.eos_token_id is not None and self.answer_input_ids[0, -1].item() == self.eos_token_id:
-            self.answer_input_ids = self.answer_input_ids[:, :-1]
-            if self.answer_attention_mask is not None:
-                self.answer_attention_mask = self.answer_attention_mask[:, :-1]
+        self.answer_text = answer_text or ""
         self.logit_scale = self._resolve_logit_scale()
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
@@ -197,14 +180,10 @@ class VQAPredictor:
                 pix = masked["pixel_values"].clone()         # [1, 3, H, W]
                 self._apply_mask(pix, mid)
 
-                question_ids = masked["input_ids"].clone()
-                if "attention_mask" in masked:
-                    question_mask = masked["attention_mask"].clone()
-                else:
-                    question_mask = torch.ones_like(question_ids, device=self.device)
-                question_mask = question_mask * (question_ids != 0).long()
-                combined_ids, combined_mask = self._combine_question_answer_ids(question_ids, question_mask)
-                text_feature = self._encode_text_from_ids(combined_ids, combined_mask)
+                question_text = self._tokens_to_question_text(masked["input_ids"][0])
+                combined_text = f"Question: {question_text} Answer: {self.answer_text}".strip()
+                text_ids, text_mask = self._tokenize_text(combined_text)
+                text_feature = self._encode_text_from_ids(text_ids, text_mask)
                 image_feature = self._encode_image_feature(pix)
                 sim = torch.sum(image_feature * text_feature, dim=-1)
                 logit_value = (self.logit_scale * sim).reshape(-1)[0]
@@ -291,30 +270,6 @@ class VQAPredictor:
                 encoded = [0]
             input_ids = torch.as_tensor([encoded], dtype=torch.long, device=self.device)
             return input_ids, None
-
-    def _combine_question_answer_ids(
-        self,
-        question_ids: torch.Tensor,
-        question_mask: Optional[torch.Tensor],
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        q_ids = question_ids
-        q_mask = question_mask
-        if self.eos_token_id is not None and q_ids.shape[1] > 1 and q_ids[0, -1].item() == self.eos_token_id:
-            q_ids = q_ids[:, :-1]
-            if q_mask is not None:
-                q_mask = q_mask[:, :-1]
-
-        a_ids = self.answer_input_ids
-        a_mask = self.answer_attention_mask
-        if a_ids is None:
-            return q_ids, q_mask
-        if q_mask is None:
-            q_mask = torch.ones_like(q_ids, device=self.device)
-        if a_mask is None:
-            a_mask = torch.ones_like(a_ids, device=self.device)
-        combined_ids = torch.cat([q_ids, a_ids], dim=1)
-        combined_mask = torch.cat([q_mask, a_mask], dim=1)
-        return combined_ids, combined_mask
 
     def _encode_text_from_ids(
         self,

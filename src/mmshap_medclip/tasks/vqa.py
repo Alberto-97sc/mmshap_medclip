@@ -16,38 +16,6 @@ from mmshap_medclip.metrics import compute_mm_score, compute_iscore
 VQA_PATCH_TARGET_GRID = 7
 
 
-def _tokenize_generic(tokenizer, text: str, device: torch.device):
-    if tokenizer is None:
-        raise ValueError("Se requiere tokenizer para procesar el texto.")
-    try:
-        tokens = tokenizer(
-            [text],
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-        )
-        input_ids = tokens["input_ids"].to(device)
-        attention_mask = tokens.get("attention_mask")
-        if attention_mask is not None:
-            attention_mask = attention_mask.to(device)
-        return input_ids, attention_mask
-    except TypeError:
-        tokens = tokenizer([text])
-        if isinstance(tokens, dict) and "input_ids" in tokens:
-            input_ids = torch.as_tensor(tokens["input_ids"], dtype=torch.long, device=device)
-            attention_mask = tokens.get("attention_mask")
-            if attention_mask is not None:
-                attention_mask = torch.as_tensor(attention_mask, dtype=torch.long, device=device)
-            return input_ids, attention_mask
-        if isinstance(tokens, torch.Tensor):
-            return tokens.to(device), None
-        if isinstance(tokens, list):
-            return torch.as_tensor(tokens, dtype=torch.long, device=device), None
-        encoded = tokenizer.encode(text)
-        input_ids = torch.as_tensor([encoded], dtype=torch.long, device=device)
-        return input_ids, None
-
-
 def _extract_text_feature_from_inputs(model_wrapper, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
     model = getattr(model_wrapper, "model", model_wrapper)
     text_kwargs = {"input_ids": inputs["input_ids"]}
@@ -508,16 +476,8 @@ def _compute_vqa_shap(
         if patch_groups:
             image_token_ids_expanded = _make_group_token_ids(image_token_ids_expanded, len(patch_groups))
 
-    tokenizer = getattr(model, "tokenizer", None)
-    if tokenizer is None and hasattr(model, "processor"):
-        tokenizer = getattr(model.processor, "tokenizer", None)
-    if tokenizer is None and hasattr(model, "tokenizer_fn"):
-        tokenizer = getattr(model, "tokenizer_fn")
-    if tokenizer is None:
-        raise ValueError("No se pudo obtener tokenizer para encodear la respuesta.")
     if not answer_text:
         raise ValueError("Se requiere answer_text para construir el prompt objetivo.")
-    answer_input_ids, answer_attention_mask = _tokenize_generic(tokenizer, answer_text, device)
 
     # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
     X_clean, text_len = concat_text_image_tokens(
@@ -538,8 +498,7 @@ def _compute_vqa_shap(
         use_amp=amp_if_cuda,
         text_len=text_len,
         patch_groups=patch_groups,
-        answer_input_ids=answer_input_ids,
-        answer_attention_mask=answer_attention_mask,
+        answer_text=answer_text,
     )
 
     # --- Ajuste automático del presupuesto para el Permutation explainer ---
