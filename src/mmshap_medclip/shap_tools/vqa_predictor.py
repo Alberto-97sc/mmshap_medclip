@@ -133,6 +133,9 @@ class VQAPredictor:
 
         self.answer_text = answer_text or ""
         self.answer_input_ids, self.answer_attention_mask = self._tokenize_text(self.answer_text)
+        self.answer_input_ids = self.answer_input_ids.to(self.device)
+        if self.answer_attention_mask is not None:
+            self.answer_attention_mask = self.answer_attention_mask.to(self.device)
         self.bos_token_id = getattr(self.tokenizer, "bos_token_id", None) if self.tokenizer else None
         self.eos_token_id = getattr(self.tokenizer, "eos_token_id", None) if self.tokenizer else None
         self.logit_scale = self._resolve_logit_scale()

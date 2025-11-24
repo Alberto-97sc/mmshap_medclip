@@ -332,6 +332,7 @@ def explain_vqa(
     amp_if_cuda: bool = True,
     original_text: Optional[str] = None,
     answer_text: Optional[str] = None,
+    text_feature: Optional[torch.Tensor] = None,
 ) -> Dict[str, Any]:
     """Calcula explicaciones VQA para un batch preparado."""
     shap_values, mm_scores, iscores, text_len = _compute_vqa_shap(
@@ -345,6 +346,7 @@ def explain_vqa(
         amp_if_cuda=amp_if_cuda,
         original_text=original_text,
         answer_text=answer_text,
+        text_feature=text_feature,
     )
 
     out: Dict[str, Any] = {
@@ -405,6 +407,26 @@ def plot_vqa(
     return fig
 
 
+def _extract_text_feature_from_inputs(model_wrapper, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+    model = getattr(model_wrapper, "model", model_wrapper)
+    text_kwargs = {"input_ids": inputs["input_ids"]}
+    if "attention_mask" in inputs:
+        text_kwargs["attention_mask"] = inputs["attention_mask"]
+
+    with torch.inference_mode():
+        if hasattr(model, "get_text_features"):
+            feat = model.get_text_features(**text_kwargs)
+        elif hasattr(model, "encode_text"):
+            feat = model.encode_text(text_kwargs["input_ids"])
+        else:
+            raise ValueError("El modelo no expone get_text_features/encode_text.")
+
+    ref_device = next(model.parameters()).device if isinstance(model, torch.nn.Module) else inputs["input_ids"].device
+    feat = feat.to(ref_device)
+    feat = feat / feat.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+    return feat.detach()
+
+
 def _build_patch_groups(grid_h: int, grid_w: int, target_grid: Optional[int]) -> Optional[List[List[int]]]:
     if not target_grid or grid_h <= target_grid or grid_w <= target_grid:
         return None
@@ -442,6 +464,7 @@ def _compute_vqa_shap(
     amp_if_cuda: bool = True,
     original_text: Optional[str] = None,
     answer_text: Optional[str] = None,
+    text_feature: Optional[torch.Tensor] = None,
 ) -> Tuple[Any, List[Tuple[float, Dict[str, float]]], List[float], int]:
     """Aplica SHAP al batch dado para VQA y retorna valores por muestra y text_len."""
     nb_text_tokens_tensor, _ = compute_text_token_lengths(inputs, model.tokenizer)
@@ -454,16 +477,17 @@ def _compute_vqa_shap(
         patch_groups = _build_patch_groups(grid_h, grid_w, target_grid)
         if patch_groups:
             image_token_ids_expanded = _make_group_token_ids(image_token_ids_expanded, len(patch_groups))
-    if text_feature is None:
-        text_feature = _compute_text_feature(model, inputs)
-    patch_groups = None
-    target_grid = VQA_PATCH_TARGET_GRID
-    grid_h = int(imginfo.get("grid_h") or 0)
-    grid_w = int(imginfo.get("grid_w") or 0)
-    if target_grid and grid_h > 0 and grid_w > 0:
-        patch_groups = _build_patch_groups(grid_h, grid_w, target_grid)
-        if patch_groups:
-            image_token_ids_expanded = _make_group_token_ids(image_token_ids_expanded, len(patch_groups))
+
+    if text_feature is None and answer_text:
+        text_inputs, _ = prepare_batch(
+            model,
+            [answer_text],
+            [inputs["pixel_values"][0]],
+            device=device,
+            debug_tokens=False,
+            amp_if_cuda=amp_if_cuda,
+        )
+        text_feature = _extract_text_feature_from_inputs(model, text_inputs)
 
     # Pasar nb_text_tokens para usar solo tokens reales (sin padding)
     X_clean, text_len = concat_text_image_tokens(
@@ -485,6 +509,7 @@ def _compute_vqa_shap(
         text_len=text_len,
         patch_groups=patch_groups,
         answer_text=answer_text or "",
+        text_feature=text_feature,
     )
 
     # --- Ajuste automático del presupuesto para el Permutation explainer ---
