@@ -27,7 +27,8 @@ class VQAPredictor:
         use_amp: bool = True,
         text_len: Optional[int] = None,
         patch_groups: Optional[List[List[int]]] = None,
-        text_feature: Optional[torch.Tensor] = None,
+        answer_input_ids: Optional[torch.Tensor] = None,
+        answer_attention_mask: Optional[torch.Tensor] = None,
     ):
         self.wrapper = model_wrapper
         self.model = getattr(model_wrapper, "model", model_wrapper).eval()
@@ -44,6 +45,8 @@ class VQAPredictor:
         self.tokenizer = getattr(model_wrapper, "tokenizer", None)
         if self.tokenizer is None and hasattr(model_wrapper, "processor"):
             self.tokenizer = getattr(model_wrapper.processor, "tokenizer", None)
+        if self.tokenizer is None:
+            raise ValueError("VQAPredictor requiere un tokenizer accesible.")
 
         # Inferir patch_size si no viene
         ps = patch_size
@@ -131,13 +134,23 @@ class VQAPredictor:
             c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
             self._patch_coords.append((r0, r1, c0, c1))
 
-        self.answer_text = answer_text or ""
-        self.answer_input_ids, self.answer_attention_mask = self._tokenize_text(self.answer_text)
-        self.answer_input_ids = self.answer_input_ids.to(self.device)
-        if self.answer_attention_mask is not None:
-            self.answer_attention_mask = self.answer_attention_mask.to(self.device)
+        if answer_input_ids is None:
+            raise ValueError("Se requieren answer_input_ids para el candidato objetivo.")
+        self.answer_input_ids = answer_input_ids.to(self.device).long()
+        if answer_attention_mask is not None:
+            self.answer_attention_mask = answer_attention_mask.to(self.device).long()
+        else:
+            self.answer_attention_mask = None
         self.bos_token_id = getattr(self.tokenizer, "bos_token_id", None) if self.tokenizer else None
         self.eos_token_id = getattr(self.tokenizer, "eos_token_id", None) if self.tokenizer else None
+        if self.answer_input_ids.shape[1] > 0 and self.bos_token_id is not None and self.answer_input_ids[0, 0].item() == self.bos_token_id:
+            self.answer_input_ids = self.answer_input_ids[:, 1:]
+            if self.answer_attention_mask is not None:
+                self.answer_attention_mask = self.answer_attention_mask[:, 1:]
+        if self.answer_input_ids.shape[1] > 0 and self.eos_token_id is not None and self.answer_input_ids[0, -1].item() == self.eos_token_id:
+            self.answer_input_ids = self.answer_input_ids[:, :-1]
+            if self.answer_attention_mask is not None:
+                self.answer_attention_mask = self.answer_attention_mask[:, :-1]
         self.logit_scale = self._resolve_logit_scale()
 
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
@@ -242,34 +255,18 @@ class VQAPredictor:
             return torch.tensor(1.0, device=self.device, dtype=torch.float32)
 
     def _tokenize_text(self, text: str) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        tokenizer = self.tokenizer
-        if tokenizer is None:
+        if self.tokenizer is None:
             raise ValueError("Se requiere tokenizer para procesar el texto.")
-        tokens = None
-        try:
-            tokens = tokenizer(
-                text if isinstance(text, str) else str(text),
-                return_tensors="pt",
-                padding=False,
-                truncation=True,
-            )
-        except TypeError:
-            tokens = tokenizer(text if isinstance(text, str) else str(text))
-        attention_mask = None
-        if isinstance(tokens, dict):
-            input_ids = tokens["input_ids"]
-            attention_mask = tokens.get("attention_mask")
-        elif isinstance(tokens, torch.Tensor):
-            input_ids = tokens
-        else:
-            input_ids = torch.as_tensor(tokens, dtype=torch.long)
-        if input_ids.dim() == 1:
-            input_ids = input_ids.unsqueeze(0)
-        input_ids = input_ids.to(self.device)
+        tokens = self.tokenizer(
+            text if isinstance(text, str) else str(text),
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+        )
+        input_ids = tokens["input_ids"].to(self.device)
+        attention_mask = tokens.get("attention_mask")
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.device)
-        elif hasattr(tokenizer, "pad_token_id") and tokenizer.pad_token_id is not None:
-            attention_mask = (input_ids != tokenizer.pad_token_id).long()
         return input_ids, attention_mask
 
     def _combine_question_answer_ids(
@@ -286,28 +283,14 @@ class VQAPredictor:
 
         a_ids = self.answer_input_ids
         a_mask = self.answer_attention_mask
-        if a_ids is not None and a_ids.shape[1] > 0:
-            a_ids_trim = a_ids
-            a_mask_trim = a_mask
-            if self.bos_token_id is not None and a_ids_trim[0, 0].item() == self.bos_token_id and a_ids_trim.shape[1] > 1:
-                a_ids_trim = a_ids_trim[:, 1:]
-                if a_mask_trim is not None:
-                    a_mask_trim = a_mask_trim[:, 1:]
-        else:
-            a_ids_trim = None
-            a_mask_trim = None
-
-        if a_ids_trim is not None:
-            combined_ids = torch.cat([q_ids, a_ids_trim], dim=1)
-            if q_mask is not None and a_mask_trim is not None:
-                combined_mask = torch.cat([q_mask, a_mask_trim], dim=1)
-            elif q_mask is not None:
-                combined_mask = q_mask
-            else:
-                combined_mask = None
-        else:
-            combined_ids = q_ids
-            combined_mask = q_mask
+        if a_ids is None:
+            return q_ids, q_mask
+        if q_mask is None:
+            q_mask = torch.ones_like(q_ids, device=self.device)
+        if a_mask is None:
+            a_mask = torch.ones_like(a_ids, device=self.device)
+        combined_ids = torch.cat([q_ids, a_ids], dim=1)
+        combined_mask = torch.cat([q_mask, a_mask], dim=1)
         return combined_ids, combined_mask
 
     def _encode_text_from_ids(
