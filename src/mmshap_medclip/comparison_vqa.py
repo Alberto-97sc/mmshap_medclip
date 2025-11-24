@@ -211,20 +211,6 @@ def plot_vqa_comparison(
     # Crear figura con GridSpec
     fig = plt.figure(figsize=(13 * cols, 7.5 * n_models))
 
-    # Envolver la pregunta si es muy larga
-    text_length = len(question)
-    if text_length > 200:
-        wrapped_question = wrap_text(question, max_width=90, max_lines=6, prefer_long_lines=False)
-    elif text_length > 120:
-        wrapped_question = wrap_text(question, max_width=85, max_lines=4, prefer_long_lines=False)
-    else:
-        wrapped_question = wrap_text(question, max_width=80, max_lines=3, prefer_long_lines=False)
-
-    title = f"🔬 Comparación VQA - Muestra #{sample_idx}\n\nPregunta: \"{wrapped_question}\""
-    if answer:
-        title += f"\nRespuesta correcta: {answer}"
-    fig.suptitle(title, fontsize=13, fontweight='bold', y=0.995)
-
     # Crear GridSpec
     num_rows_total = n_models * 2
     height_ratios = [4, 1] * n_models
