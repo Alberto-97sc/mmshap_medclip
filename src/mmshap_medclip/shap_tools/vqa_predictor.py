@@ -257,17 +257,36 @@ class VQAPredictor:
     def _tokenize_text(self, text: str) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if self.tokenizer is None:
             raise ValueError("Se requiere tokenizer para procesar el texto.")
-        tokens = self.tokenizer(
-            text if isinstance(text, str) else str(text),
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-        )
-        input_ids = tokens["input_ids"].to(self.device)
-        attention_mask = tokens.get("attention_mask")
-        if attention_mask is not None:
-            attention_mask = attention_mask.to(self.device)
-        return input_ids, attention_mask
+        try:
+            tokens = self.tokenizer(
+                text if isinstance(text, str) else str(text),
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+            )
+            input_ids = tokens["input_ids"].to(self.device)
+            attention_mask = tokens.get("attention_mask")
+            if attention_mask is not None:
+                attention_mask = attention_mask.to(self.device)
+            return input_ids, attention_mask
+        except TypeError:
+            tokens = self.tokenizer([text])
+            if isinstance(tokens, dict) and "input_ids" in tokens:
+                input_ids = torch.as_tensor(tokens["input_ids"], dtype=torch.long, device=self.device)
+                attention_mask = tokens.get("attention_mask")
+                if attention_mask is not None:
+                    attention_mask = torch.as_tensor(attention_mask, dtype=torch.long, device=self.device)
+                return input_ids, attention_mask
+            if isinstance(tokens, torch.Tensor):
+                return tokens.to(self.device), None
+            if isinstance(tokens, list):
+                return torch.as_tensor(tokens, dtype=torch.long, device=self.device), None
+            if hasattr(self.tokenizer, "encode"):
+                encoded = self.tokenizer.encode(text)
+            else:
+                encoded = [0]
+            input_ids = torch.as_tensor([encoded], dtype=torch.long, device=self.device)
+            return input_ids, None
 
     def _combine_question_answer_ids(
         self,
