@@ -1,0 +1,14 @@
+experiment_name: vqa_med_2019_pubmedclip
+device: auto
+
+dataset:
+  name: vqa_med_2019
+  params:
+    zip_path: data/ImageClef-2019-VQA-Med-Training.zip
+    split: Training
+    images_subdir: Train_images
+    n_rows: all
+
+model:
+  name: pubmedclip-vit-b32
+  params: {}

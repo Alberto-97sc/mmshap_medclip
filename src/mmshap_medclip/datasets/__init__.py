@@ -1,2 +1,3 @@
 # Importa cada dataset para ejecutar sus decoradores de registro
-from . import roco   # si agregas más, impórtalos aquí
+from . import roco
+from . import vqa_med_2019

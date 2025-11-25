@@ -186,33 +186,70 @@ echo ""
 echo ""
 
 # =============================================================================
-# 5. Descargar dataset
+# 5. Descargar datasets
 # =============================================================================
-echo "📥 [4/5] Descargando dataset ROCO desde Google Drive..."
-echo "   ⏱️  Tamaño del dataset: ~6.65 GB (puede tardar 5-15 minutos)"
+echo "📥 [4/5] Descargando datasets desde Google Drive..."
+echo ""
+
+# =============================================================================
+# 5.1. Descargar dataset ROCO
+# =============================================================================
+echo "   📥 [4.1/5] Descargando dataset ROCO..."
+echo "      ⏱️  Tamaño del dataset: ~6.65 GB (puede tardar 5-15 minutos)"
 echo ""
 
 if [ -f "data/dataset_roco.zip" ]; then
-    echo "   ℹ️  El dataset ya existe en data/dataset_roco.zip"
-    read -p "   ¿Deseas volver a descargarlo? (s/N): " -n 1 -r
+    echo "      ℹ️  El dataset ROCO ya existe en data/dataset_roco.zip"
+    read -p "      ¿Deseas volver a descargarlo? (s/N): " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Ss]$ ]]; then
-        echo "   → Descargando dataset ROCO..."
-        echo "      (gdown mostrará su propio progreso de descarga)"
+        echo "      → Descargando dataset ROCO..."
+        echo "         (gdown mostrará su propio progreso de descarga)"
         echo ""
         python3 scripts/download_dataset.py
         echo ""
-        echo "   ✅ Dataset descargado nuevamente"
+        echo "      ✅ Dataset ROCO descargado nuevamente"
     else
-        echo "   ↩️  Se usará el dataset existente"
+        echo "      ↩️  Se usará el dataset ROCO existente"
     fi
 else
-    echo "   → Descargando dataset ROCO..."
-    echo "      (gdown mostrará su propio progreso de descarga)"
+    echo "      → Descargando dataset ROCO..."
+    echo "         (gdown mostrará su propio progreso de descarga)"
     echo ""
     python3 scripts/download_dataset.py
     echo ""
-    echo "   ✅ Dataset descargado correctamente"
+    echo "      ✅ Dataset ROCO descargado correctamente"
+fi
+echo ""
+
+# =============================================================================
+# 5.2. Descargar dataset MedVQA 2019
+# =============================================================================
+echo "   📥 [4.2/5] Descargando dataset MedVQA 2019..."
+echo "      ⏱️  Tamaño del dataset: variable (puede tardar varios minutos)"
+echo ""
+
+if [ -f "data/VQA-Med-2019.zip" ]; then
+    echo "      ℹ️  El dataset MedVQA 2019 ya existe en data/VQA-Med-2019.zip"
+    read -p "      ¿Deseas volver a descargarlo? (s/N): " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Ss]$ ]]; then
+        echo "      → Descargando dataset MedVQA 2019..."
+        echo "         (gdown mostrará su propio progreso de descarga)"
+        echo ""
+        python3 scripts/download_vqa_med_2019.py
+        echo ""
+        echo "      ✅ Dataset MedVQA 2019 descargado nuevamente"
+    else
+        echo "      ↩️  Se usará el dataset MedVQA 2019 existente"
+    fi
+else
+    echo "      → Descargando dataset MedVQA 2019..."
+    echo "         (gdown mostrará su propio progreso de descarga)"
+    echo ""
+    python3 scripts/download_vqa_med_2019.py
+    echo ""
+    echo "      ✅ Dataset MedVQA 2019 descargado correctamente"
 fi
 echo ""
 
