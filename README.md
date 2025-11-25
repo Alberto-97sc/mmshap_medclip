@@ -1,6 +1,6 @@
 # mmshap_medclip
 
-Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP, WhyXrayCLIP, Rclip y BiomedCLIP) sobre datasets médicos (p. ej., ROCO). Diseñado para **ejecución local** con datasets descargados desde **Google Drive**.
+Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos tipo **CLIP** (incluye PubMedCLIP, WhyXrayCLIP, Rclip y BiomedCLIP) sobre datasets médicos como **ROCO** (Image-Sentence Alignment) y **VQA-Med 2019** (Visual Question Answering). Diseñado para **ejecución local** con datasets descargados desde **Google Drive** u orígenes oficiales.
 
 > 🚀 **Instalación en un solo click**: Ejecuta `./setup.sh` y tendrás todo listo automáticamente. Ver [Instalación Rápida](#-instalación-rápida-un-solo-click).
 
@@ -14,7 +14,7 @@ Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos ti
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Experimentos disponibles](#experimentos-disponibles)
 - [Instalación Manual](#instalación-manual)
-- [Descarga del dataset](#descarga-del-dataset)
+- [Descarga de datasets (ROCO y VQA-Med)](#descarga-de-datasets-roco-y-vqa-med)
 - [Conversión de scripts a notebooks](#conversión-de-scripts-a-notebooks)
 - [Uso rápido](#uso-rápido)
 - [Configuración de ejemplo](#configuración-de-ejemplo)
@@ -199,18 +199,21 @@ mmshap_medclip/
 │   ├── __init__.py
 │   ├── devices.py                          # manejo de device (CUDA/CPU)
 │   ├── registry.py                         # registro de modelos y datasets
-│   ├── models.py                           # wrappers de CLIP (PubMedCLIP, WhyXrayCLIP, Rclip)
+│   ├── models.py                           # wrappers de CLIP (PubMedCLIP, WhyXrayCLIP, Rclip, BioMedCLIP)
 │   ├── io_utils.py                         # cargar configs YAML
 │   ├── metrics.py                          # MM-score, IScore
 │   ├── datasets/
 │   │   ├── __init__.py
 │   │   ├── base.py                         # interfaz DatasetBase
-│   │   └── roco.py                         # loader ROCO (lee ZIP local)
+│   │   ├── roco.py                         # loader ROCO (lee ZIP local)
+│   │   └── vqa_med_2019.py                 # loader VQA-Med 2019 (solo split Training)
 │   ├── tasks/
 │   │   ├── __init__.py
 │   │   ├── isa.py                          # tarea Image-Sentence Alignment
+│   │   ├── vqa.py                          # tarea VQA + SHAP + visualizaciones
 │   │   ├── utils.py                        # prepare_batch, token lengths, etc.
 │   │   └── whyxrayclip.py                  # utilidades específicas WhyXrayCLIP
+│   ├── comparison_vqa.py                   # utilidades para comparar modelos en VQA-Med 2019
 │   ├── shap_tools/
 │   │   ├── masker.py                       # build_masker (BOS/EOS safe)
 │   │   └── predictor.py                    # Predictor callable para SHAP
@@ -220,7 +223,9 @@ mmshap_medclip/
 │   ├── pubmedclip_roco_isa.py              # experimento PubMedCLIP + ROCO
 │   ├── whyxrayclip_roco_isa.py             # experimento WhyXrayCLIP + ROCO
 │   ├── rclip_roco_isa.py                   # experimento Rclip + ROCO
-│   └── biomedclip_roco_isa.py              # experimento BiomedCLIP + ROCO
+│   ├── biomedclip_roco_isa.py              # experimento BiomedCLIP + ROCO
+│   ├── compare_all_models.py               # compara simultáneamente en ISA
+│   └── compare_vqa_models.py               # compara PubMedCLIP vs BioMedCLIP en VQA-Med
 ├── configs/
 │   ├── roco_isa_pubmedclip.yaml            # config ISA para PubMedCLIP
 │   ├── roco_isa_whyxrayclip.yaml           # config ISA para WhyXrayCLIP
@@ -263,6 +268,17 @@ El directorio `experiments/` contiene scripts completos listos para ejecutar loc
 - **Dataset**: ROCO (Radiology Objects in COntext)
 - **Tarea**: Image-Sentence Alignment (ISA)
 - **Configuración**: `configs/roco_isa_biomedclip.yaml`
+
+### 🧠 `compare_vqa_models.py`
+- **Modelos**: PubMedCLIP (ViT-B/32) y BioMedCLIP (ViT-B/16)
+- **Dataset**: VQA-Med 2019 (split *Training*, categorías C1–C3)
+- **Tarea**: Visual Question Answering (multiple-choice) con explicación SHAP
+- **Formato**: disponible en `.py` y `.ipynb` para ejecución directa o notebook
+- **Incluye**:
+  - Loader dedicado `vqa_med_2019` que arma candidatos por categoría
+  - Resumen tabular (predicción, exactitud, TScore/IScore)
+  - Visualización comparativa conjunta + heatmaps individuales por modelo
+  - Control del grid de parches (PubMedCLIP mantiene 7×7, BioMedCLIP se normaliza a 7×7 para comparación justa)
 
 **Todos los experimentos incluyen**:
 - Carga automática del dataset desde archivo local
@@ -313,7 +329,9 @@ pip install -e ".[notebooks,dev]"
 
 ---
 
-## 📦 Descarga del dataset
+## 📦 Descarga de datasets (ROCO y VQA-Med)
+
+### Dataset ROCO (Image-Sentence Alignment)
 
 ### Descargar dataset ROCO desde Google Drive
 
@@ -349,6 +367,44 @@ pip install gdown
 # Descargar directamente
 gdown 1eRUC8F8PtXffa9iArJnyB8AMqlPNoSwc -O data/dataset_roco.zip
 ```
+
+### Dataset VQA-Med 2019 (Visual Question Answering)
+
+> ⚠️ El conjunto VQA-Med 2019 requiere registro en ImageCLEF. No se redistribuye en este repositorio.
+
+1. **Solicita el dataset** en la [página oficial de ImageCLEF VQA-Med](https://www.imageclef.org/VQA/2019). Descarga el archivo `ImageClef-2019-VQA-Med-Training.zip` (o el paquete completo `VQA-Med-2019.zip`, que contiene los sub-zips).
+2. **Coloca el ZIP sin descomprimir** en `data/`. Se soportan dos opciones:
+   - `data/ImageClef-2019-VQA-Med-Training.zip`
+   - `data/VQA-Med-2019.zip` (el loader abrirá el zip hijo automáticamente)
+3. **Estructura esperada** dentro del zip:
+   ```
+   ImageClef-2019-VQA-Med-Training/
+     ├── QAPairsByCategory/
+     │   ├── C1_Modality_train.txt
+     │   ├── C2_Plane_train.txt
+     │   └── C3_Organ_train.txt
+     └── Train_images/
+         ├── xxx.jpg
+         └── ...
+   ```
+   Solo se admiten las categorías C1–C3 y el subdirectorio `Train_images`. El split de validación/Test no se utiliza.
+4. **Configura el experimento** apuntando al zip. Ejemplo mínimo (`configs/vqa_med_2019_pubmedclip.yaml`):
+   ```yaml
+   dataset:
+     name: vqa_med_2019
+     params:
+       zip_path: data/ImageClef-2019-VQA-Med-Training.zip
+       split: Training
+       images_subdir: Train_images
+       n_rows: all
+   ```
+5. **Verificación**: al cargar el dataset verás mensajes como:
+   ```
+   📊 Split: TRAINING ...
+   📂 Detectado prefijo ...
+   📁 Archivos a leer para split TRAINING: ['C1_Modality_train.txt', ...]
+   ```
+   Si aparece un error sobre candidatos vacíos o rutas inválidas, revisa que los archivos *_train.txt* estén dentro de `QAPairsByCategory/` y que las imágenes residan en `Train_images/`.
 
 ---
 
@@ -505,7 +561,33 @@ Ver documentación completa en: [`experiments/README_compare_models.md`](experim
 
 ---
 
-### Opción 5: Uso programático paso a paso
+### Opción 5: Analizar VQA-Med 2019 (PubMedCLIP vs BioMedCLIP) 🆕
+
+```bash
+# 1. Asegúrate de tener data/VQA-Med-2019.zip o ImageClef-2019-VQA-Med-Training.zip
+
+# 2. Ejecuta el comparador VQA (script o notebook)
+python3 experiments/compare_vqa_models.py
+# o
+jupytext --to notebook experiments/compare_vqa_models.py
+jupyter notebook experiments/compare_vqa_models.ipynb
+```
+
+**Qué hace este flujo:**
+- Carga el dataset `vqa_med_2019` (solo split Training, categorías C1–C3)
+- Inicializa PubMedCLIP y BioMedCLIP con preferencias de visualización personalizadas
+- Ejecuta SHAP para ambos modelos sobre la misma pregunta-imagen
+- Muestra:
+  - Tabla comparativa con predicción, exactitud y balance multimodal
+  - Figura conjunta con imagen + pregunta
+  - Heatmaps individuales en los que PubMedCLIP preserva su grid 7×7 y BioMedCLIP se normaliza al mismo número de parches para comparación justa
+- Permite guardar resultados en `outputs/vqa/` y analizar múltiples índices en batch
+
+> Consejo: modifica `dataset_params` y `MUESTRA_A_ANALIZAR` directamente en el notebook/script para apuntar a otra ruta de dataset o a otra muestra específica.
+
+---
+
+### Opción 6: Uso programático paso a paso
 
 Ejemplo con PubMedCLIP:
 
@@ -659,6 +741,25 @@ model:
   name: biomedclip
   params:
     model_name: hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
+```
+
+### `configs/vqa_med_2019_pubmedclip.yaml`
+
+```yaml
+experiment_name: vqa_med_2019_pubmedclip
+device: auto
+
+dataset:
+  name: vqa_med_2019
+  params:
+    zip_path: data/ImageClef-2019-VQA-Med-Training.zip   # o data/VQA-Med-2019.zip
+    split: Training
+    images_subdir: Train_images
+    n_rows: all
+
+model:
+  name: pubmedclip-vit-b32
+  params: {}
 ```
 
 ---
