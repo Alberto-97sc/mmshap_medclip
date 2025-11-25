@@ -406,7 +406,18 @@ def plot_vqa(
     if shap_values is None or mm_scores is None or inputs is None:
         raise ValueError("plot_vqa necesita 'shap_values', 'mm_scores' e 'inputs' en vqa_output.")
 
-    # Forzar que los heatmaps de VQA utilicen la rejilla nativa para mostrar más parches.
+    # Configurar cómo se visualizarán los heatmaps según el modelo (permite reducir o preservar parches).
+    heatmap_kwargs = {
+        "target_grid_size": None,
+        "coarsen_factor": 1,
+        "preserve_native_grid": True,
+    }
+    custom_prefs = getattr(model_wrapper, "vqa_heatmap_prefs", None)
+    if isinstance(custom_prefs, dict):
+        for key in ("target_grid_size", "coarsen_factor", "preserve_native_grid", "alpha_img"):
+            if key in custom_prefs and custom_prefs[key] is not None:
+                heatmap_kwargs[key] = custom_prefs[key]
+
     fig = plot_text_image_heatmaps(
         shap_values=shap_values,
         inputs=inputs,
@@ -417,9 +428,7 @@ def plot_vqa(
         model_wrapper=model_wrapper,
         return_fig=True,
         text_len=text_len,
-        target_grid_size=None,
-        coarsen_factor=1,
-        preserve_native_grid=True,
+        **heatmap_kwargs,
     )
 
     if display_plot:

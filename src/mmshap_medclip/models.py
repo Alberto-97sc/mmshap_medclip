@@ -237,7 +237,13 @@ def _mk_pubmedclip(params):
     device = params.get("_device", torch.device("cpu"))
     model = CLIPModel.from_pretrained("flaviagiammarino/pubmed-clip-vit-base-patch32").to(device).eval()
     proc  = CLIPProcessor.from_pretrained("flaviagiammarino/pubmed-clip-vit-base-patch32")
-    return CLIPWrapper(model, proc)
+    wrapper = CLIPWrapper(model, proc)
+    wrapper.vqa_heatmap_prefs = {
+        "target_grid_size": None,
+        "coarsen_factor": 1,
+        "preserve_native_grid": True,
+    }
+    return wrapper
 
 @register_model("openai-clip-vit-b32")
 def _mk_openai_clip(params):
@@ -382,4 +388,9 @@ def _mk_biomedclip(params):
     processor = OpenCLIPProcessor(preprocess, tokenizer)
 
     wrapper = OpenCLIPWrapper(model.to(device), processor, tokenizer)
+    wrapper.vqa_heatmap_prefs = {
+        "target_grid_size": 7,
+        "coarsen_factor": 1,
+        "preserve_native_grid": False,
+    }
     return wrapper
