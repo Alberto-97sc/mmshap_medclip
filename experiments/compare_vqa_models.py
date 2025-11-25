@@ -278,6 +278,72 @@ import json
 #         print(f"   {model_name}: {accuracy:.2%} ({correct_count}/{total})")
 
 # %% [markdown]
+# ## 🚀 Análisis Batch de SHAP en VQA-Med 2019 (Sin Heatmaps)
+#
+# Esta sección replica el pipeline blindado del notebook de ISA pero adaptado a VQA.
+# Permite recorrer todo el split, almacenar las métricas clave por modelo y retomar
+# la ejecución automáticamente si se interrumpe.
+#
+# **Características:**
+# - ✅ Guarda automáticamente después de cada muestra
+# - ✅ Salta muestras completas y re-procesa las que tengan NaN
+# - ✅ Continua desde el último índice pendiente
+# - ✅ Registra: `Iscore`, `Tscore`, `Logit`, `Correct` por modelo
+# - ✅ Añade metadatos útiles (`question_length`, `answer_length`, `candidate_count`, `category`, `timestamp`)
+
+# %%
+from mmshap_medclip.comparison_vqa import batch_vqa_shap_analysis
+
+# 🎯 CONFIGURACIÓN: Ajustar según tus necesidades
+target_logit = "correct"  # "correct" explica la respuesta correcta; "predicted" explica la predicción
+START_IDX = 0
+END_IDX = None  # None = recorre todo el dataset
+CSV_PATH = "outputs/vqa_batch_shap_results.csv"
+
+# Ejecutar análisis batch (sin heatmaps)
+df_vqa_batch = batch_vqa_shap_analysis(
+    models=loaded_models,
+    dataset=dataset,
+    device=device,
+    start_idx=START_IDX,
+    end_idx=END_IDX,
+    csv_path=CSV_PATH,
+    target_logit=target_logit,
+    verbose=True,
+    show_dataframe=True
+)
+
+print("\n📊 Primeras filas del DataFrame de resultados:")
+print(df_vqa_batch.head(10))
+
+if not df_vqa_batch.empty:
+    print("\n📈 Estadísticas resumidas:")
+    print(f"   Total de muestras procesadas: {len(df_vqa_batch)}")
+
+    for model_name in loaded_models.keys():
+        if loaded_models[model_name] is None:
+            continue
+        iscore_col = f'Iscore_{model_name}'
+        if iscore_col in df_vqa_batch.columns:
+            serie = df_vqa_batch[iscore_col].dropna()
+            if not serie.empty:
+                avg_iscore = serie.mean()
+                print(f"   {model_name} - IScore promedio: {avg_iscore:.2%}")
+
+    print("\n🎯 Precisión por modelo:")
+    for model_name in loaded_models.keys():
+        if loaded_models[model_name] is None:
+            continue
+        correct_col = f'Correct_{model_name}'
+        if correct_col in df_vqa_batch.columns:
+            serie = df_vqa_batch[correct_col].dropna()
+            if not serie.empty:
+                accuracy = serie.mean()
+                total = len(serie)
+                correct = int((serie == True).sum())
+                print(f"   {model_name}: {accuracy:.2%} ({correct}/{total})")
+
+# %% [markdown]
 # ---
 #
 # ## 📝 Notas de Uso

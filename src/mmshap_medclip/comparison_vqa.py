@@ -514,3 +514,306 @@ def print_vqa_summary(results: Dict[str, Any]):
 
         print(f"\n🏆 Modelo más balanceado: {most_balanced_model}")
         print(f"   (IScore más cercano a 50%)")
+    else:
+        print("⚠️  No hay resultados válidos para calcular el balance.")
+
+
+def batch_vqa_shap_analysis(
+    models: Dict[str, Any],
+    dataset,
+    device,
+    start_idx: int = 0,
+    end_idx: Optional[int] = None,
+    csv_path: str = "outputs/vqa_batch_shap_results.csv",
+    target_logit: str = "correct",
+    verbose: bool = True,
+    show_dataframe: bool = False
+):
+    """
+    Ejecuta VQA+SHAP en múltiples muestras y guarda resultados en un CSV.
+
+    La función es tolerante a interrupciones: lee el CSV existente, detecta
+    muestras completas o incompletas (con NaN) y continúa automáticamente
+    desde la siguiente muestra pendiente.
+
+    Args:
+        models: Diccionario con los modelos cargados.
+        dataset: Dataset VQA-Med 2019.
+        device: Dispositivo (CPU/GPU).
+        start_idx: Índice inicial (inclusive).
+        end_idx: Índice final (exclusive). None = hasta len(dataset).
+        csv_path: Ruta del CSV donde guardar los resultados.
+        target_logit: "correct" o "predicted" (logit que se explica/almacena).
+        verbose: Imprimir progreso detallado.
+        show_dataframe: Mostrar el DataFrame completo después de cada muestra.
+
+    Returns:
+        DataFrame con los resultados acumulados.
+    """
+    import pandas as pd
+    from pathlib import Path
+    import time
+
+    def _expected_columns(model_names_list: List[str]) -> List[str]:
+        columns = ['sample_idx']
+        for name in model_names_list:
+            columns.extend([
+                f'Iscore_{name}',
+                f'Tscore_{name}',
+                f'Logit_{name}',
+                f'Correct_{name}',
+            ])
+        columns.extend(['question_length', 'answer_length', 'candidate_count', 'category', 'timestamp'])
+        return columns
+
+    def _safe_lookup_score(candidate_scores: Dict[str, float], target_text: Optional[str]) -> Optional[float]:
+        if not candidate_scores or not target_text:
+            return None
+        if target_text in candidate_scores:
+            return float(candidate_scores[target_text])
+        normalized = target_text.lower().strip()
+        for cand, score in candidate_scores.items():
+            if cand.lower().strip() == normalized:
+                return float(score)
+        return None
+
+    def _resolve_logit(result_dict: Dict[str, Any], answer_text: Optional[str]) -> Optional[float]:
+        target_text = answer_text if (target_logit == "correct" and answer_text) else result_dict.get("prediction")
+
+        logit_val = _safe_lookup_score(result_dict.get("candidate_scores", {}), target_text)
+        if logit_val is not None:
+            return logit_val
+
+        similarities = result_dict.get("similarities")
+        if similarities is None:
+            return None
+
+        candidate_list = result_dict.get("candidates")
+        target_idx = None
+        if candidate_list and target_text:
+            normalized = target_text.lower().strip()
+            for idx, cand in enumerate(candidate_list):
+                if cand == target_text or cand.lower().strip() == normalized:
+                    target_idx = idx
+                    break
+
+        if target_idx is None:
+            target_idx = result_dict.get("prediction_idx")
+
+        if target_idx is not None and 0 <= target_idx < len(similarities):
+            return float(similarities[target_idx])
+
+        return None
+
+    csv_path_obj = Path(csv_path)
+    csv_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+    if end_idx is None:
+        end_idx = len(dataset)
+    total_samples = max(0, end_idx - start_idx)
+
+    model_names = [name for name, model in models.items() if model is not None]
+    expected_cols = _expected_columns(model_names)
+
+    if csv_path_obj.exists():
+        try:
+            df_existing = pd.read_csv(csv_path)
+            print(f"📂 CSV existente encontrado: {csv_path}")
+            print(f"   Muestras ya registradas: {len(df_existing)}")
+        except Exception as e:
+            print(f"⚠️  Error leyendo CSV existente ({e}). Creando uno nuevo...")
+            df_existing = pd.DataFrame(columns=expected_cols)
+    else:
+        print(f"📝 Creando nuevo CSV: {csv_path}")
+        df_existing = pd.DataFrame(columns=expected_cols)
+
+    for col in expected_cols:
+        if col not in df_existing.columns:
+            df_existing[col] = None
+
+    processed_samples = set()
+    samples_with_nan = set()
+
+    if not df_existing.empty and 'sample_idx' in df_existing.columns:
+        metric_columns = []
+        for model_name in model_names:
+            metric_columns.extend([
+                f'Iscore_{model_name}',
+                f'Tscore_{model_name}',
+                f'Logit_{model_name}',
+            ])
+
+        for _, row in df_existing.iterrows():
+            sample_idx = int(row['sample_idx'])
+            has_nan = False
+            for col in metric_columns:
+                if col in row and pd.isna(row[col]):
+                    has_nan = True
+                    break
+
+            if has_nan:
+                samples_with_nan.add(sample_idx)
+            else:
+                processed_samples.add(sample_idx)
+
+        if samples_with_nan:
+            print(f"   ⚠️  Muestras con NaN detectadas: {len(samples_with_nan)} (se re-procesarán)")
+        print(f"   ✅ Muestras completas: {len(processed_samples)}")
+
+    df_results = df_existing.copy()
+
+    current_idx = start_idx
+    for idx in range(start_idx, end_idx):
+        if idx not in processed_samples:
+            current_idx = idx
+            break
+    else:
+        if not samples_with_nan:
+            print(f"✅ Todas las muestras en [{start_idx}, {end_idx}) ya están procesadas.")
+            return df_results
+        current_idx = min(samples_with_nan)
+
+    print(f"\n{'='*80}")
+    print(f"🚀 INICIANDO ANÁLISIS BATCH DE SHAP EN VQA-Med 2019")
+    print(f"{'='*80}")
+    print(f"📊 Rango: [{start_idx}, {end_idx})")
+    print(f"📍 Reanudando desde: {current_idx}")
+    print(f"📈 Total objetivo: {total_samples}")
+    print(f"⏭️  Ya completas (CSV): {len(processed_samples)}")
+    if samples_with_nan:
+        print(f"🔄 Con NaN pendientes: {len(samples_with_nan)}")
+    print(f"{'='*80}\n")
+
+    samples_processed = 0
+    samples_skipped = 0
+    samples_failed = 0
+    start_time = time.time()
+
+    try:
+        for idx in range(current_idx, end_idx):
+            if idx in processed_samples and idx not in samples_with_nan:
+                samples_skipped += 1
+                if verbose:
+                    print(f"⏭️  Muestra #{idx}: ya procesada, saltando...")
+                continue
+
+            is_reprocessing = idx in samples_with_nan
+            if is_reprocessing and verbose:
+                print(f"🔄 Muestra #{idx}: contiene NaN, re-procesando...")
+
+            try:
+                if verbose:
+                    print(f"\n{'─'*80}")
+                    print(f"🔄 Procesando muestra #{idx} ({idx - start_idx + 1}/{total_samples})")
+                    print(f"{'─'*80}")
+
+                results, _, question, answer, candidates, category = run_vqa_shap_on_models(
+                    models=models,
+                    sample_idx=idx,
+                    dataset=dataset,
+                    device=device,
+                    target_logit=target_logit,
+                    verbose=False
+                )
+
+                row_data: Dict[str, Any] = {
+                    'sample_idx': idx,
+                    'question_length': len(question) if question else 0,
+                    'answer_length': len(answer) if answer else 0,
+                    'candidate_count': len(candidates) if candidates else 0,
+                    'category': category or 'unknown',
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+                }
+
+                for model_name in model_names:
+                    result = results.get(model_name)
+
+                    if result is None:
+                        row_data[f'Iscore_{model_name}'] = None
+                        row_data[f'Tscore_{model_name}'] = None
+                        row_data[f'Logit_{model_name}'] = None
+                        row_data[f'Correct_{model_name}'] = None
+                        continue
+
+                    row_data[f'Iscore_{model_name}'] = result.get('iscore', 0.0)
+                    row_data[f'Tscore_{model_name}'] = result.get('tscore', 0.0)
+                    row_data[f'Logit_{model_name}'] = _resolve_logit(result, answer)
+                    row_data[f'Correct_{model_name}'] = result.get('correct')
+
+                for col in row_data.keys():
+                    if col not in df_results.columns:
+                        df_results[col] = None
+
+                existing_mask = df_results['sample_idx'] == idx
+                if existing_mask.any():
+                    for col, val in row_data.items():
+                        df_results.loc[existing_mask, col] = val
+                    if verbose:
+                        print(f"   ✏️  Sobrescribiendo muestra #{idx}")
+                else:
+                    df_results = pd.concat(
+                        [df_results, pd.DataFrame([row_data])],
+                        ignore_index=True
+                    )
+
+                df_results.to_csv(csv_path, index=False)
+
+                samples_processed += 1
+                processed_samples.add(idx)
+                samples_with_nan.discard(idx)
+
+                elapsed_time = time.time() - start_time
+                remaining = max(total_samples - len(processed_samples), 0)
+                avg_time = elapsed_time / samples_processed if samples_processed > 0 else 0.0
+                eta_minutes = (avg_time * remaining) / 60 if avg_time else 0.0
+
+                if verbose:
+                    print(f"✅ Muestra #{idx} completada")
+                    print(f"   IScores:", end=" ")
+                    for model_name in model_names:
+                        iscore_val = row_data.get(f'Iscore_{model_name}')
+                        if iscore_val is not None:
+                            print(f"{model_name}={iscore_val:.2%} ", end="")
+                    print()
+                    print(f"💾 CSV actualizado en: {csv_path}")
+                    print(f"📊 Progreso: {samples_processed} procesadas | {samples_skipped} saltadas | {samples_failed} fallidas")
+                    print(f"⏱️  ETA aprox.: {eta_minutes:.1f} min restantes\n")
+
+                if show_dataframe:
+                    print(f"\n{'='*80}")
+                    print("📋 DATAFRAME (últimas filas)")
+                    print(f"{'='*80}")
+                    display_rows = min(10, len(df_results))
+                    print(df_results.tail(display_rows).to_string(index=False))
+                    print(f"{'='*80}\n")
+
+            except Exception as e:
+                samples_failed += 1
+                print(f"\n❌ Error en muestra #{idx}: {e}")
+                print("   Continuando con la siguiente muestra...")
+                try:
+                    df_results.to_csv(csv_path, index=False)
+                except Exception:
+                    pass
+
+    except KeyboardInterrupt:
+        print("\n⚠️  Ejecución interrumpida por el usuario.")
+        print("💾 Guardando progreso antes de salir...")
+        df_results.to_csv(csv_path, index=False)
+        print(f"✅ Progreso guardado en: {csv_path}")
+        print(f"📍 Última muestra intentada: {idx}")
+        raise
+
+    elapsed_time = time.time() - start_time
+    print(f"\n{'='*80}")
+    print("✅ ANÁLISIS BATCH DE VQA COMPLETADO")
+    print(f"{'='*80}")
+    print(f"   • Muestras procesadas en esta sesión: {samples_processed}")
+    print(f"   • Muestras saltadas (ya completas): {samples_skipped}")
+    print(f"   • Muestras con error: {samples_failed}")
+    print(f"   • Total acumulado en CSV: {len(df_results)}")
+    print(f"⏱️  Tiempo total: {elapsed_time/60:.1f} minutos")
+    print(f"💾 CSV final: {csv_path}")
+    print(f"{'='*80}\n")
+
+    return df_results
