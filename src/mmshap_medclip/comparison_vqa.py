@@ -92,7 +92,7 @@ def run_vqa_shap_on_models(
     # Usar SOLO los candidatos del dataset, sin modificar ni filtrar
     candidates = sample.get('candidates', [])
     category = sample.get('category', 'unknown')
-    
+
     # Validar que los candidatos no estén vacíos
     if not candidates:
         error_msg = (
@@ -157,7 +157,7 @@ def run_vqa_shap_on_models(
                 import traceback
                 traceback.print_exc()
             results[model_name] = None
-            
+
             # Limpiar memoria GPU incluso si hay error
             if device.type == "cuda":
                 torch.cuda.empty_cache()
@@ -324,7 +324,7 @@ def plot_vqa_comparison(
             fontsize=13, fontweight='bold', pad=10
         )
         ax_img.axis('off')
-        
+
         # Colorbar vertical por modelo para imagen
         img_pos = ax_img.get_position()
         cax_img = fig.add_axes([
@@ -347,7 +347,7 @@ def plot_vqa_comparison(
         _, word_shap_dict = mm_scores[0]
         words = list(word_shap_dict.keys())
         word_vals = np.array([word_shap_dict[w] for w in words], dtype=np.float32)
-        
+
         if np.any(word_vals < 0):
             absmax_word = float(np.percentile(np.abs(word_vals), 95)) if word_vals.size else 0.0
             absmax_word = max(absmax_word, 1e-6)
@@ -447,7 +447,7 @@ def plot_vqa_comparison(
                     )
                 )
                 x += w + gap
-        
+
         # Colorbar horizontal por modelo para texto
         txt_pos = ax_txt.get_position()
         cax_txt = fig.add_axes([
@@ -514,4 +514,3 @@ def print_vqa_summary(results: Dict[str, Any]):
 
         print(f"\n🏆 Modelo más balanceado: {most_balanced_model}")
         print(f"   (IScore más cercano a 50%)")
-

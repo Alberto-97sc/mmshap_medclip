@@ -8,7 +8,7 @@ class VQAPredictor:
     """
     Callable para SHAP en VQA: aplica máscaras de parches sobre pixel_values y tokens de texto,
     calcula similitudes con todos los candidatos, y retorna el logit del candidato target.
-    
+
     - Acepta x como np.ndarray o torch.Tensor (1D o 2D) con [texto | parches].
     - Para cada máscara, construye prompts "Question: <q> Answer: <candidate>" y calcula similitudes.
     - Retorna el logit del candidato correcto o predicho según target_logit.
@@ -36,7 +36,7 @@ class VQAPredictor:
 
         # Copia base_inputs al device del modelo
         self.base_inputs = {k: v.to(self.device) for k, v in base_inputs.items()}
-        
+
         self.question = question
         self.candidates = candidates
         self.answer_correct = answer_correct
@@ -325,4 +325,3 @@ class VQAPredictor:
             question_text = self.question
 
         return question_text.strip()
-

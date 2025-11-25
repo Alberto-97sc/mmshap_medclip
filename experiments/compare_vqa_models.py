@@ -152,11 +152,11 @@ from mmshap_medclip.tasks.vqa import plot_vqa
 for model_name, result in results.items():
     if result is None:
         continue
-    
+
     print(f"\n{'='*60}")
     print(f"🔍 Heatmap detallado: {model_name}")
     print(f"{'='*60}\n")
-    
+
     try:
         fig = plot_vqa(
             image=image,
@@ -165,7 +165,7 @@ for model_name, result in results.items():
             model_wrapper=result.get("model_wrapper"),
             display_plot=True
         )
-        
+
         # Imprimir métricas
         prediction = result.get('prediction', 'N/A')
         correct = result.get('correct', None)
@@ -173,7 +173,7 @@ for model_name, result in results.items():
         iscore = result.get('iscore', 0.0)
         correct_str = "✅" if correct else "❌" if correct is False else "?"
         print(f"📊 {model_name} - Predicción: {prediction} {correct_str} | TScore: {tscore:.2%} | IScore: {iscore:.2%}\n")
-        
+
     except Exception as e:
         print(f"❌ Error generando heatmap para {model_name}: {e}\n")
 
@@ -189,14 +189,14 @@ import json
 # Descomentar para guardar
 # output_dir = Path("outputs/vqa")
 # output_dir.mkdir(parents=True, exist_ok=True)
-# 
+#
 # # Guardar figura
 # if fig is not None:
 #     fig_path = output_dir / f"vqa_comparison_sample_{MUESTRA_A_ANALIZAR}.png"
 #     fig.savefig(fig_path, dpi=150, bbox_inches='tight')
 #     print(f"💾 Figura guardada en: {fig_path}")
 #     plt.close(fig)
-# 
+#
 # # Guardar resultados numéricos
 # summary = {}
 # for model_name, result in results.items():
@@ -207,7 +207,7 @@ import json
 #             "tscore": float(result.get('tscore', 0.0)),
 #             "iscore": float(result.get('iscore', 0.0)),
 #         }
-# 
+#
 # json_path = output_dir / f"vqa_comparison_sample_{MUESTRA_A_ANALIZAR}.json"
 # with open(json_path, 'w') as f:
 #     json.dump({
@@ -218,7 +218,7 @@ import json
 #         "candidates": candidates,
 #         "results": summary
 #     }, f, indent=2)
-# 
+#
 # print(f"💾 Resultados guardados en: {json_path}")
 
 # %% [markdown]
@@ -230,11 +230,11 @@ import json
 # %%
 # from mmshap_medclip.comparison_vqa import run_vqa_shap_on_models
 # import pandas as pd
-# 
+#
 # # Ejemplo: analizar 5 muestras
 # sample_indices = [0, 10, 20, 30, 40]
 # all_results = []
-# 
+#
 # for idx in sample_indices:
 #     print(f"\n📍 Procesando muestra {idx}...")
 #     results, _, question, answer, candidates, category = run_vqa_shap_on_models(
@@ -245,7 +245,7 @@ import json
 #         target_logit="correct",
 #         verbose=False
 #     )
-#     
+#
 #     for model_name, result in results.items():
 #         if result is not None:
 #             all_results.append({
@@ -258,16 +258,16 @@ import json
 #                 "category": category,
 #                 "question": question[:50] + "..."
 #             })
-# 
+#
 # df_results = pd.DataFrame(all_results)
 # print("\n📊 Primeras filas del DataFrame de resultados:")
 # print(df_results.head(10))
-# 
+#
 # # Estadísticas por modelo
 # if not df_results.empty:
 #     print("\n📈 Estadísticas por modelo:")
 #     print(df_results.groupby('model')[['tscore', 'iscore']].mean().round(4))
-#     
+#
 #     # Precisión por modelo
 #     print("\n🎯 Precisión por modelo:")
 #     for model_name in df_results['model'].unique():
@@ -322,4 +322,3 @@ import json
 # ---
 #
 # **Proyecto de tesis sobre balance multimodal en modelos CLIP médicos aplicados a VQA**
-

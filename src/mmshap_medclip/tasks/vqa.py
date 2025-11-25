@@ -49,13 +49,13 @@ def run_vqa_one(
 ) -> Dict[str, Any]:
     """
     Pipeline de VQA multiple-choice para 1 (imagen, pregunta, candidatos).
-    
+
     Lógica:
     1. Construir prompts tipo "Question: <pregunta> Answer: <candidate>"
     2. Codificar imagen y cada texto candidato con el modelo
     3. Calcular similitud imagen-texto para cada candidato
     4. Elegir como predicción el candidato con mayor similitud
-    
+
     Args:
         model: Wrapper del modelo CLIP (debe tener processor, tokenizer, model)
         image: PIL.Image
@@ -67,7 +67,7 @@ def run_vqa_one(
         plot: Si True, genera visualización (requiere explain=True)
         target_logit: "correct" o "predicted" - qué logit explicar con SHAP
         amp_if_cuda: Usar mixed precision si está en CUDA
-        
+
     Returns:
         Dict con:
         - prediction: Candidato predicho (el de mayor similitud)
@@ -79,16 +79,16 @@ def run_vqa_one(
     """
     if not candidates:
         raise ValueError("La lista de candidatos no puede estar vacía")
-    
+
     # Construir prompts para cada candidato
     prompts = [
         f"Question: {question} Answer: {candidate}"
         for candidate in candidates
     ]
-    
+
     # Preparar batch: imagen repetida para cada candidato
     images = [image] * len(candidates)
-    
+
     # Codificar y calcular similitudes
     inputs, logits = prepare_batch(
         model,
@@ -98,7 +98,7 @@ def run_vqa_one(
         debug_tokens=False,
         amp_if_cuda=amp_if_cuda
     )
-    
+
     # Extraer similitudes (logits_per_image es [n_imgs, n_texts])
     logits_cpu = logits.detach().cpu()
     if logits_cpu.ndim == 0:
@@ -125,22 +125,22 @@ def run_vqa_one(
     similarities = similarities_tensor.numpy()
     if similarities.ndim == 0:
         similarities = np.array([similarities])
-    
+
     # Encontrar el candidato con mayor similitud
     pred_idx = int(np.argmax(similarities))
     prediction = candidates[pred_idx]
-    
+
     # Construir dict de scores
     candidate_scores = {
         candidate: float(sim)
         for candidate, sim in zip(candidates, similarities)
     }
-    
+
     # Verificar si la predicción es correcta (si se proporcionó answer)
     correct = None
     if answer is not None:
         correct = (prediction.lower().strip() == answer.lower().strip())
-    
+
     out: Dict[str, Any] = {
         "prediction": prediction,
         "prediction_idx": pred_idx,
@@ -154,7 +154,7 @@ def run_vqa_one(
         "model_wrapper": model,
         "image": image,
     }
-    
+
     base_inputs = None
     answer_text = None
     if explain or plot:
@@ -175,7 +175,7 @@ def run_vqa_one(
 
     if not (explain or plot):
         return out
-    
+
     # Calcular explicaciones SHAP
     explanation = explain_vqa(
         model,
@@ -190,7 +190,7 @@ def run_vqa_one(
         answer_text=answer_text,
     )
     out.update(explanation)
-    
+
     if plot and "shap_values" in out:
         fig = plot_vqa(
             image=image,
@@ -200,7 +200,7 @@ def run_vqa_one(
             display_plot=True,
         )
         out["fig"] = fig
-    
+
     return out
 
 
@@ -215,7 +215,7 @@ def run_vqa_batch(
 ) -> Dict[str, Any]:
     """
     Pipeline de VQA multiple-choice para batch.
-    
+
     Args:
         model: Wrapper del modelo CLIP
         images: Lista de PIL.Images
@@ -224,7 +224,7 @@ def run_vqa_batch(
         device: Dispositivo
         answers: Lista de respuestas correctas (opcional)
         amp_if_cuda: Usar mixed precision si está en CUDA
-        
+
     Returns:
         Dict con resultados por muestra
     """
@@ -233,10 +233,10 @@ def run_vqa_batch(
             f"Longitudes inconsistentes: images={len(images)}, "
             f"questions={len(questions)}, candidates_list={len(candidates_list)}"
         )
-    
+
     if answers is not None and len(answers) != len(images):
         raise ValueError(f"answers debe tener la misma longitud que images")
-    
+
     results = []
     for i in range(len(images)):
         result = run_vqa_one(
@@ -249,19 +249,19 @@ def run_vqa_batch(
             amp_if_cuda=amp_if_cuda,
         )
         results.append(result)
-    
+
     # Agregar métricas agregadas si hay respuestas
     if answers is not None:
         correct_count = sum(1 for r in results if r["correct"])
         accuracy = correct_count / len(results)
-        
+
         return {
             "results": results,
             "accuracy": accuracy,
             "correct_count": correct_count,
             "total": len(results),
         }
-    
+
     return {"results": results}
 
 
@@ -274,27 +274,27 @@ def evaluate_vqa_dataset(
 ) -> Dict[str, Any]:
     """
     Evalúa un dataset VQA completo.
-    
+
     Args:
         model: Wrapper del modelo CLIP
         dataset: Dataset que devuelve dicts con "image", "question", "answer", "candidates"
         device: Dispositivo
         max_samples: Número máximo de muestras a evaluar (None = todas)
         amp_if_cuda: Usar mixed precision si está en CUDA
-        
+
     Returns:
         Dict con métricas agregadas y resultados por muestra
     """
     total = len(dataset)
     if max_samples is not None:
         total = min(total, max_samples)
-    
+
     all_results = []
     correct_count = 0
-    
+
     for i in range(total):
         sample = dataset[i]
-        
+
         result = run_vqa_one(
             model=model,
             image=sample["image"],
@@ -304,13 +304,13 @@ def evaluate_vqa_dataset(
             answer=sample.get("answer"),
             amp_if_cuda=amp_if_cuda,
         )
-        
+
         all_results.append(result)
         if result["correct"]:
             correct_count += 1
-    
+
     accuracy = correct_count / total if total > 0 else 0.0
-    
+
     # Calcular métricas por categoría si está disponible
     category_metrics = {}
     if "category" in dataset[0]:
@@ -322,7 +322,7 @@ def evaluate_vqa_dataset(
             category_results[category]["total"] += 1
             if all_results[i]["correct"]:
                 category_results[category]["correct"] += 1
-        
+
         category_metrics = {
             cat: {
                 "accuracy": res["correct"] / res["total"] if res["total"] > 0 else 0.0,
@@ -331,7 +331,7 @@ def evaluate_vqa_dataset(
             }
             for cat, res in category_results.items()
         }
-    
+
     return {
         "accuracy": accuracy,
         "correct_count": correct_count,
@@ -590,4 +590,3 @@ def _compute_vqa_shap(
     iscores = [compute_iscore(shap_values, inputs, i=i, text_length=text_len) for i in range(batch_size)]
 
     return shap_values, mm_scores, iscores, text_len
-

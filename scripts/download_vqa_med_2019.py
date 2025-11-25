@@ -49,7 +49,7 @@ def download_dataset():
         print(f"📊 Tamaño del archivo: {size_mb:.1f} MB")
         print("🎉 ¡Listo para usar en los experimentos!")
         print("ℹ️  El dataset loader accederá al Training.zip dentro de este ZIP")
-        
+
         return True
 
     except ImportError:
@@ -83,4 +83,3 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
-
