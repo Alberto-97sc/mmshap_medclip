@@ -374,6 +374,8 @@ def plot_text_image_heatmaps(
     return_fig: bool = False,
     text_len: Optional[int] = None,
     target_grid_size: Optional[int] = None,
+    coarsen_factor: Optional[int] = None,
+    preserve_native_grid: bool = False,
 ):
     """
     Dibuja, por muestra del batch, el heatmap de parches de imagen usando valores SHAP
@@ -388,6 +390,9 @@ def plot_text_image_heatmaps(
       mm_scores: lista [(tscore, word_shap_dict_con_signo), ...] por muestra donde
                  word_shap_dict es OrderedDict[str, float] con palabra→valor SHAP
       text_len: longitud de la secuencia de texto (si None, usa attention_mask)
+      target_grid_size: tamaño objetivo del grid de visualización (None usa el valor por defecto)
+      coarsen_factor: factor para agrupar parches vecinos (None usa PLOT_ISA_COARSEN_G)
+      preserve_native_grid: si True, evita reescalar/coarsening y respeta la rejilla original
     """
     # --- normalizar inputs ---
     B = inputs["input_ids"].shape[0]
@@ -529,11 +534,19 @@ def plot_text_image_heatmaps(
     )
     # Asegurar que el alpha esté en un rango razonable y consistente
     alpha_overlay = min(max(alpha_overlay, 0.0), 1.0)
-    coarsen_factor = int(PLOT_ISA_COARSEN_G) if PLOT_ISA_COARSEN_G else 0
+    if coarsen_factor is None:
+        coarsen_factor = int(PLOT_ISA_COARSEN_G) if PLOT_ISA_COARSEN_G else 0
+    else:
+        coarsen_factor = max(0, int(coarsen_factor))
+    preserve_native_grid = bool(preserve_native_grid)
     percentile_img = float(PLOT_ISA_IMG_PERCENTILE)
     image_overlay_entries = []
     coarsened_abs_values = []
-    display_grid_size = target_grid_size or PLOT_DEFAULT_GRID_SIZE
+    if preserve_native_grid:
+        display_grid_size = None
+        coarsen_factor = 0
+    else:
+        display_grid_size = target_grid_size or PLOT_DEFAULT_GRID_SIZE
 
     # --- figura ---
     # Aumentar altura de la figura y dar más espacio a la sección de texto

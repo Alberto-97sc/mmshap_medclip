@@ -13,7 +13,7 @@ from mmshap_medclip.shap_tools.vqa_predictor import VQAPredictor
 from mmshap_medclip.metrics import compute_mm_score, compute_iscore
 
 
-VQA_PATCH_TARGET_GRID = 7
+VQA_PATCH_TARGET_GRID = 14
 
 
 def _extract_text_feature_from_inputs(model_wrapper, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -406,6 +406,7 @@ def plot_vqa(
     if shap_values is None or mm_scores is None or inputs is None:
         raise ValueError("plot_vqa necesita 'shap_values', 'mm_scores' e 'inputs' en vqa_output.")
 
+    # Forzar que los heatmaps de VQA utilicen la rejilla nativa para mostrar más parches.
     fig = plot_text_image_heatmaps(
         shap_values=shap_values,
         inputs=inputs,
@@ -416,7 +417,9 @@ def plot_vqa(
         model_wrapper=model_wrapper,
         return_fig=True,
         text_len=text_len,
-        target_grid_size=7,
+        target_grid_size=None,
+        coarsen_factor=1,
+        preserve_native_grid=True,
     )
 
     if display_plot:
