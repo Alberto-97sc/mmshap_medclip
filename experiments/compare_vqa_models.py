@@ -190,6 +190,7 @@ for model_name, result in results.items():
 # - ✅ Continua desde el último índice pendiente
 # - ✅ Registra: `Iscore`, `Tscore`, `Logit`, `Correct` por modelo
 # - ✅ Añade metadatos útiles (`question_length`, `answer_length`, `candidate_count`, `category`, `timestamp`)
+# - 🕒 Si el contador supera los 60 minutos, el ETA se muestra como `3horas y 45min`
 
 # %%
 from mmshap_medclip.comparison_vqa import batch_vqa_shap_analysis

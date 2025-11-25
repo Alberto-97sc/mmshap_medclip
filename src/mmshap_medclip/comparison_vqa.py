@@ -605,6 +605,26 @@ def batch_vqa_shap_analysis(
 
         return None
 
+    def _format_eta(seconds: float) -> str:
+        if seconds <= 0:
+            return "0 min"
+
+        minutes_total = seconds / 60
+        if minutes_total < 60:
+            return f"{minutes_total:.1f} min"
+
+        hours = int(minutes_total // 60)
+        remaining_minutes = int(round(minutes_total - hours * 60))
+
+        if remaining_minutes == 60:
+            hours += 1
+            remaining_minutes = 0
+
+        hour_label = "hora" if hours == 1 else "horas"
+        if remaining_minutes > 0:
+            return f"{hours}{hour_label} y {remaining_minutes}min"
+        return f"{hours}{hour_label}"
+
     csv_path_obj = Path(csv_path)
     csv_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
@@ -765,7 +785,8 @@ def batch_vqa_shap_analysis(
                 elapsed_time = time.time() - start_time
                 remaining = max(total_samples - len(processed_samples), 0)
                 avg_time = elapsed_time / samples_processed if samples_processed > 0 else 0.0
-                eta_minutes = (avg_time * remaining) / 60 if avg_time else 0.0
+                eta_seconds = (avg_time * remaining) if avg_time else 0.0
+                eta_display = _format_eta(eta_seconds)
 
                 if verbose:
                     print(f"✅ Muestra #{idx} completada")
@@ -777,7 +798,7 @@ def batch_vqa_shap_analysis(
                     print()
                     print(f"💾 CSV actualizado en: {csv_path}")
                     print(f"📊 Progreso: {samples_processed} procesadas | {samples_skipped} saltadas | {samples_failed} fallidas")
-                    print(f"⏱️  ETA aprox.: {eta_minutes:.1f} min restantes\n")
+                    print(f"⏱️  ETA aprox.: {eta_display} restantes\n")
 
                 if show_dataframe:
                     print(f"\n{'='*80}")
