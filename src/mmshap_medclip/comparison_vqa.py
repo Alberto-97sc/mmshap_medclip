@@ -693,12 +693,20 @@ def batch_vqa_shap_analysis(
             return df_results
         current_idx = min(samples_with_nan)
 
+    completed_in_range = sum(
+        1 for idx in range(start_idx, end_idx)
+        if idx in processed_samples
+    )
+    pending_total = max(total_samples - completed_in_range, 0)
+
     print(f"\n{'='*80}")
     print(f"🚀 INICIANDO ANÁLISIS BATCH DE SHAP EN VQA-Med 2019")
     print(f"{'='*80}")
     print(f"📊 Rango: [{start_idx}, {end_idx})")
     print(f"📍 Reanudando desde: {current_idx}")
     print(f"📈 Total objetivo: {total_samples}")
+    print(f"✅ Completadas en este rango: {completed_in_range}")
+    print(f"🎯 Pendientes en este rango: {pending_total}")
     print(f"⏭️  Ya completas (CSV): {len(processed_samples)}")
     if samples_with_nan:
         print(f"🔄 Con NaN pendientes: {len(samples_with_nan)}")
@@ -783,7 +791,7 @@ def batch_vqa_shap_analysis(
                 samples_with_nan.discard(idx)
 
                 elapsed_time = time.time() - start_time
-                remaining = max(total_samples - len(processed_samples), 0)
+                remaining = max(pending_total - samples_processed, 0)
                 avg_time = elapsed_time / samples_processed if samples_processed > 0 else 0.0
                 eta_seconds = (avg_time * remaining) if avg_time else 0.0
                 eta_display = _format_eta(eta_seconds)
