@@ -198,8 +198,8 @@ from mmshap_medclip.comparison_vqa import batch_vqa_shap_analysis
 
 # 🎯 CONFIGURACIÓN: Ajustar según tus necesidades
 target_logit = "correct"  # "correct" explica la respuesta correcta; "predicted" explica la predicción
-START_IDX = 3200
-END_IDX = 4700  # None = recorre todo el dataset
+START_IDX = 6400
+END_IDX = 7900  # None = recorre todo el dataset
 CSV_PATH = "outputs/vqa_batch_shap_results.csv"
 
 # Ejecutar análisis batch (sin heatmaps)
