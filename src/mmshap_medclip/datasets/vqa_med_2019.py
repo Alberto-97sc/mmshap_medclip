@@ -2,7 +2,7 @@ import os
 import zipfile
 from PIL import Image
 from io import BytesIO
-from typing import Dict, List
+from typing import Dict, List, Optional
 from collections import defaultdict
 from mmshap_medclip.datasets.base import DatasetBase
 from mmshap_medclip.registry import register_dataset
@@ -11,309 +11,334 @@ from mmshap_medclip.registry import register_dataset
 def _build_vqa_med_2019(params):
     return VQAMed2019Dataset(**params)
 
+
 class VQAMed2019Dataset(DatasetBase):
     """
     Dataset loader para VQA-Med 2019.
 
-    SOLO soporta el split TRAINING.
-
-    Lee archivos del ZIP ImageClef-2019-VQA-Med-Training.zip:
-    - Archivos QAPairsByCategory/*_train.txt (C1_Modality_train.txt, C2_Plane_train.txt, C3_Organ_train.txt)
-    - Directorio Train_images/
-
-    También puede leer desde el ZIP padre (VQA-Med-2019.zip) que contiene los zips hijos.
-
-    Infiere categorías desde el nombre del archivo y construye candidatos por categoría.
+    Soporta los splits oficiales: train, validation y test.
     """
 
     VALID_CATEGORIES = {"modality", "plane", "organ_system"}
+
+    SPLIT_ALIASES = {
+        "train": {"train", "training"},
+        "val": {"val", "validation", "dev"},
+        "test": {"test", "testing"},
+    }
+
+    SPLIT_LABELS = {
+        "train": "Training",
+        "val": "Validation",
+        "test": "Test",
+    }
+
+    SPLIT_SUFFIXES = {
+        "train": ("train", "training"),
+        "val": ("val", "validation"),
+        "test": ("test",),
+    }
+
+    INNER_ZIP_TOKENS = {
+        "train": ("train", "training"),
+        "val": ("val", "validation"),
+        "test": ("test",),
+    }
+
+    DEFAULT_IMAGE_SUBDIR = {
+        "train": "Train_images",
+        "val": "Val_images",
+        "test": "VQAMed2019_Test_Images",
+    }
 
     def __init__(
         self,
         zip_path: str,
         split: str = "Training",
-        images_subdir: str = None,
-        n_rows: str = "all"
+        images_subdir: Optional[str] = None,
+        n_rows: str = "all",
     ):
-        """
-        Args:
-            zip_path: Ruta al archivo ZIP del dataset (puede ser el zip padre VQA-Med-2019.zip o el zip hijo)
-            split: Split a usar (SOLO se soporta 'Training' o 'train')
-            images_subdir: Subdirectorio dentro del ZIP donde están las imágenes
-                          Si es None, se usa "Train_images" (único soportado)
-            n_rows: Número de filas a cargar ("all" o un entero)
-        """
-        # FORZAR split a Training - solo se soporta training
-        split_lower = split.lower()
-        if split_lower not in ["training", "train"]:
-            raise ValueError(
-                f"El split '{split}' no está soportado. "
-                f"Este dataset solo soporta el split TRAINING. "
-                f"Especifica split='Training' o split='train'."
-            )
-
-        # Normalizar a "Training"
-        self.split = "Training"
         self.zip_path = zip_path
+        self.split_key = self._normalize_split(split)
+        self.split = self.split_key
+        self.split_label = self.SPLIT_LABELS[self.split_key]
+        print(f"📊 Split seleccionado: {self.split_label.upper()}")
 
-        # Inicializar candidates_per_cat como dict vacío
-        self.candidates_per_cat = {}
+        self.images_subdir = images_subdir or self.DEFAULT_IMAGE_SUBDIR.get(self.split_key)
+        self.n_rows = n_rows
 
-        # Inferir images_subdir si no se proporciona
-        # SOLO se soporta Train_images (split Training)
-        if images_subdir is None:
-            self.images_subdir = "Train_images"
-        else:
-            self.images_subdir = images_subdir
-            # Verificar que no se esté intentando usar Val_images u otro directorio
-            if "val" in images_subdir.lower() or "validation" in images_subdir.lower():
-                raise ValueError(
-                    f"El subdirectorio '{images_subdir}' no está soportado. "
-                    f"Este dataset solo soporta 'Train_images' para el split Training."
-                )
+        self.samples: List[dict] = []
+        self.candidates_per_cat: Dict[str, List[str]] = {}
+        self.zip_root_prefix: Optional[str] = None
+        self._name_to_path: Dict[str, str] = {}
+        self._test_images_zip_data: Optional[bytes] = None
 
-        # Detectar si el zip_path es el zip padre (VQA-Med-2019.zip) que contiene zips hijos
-        # En ese caso, necesitamos abrir el zip hijo correspondiente
         self.is_nested_zip = False
-        self.inner_zip_name = None
-        self.inner_zip_data = None  # Guardar el zip hijo en memoria para uso posterior
+        self.inner_zip_name: Optional[str] = None
+        self.inner_zip_data: Optional[bytes] = None
 
-        # Verificar si es el zip padre
-        zip_basename = os.path.basename(zip_path).lower()
-        # Detectar si es el zip padre (VQA-Med-2019.zip)
-        # También verificar si el archivo existe y si contiene zips hijos
-        is_vqa_med_2019_zip = "vqa-med-2019" in zip_basename and zip_basename.endswith(".zip")
+        self._prepare_zip_handle()
+        self._load_split_contents()
+        self._finalize_samples()
 
-        if is_vqa_med_2019_zip:
-            # Verificar que el archivo existe y contiene zips hijos
-            if os.path.exists(zip_path):
-                try:
-                    with zipfile.ZipFile(zip_path, "r") as test_zip:
-                        has_nested_zips = any(name.endswith(".zip") for name in test_zip.namelist())
-                        if has_nested_zips:
-                            self.is_nested_zip = True
-                except:
-                    # Si no se puede abrir, asumir que no es anidado
-                    self.is_nested_zip = False
-            else:
-                self.is_nested_zip = False
+    # ------------------------------------------------------------------
+    # Inicialización y utilidades de ZIP
+    # ------------------------------------------------------------------
+    def _normalize_split(self, split: str) -> str:
+        split_lower = (split or "train").lower()
+        for canonical, aliases in self.SPLIT_ALIASES.items():
+            if split_lower in aliases:
+                return canonical
+        raise ValueError(
+            f"Split '{split}' no soportado. Usa uno de: {', '.join(self.SPLIT_LABELS.values())}."
+        )
+
+    def _prepare_zip_handle(self) -> None:
+        zip_basename = os.path.basename(self.zip_path).lower()
+        if not zip_basename.endswith(".zip"):
+            raise ValueError(f"zip_path debe ser un archivo ZIP, recibido: {self.zip_path}")
+
+        split_tokens = self.INNER_ZIP_TOKENS[self.split_key]
+        contains_split = any(token in zip_basename for token in split_tokens)
+        is_parent_zip = "vqa-med-2019" in zip_basename and not contains_split
+
+        if is_parent_zip:
+            self.is_nested_zip = True
+            with zipfile.ZipFile(self.zip_path, "r") as parent_zip:
+                inner_name = self._find_inner_zip_name(parent_zip.namelist())
+                self.inner_zip_name = inner_name
+                self.inner_zip_data = parent_zip.read(inner_name)
         else:
             self.is_nested_zip = False
 
+    def _find_inner_zip_name(self, names: List[str]) -> str:
+        tokens = self.INNER_ZIP_TOKENS[self.split_key]
+        for name in names:
+            lower = name.lower()
+            if "__macosx" in lower or not lower.endswith(".zip"):
+                continue
+            if any(token in lower for token in tokens):
+                return name
+        raise FileNotFoundError(
+            f"No se encontró un ZIP interno para el split {self.split_label} dentro del archivo proporcionado."
+        )
+
+    def _open_primary_zip(self):
         if self.is_nested_zip:
-            # SOLO se soporta Training
-            self.inner_zip_name = "ImageClef-2019-VQA-Med-Training.zip"
+            return zipfile.ZipFile(BytesIO(self.inner_zip_data), "r")
+        return zipfile.ZipFile(self.zip_path, "r")
 
-        # Detectar el prefijo de directorio raíz del ZIP si existe
-        # Por ejemplo: "ImageClef-2019-VQA-Med-Training/"
-        self.zip_root_prefix = None
+    def _open_test_images_zip(self):
+        if not self._test_images_zip_data:
+            raise RuntimeError("No se inicializó el ZIP de imágenes para el split TEST.")
+        return zipfile.ZipFile(BytesIO(self._test_images_zip_data), "r")
 
-        # SOLO se soporta Training - forzar split a "train"
-        self.detected_split = "train"
-        print(f"📊 Split: TRAINING (usará solo archivos *train.txt)")
+    def _detect_root_prefix(self, names: List[str]) -> Optional[str]:
+        if not names:
+            return None
+        first = names[0]
+        if "/" in first:
+            prefix = first.split("/", 1)[0] + "/"
+            print(f"📂 Detectado prefijo de directorio en ZIP: {prefix}")
+            return prefix
+        return None
 
-        # Cargar preguntas y respuestas desde el ZIP
-        # Si es un zip anidado, abrir el zip padre y luego el zip hijo
-        if self.is_nested_zip:
-            # Abrir el zip padre
-            with zipfile.ZipFile(zip_path, "r") as parent_zip:
-                # Verificar que el zip hijo Training existe
-                if self.inner_zip_name not in parent_zip.namelist():
-                    # Buscar solo Training (no validation ni test)
-                    found = False
-                    for name in parent_zip.namelist():
-                        if "training" in name.lower() and name.endswith(".zip"):
-                            self.inner_zip_name = name
-                            found = True
-                            break
-                    if not found:
-                        raise FileNotFoundError(
-                            f"No se encontró el zip hijo ImageClef-2019-VQA-Med-Training.zip en {zip_path}. "
-                            f"Archivos disponibles: {parent_zip.namelist()[:10]}"
-                        )
+    # ------------------------------------------------------------------
+    # Carga de datos según split
+    # ------------------------------------------------------------------
+    def _load_split_contents(self) -> None:
+        with self._open_primary_zip() as zf:
+            self.zip_root_prefix = self._detect_root_prefix(zf.namelist())
+            if self.split_key in ("train", "val"):
+                self._load_train_val_split(zf)
+            else:
+                self._load_test_split(zf)
 
-                # Leer el zip hijo en memoria y guardarlo para uso posterior
-                self.inner_zip_data = parent_zip.read(self.inner_zip_name)
-                # Abrir el zip hijo desde memoria
-                zf = zipfile.ZipFile(BytesIO(self.inner_zip_data), "r")
-        else:
-            # Abrir directamente el zip hijo
-            zf = zipfile.ZipFile(zip_path, "r")
+    def _load_train_val_split(self, zf: zipfile.ZipFile) -> None:
+        suffixes = self.SPLIT_SUFFIXES[self.split_key]
+        split_label = self.split_label.upper()
+        all_txt_files = [n for n in zf.namelist() if n.lower().endswith(".txt")]
 
-        try:
-            # Buscar archivos QA por categoría dentro de QAPairsByCategory
-            all_txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
-            all_files = zf.namelist()  # Todos los archivos para debugging
+        category_files = []
+        for name in all_txt_files:
+            dirname = os.path.dirname(name).lower()
+            basename = os.path.basename(name)
+            basename_lower = basename.lower()
 
-            # Detectar prefijo de directorio raíz del ZIP (ej: "ImageClef-2019-VQA-Med-Training/")
-            if all_files:
-                first_file = all_files[0]
-                if '/' in first_file:
-                    parts = first_file.split('/')
-                    if len(parts) > 1:
-                        self.zip_root_prefix = parts[0] + '/'
-                        print(f"📂 Detectado prefijo de directorio en ZIP: {self.zip_root_prefix}")
+            if "qapairsbycategory" not in dirname:
+                continue
+            if not basename_lower.startswith("c"):
+                continue
+            if "c4" in basename_lower or "abnormality" in basename_lower:
+                continue
+            if not self._filename_matches_split(basename_lower, suffixes):
+                continue
 
-            category_files = []
-            for name in all_txt_files:
-                dirname = os.path.dirname(name).lower()
-                basename = os.path.basename(name)
-                basename_lower = basename.lower()
+            category_files.append(name)
 
-                # Asegurar que provenga de QAPairsByCategory y que sea de categorías C1-C3
-                if "qapairsbycategory" not in dirname:
-                    continue
-                if not basename.startswith("C") or len(basename) < 2:
-                    continue
-                if "c4" in basename_lower or "abnormality" in basename_lower:
-                    continue  # ignorar abnormality
+        if not category_files:
+            txt_files = [n for n in zf.namelist() if n.lower().endswith(".txt")]
+            dirs = sorted(set(os.path.dirname(n) for n in zf.namelist() if os.path.dirname(n)))
+            raise FileNotFoundError(
+                f"No se encontraron archivos QAPairsByCategory para el split {split_label}.\n"
+                f"Se esperaban archivos C1/C2/C3 *_{suffixes[0]}.txt dentro de QAPairsByCategory/.\n"
+                f"Archivos .txt disponibles ({len(txt_files)}):\n" +
+                "\n".join(f"  - {f}" for f in txt_files[:20]) +
+                (f"\n  ... y {len(txt_files) - 20} más" if len(txt_files) > 20 else "") +
+                f"\n\nDirectorios en el ZIP ({len(dirs)}):\n" +
+                "\n".join(f"  - {d}" for d in dirs[:10]) +
+                (f"\n  ... y {len(dirs) - 10} más" if len(dirs) > 10 else "")
+            )
 
-                # Filtrar estrictamente por split train
-                if not basename_lower.endswith(f"{self.detected_split}.txt"):
-                    continue
-                if f"_{self.detected_split}.txt" not in basename_lower and f"-{self.detected_split}.txt" not in basename_lower:
-                    continue
+        category_files = sorted(category_files)
+        print(f"📁 Archivos a leer para split {split_label}: {len(category_files)} archivos")
+        for f in category_files:
+            print(f"   - {os.path.basename(f)}")
 
-                category_files.append(name)
+        for file_to_read in category_files:
+            category = self._infer_category_from_filename(file_to_read)
+            if category == "abnormality":
+                continue
 
-            if not category_files:
-                txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
-                dirs = sorted(set([os.path.dirname(n) for n in zf.namelist() if os.path.dirname(n)]))
+            with zf.open(file_to_read) as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.decode("utf-8").strip()
+                    if not line:
+                        continue
 
-                error_msg = (
-                    "No se encontraron archivos QAPairsByCategory para el split TRAINING.\n"
-                    "Se requieren archivos C1/C2/C3 *_train.txt dentro de QAPairsByCategory/.\n"
-                    f"Archivos .txt disponibles ({len(txt_files)}):\n" +
-                    "\n".join(f"  - {f}" for f in txt_files[:20]) +
-                    (f"\n  ... y {len(txt_files) - 20} más" if len(txt_files) > 20 else "") +
-                    f"\n\nDirectorios en el ZIP ({len(dirs)}):\n" +
-                    "\n".join(f"  - {d}" for d in dirs[:10]) +
-                    (f"\n  ... y {len(dirs) - 10} más" if len(dirs) > 10 else "")
-                )
-                raise FileNotFoundError(error_msg)
+                    parts = line.split("|")
+                    if len(parts) != 3:
+                        if line_num <= 5:
+                            print(f"⚠️  Línea {line_num} inválida en {file_to_read}: {line[:80]}")
+                        continue
 
-            category_files = sorted(category_files)
-            print(f"📁 Usando archivos por categoría (TRAINING): {[os.path.basename(f) for f in category_files]}")
+                    image_id, question, answer = [p.strip() for p in parts]
+                    if not image_id or not question or not answer:
+                        if line_num <= 5:
+                            print(f"⚠️  Campos vacíos en línea {line_num}: {line[:80]}")
+                        continue
 
-            files_to_read = []
-            for f in category_files:
-                basename_lower = os.path.basename(f).lower()
-                if basename_lower.endswith(f"{self.detected_split}.txt"):
-                    files_to_read.append(f)
+                    self.samples.append({
+                        "question_id": image_id,
+                        "question": question,
+                        "answer": answer,
+                        "category": category,
+                        "image_filename": image_id,
+                    })
 
-            if not files_to_read:
-                raise FileNotFoundError(
-                    "No se pudo construir la lista de archivos *_train.txt para QAPairsByCategory.\n"
-                    f"Archivos detectados: {[os.path.basename(f) for f in category_files]}"
-                )
+        self._build_image_index_from_zip(zf, self.zip_root_prefix)
 
-            print(f"📁 Archivos a leer para split TRAINING: {len(files_to_read)} archivos")
-            for f in files_to_read:
-                print(f"   - {os.path.basename(f)}")
+    def _load_test_split(self, zf: zipfile.ZipFile) -> None:
+        names = zf.namelist()
+        qa_file = self._find_test_qa_file(names)
+        print(f"📁 Archivo QA (TEST): {qa_file}")
 
-            # Formato esperado: image_id|question|answer
-            self.samples = []
-
-            for file_to_read in files_to_read:
-                # Inferir categoría desde el nombre del archivo
-                basename = os.path.basename(file_to_read).lower()
-                category = None
-
-                if "c1" in basename or "modality" in basename:
-                    category = "modality"
-                elif "c2" in basename or "plane" in basename:
-                    category = "plane"
-                elif "c3" in basename or "organ" in basename:
-                    category = "organ_system"
-                elif "c4" in basename or "abnormality" in basename:
-                    # IGNORAR archivos de abnormality completamente
+        with zf.open(qa_file) as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.decode("utf-8").strip()
+                if not line:
                     continue
 
-                if category is None:
-                    # Si no se puede inferir desde el nombre, saltar este archivo
-                    print(f"⚠️  Advertencia: No se pudo inferir categoría desde {file_to_read}, saltando...")
+                parts = line.split("|")
+                if len(parts) < 4:
+                    if line_num <= 5:
+                        print(f"⚠️  Línea {line_num} sin formato esperado en TEST: {line[:80]}")
                     continue
 
-                with zf.open(file_to_read) as f:
-                    for line_num, line in enumerate(f, 1):
-                        line = line.decode('utf-8').strip()
-                        if not line:
-                            continue
+                image_id = parts[0].strip()
+                category = parts[1].strip().lower()
+                question = parts[2].strip()
+                answer = parts[3].strip()
 
-                        # Parsear formato: image_id|question|answer
-                        try:
-                            parts = line.split("|")
-                            if len(parts) != 3:
-                                if line_num <= 5:
-                                    print(f"⚠️  Advertencia: Línea {line_num} no tiene formato image_id|question|answer: {line[:80]}")
-                                continue
-
-                            image_id = parts[0].strip()
-                            question = parts[1].strip()
-                            answer = parts[2].strip()
-
-                            # Validar que tenemos los campos mínimos
-                            if not image_id or not question or not answer:
-                                if line_num <= 5:
-                                    print(f"⚠️  Advertencia: Campos vacíos en línea {line_num}: {line[:80]}")
-                                continue
-
-                            # La categoría ya viene normalizada desde el nombre del archivo
-                            # Asegurar que siempre sea una de las categorías válidas
-                            if category not in ["modality", "plane", "organ_system"]:
-                                # Esto no debería ocurrir, pero por seguridad
-                                print(f"⚠️  Advertencia: Categoría inesperada '{category}' en archivo {file_to_read}, saltando muestra")
-                                continue
-
-                            self.samples.append({
-                                'question_id': image_id,  # Usar image_id como question_id
-                                'question': question,
-                                'answer': answer,
-                                'category': category,  # Categoría normalizada desde nombre de archivo
-                                'image_filename': image_id  # image_id es el nombre de la imagen
-                            })
-                        except Exception as e:
-                            if line_num <= 5:
-                                print(f"⚠️  Error parseando línea {line_num}: {e} - {line[:80]}")
-                            continue
-
-            # Construir índice de imágenes (basename -> ruta completa)
-            # Buscar en cualquier ubicación, pero priorizar el subdirectorio correcto
-            self._name_to_path = {}
-            for name in zf.namelist():
-                if name.endswith("/") or not name.lower().endswith((".jpg", ".jpeg", ".png")):
+                if category not in self.VALID_CATEGORIES:
                     continue
-                base = os.path.basename(name)
-                # Priorizar imágenes en el subdirectorio correcto (puede estar en cualquier nivel)
-                # Buscar "Train_images" o "images_subdir" en cualquier parte de la ruta
-                score = int(self.images_subdir.lower() in name.lower())
-                # Bonus si está en el directorio raíz detectado
-                if self.zip_root_prefix and name.startswith(self.zip_root_prefix):
-                    score += 1
-                prev = self._name_to_path.get(base)
+
+                self.samples.append({
+                    "question_id": image_id,
+                    "question": question,
+                    "answer": answer,
+                    "category": category,
+                    "image_filename": image_id,
+                })
+
+        image_zip_name = self._find_test_images_zip(names)
+        print(f"📁 ZIP de imágenes (TEST): {image_zip_name}")
+        self._test_images_zip_data = zf.read(image_zip_name)
+
+        with zipfile.ZipFile(BytesIO(self._test_images_zip_data), "r") as img_zip:
+            prefix = self._detect_root_prefix(img_zip.namelist())
+            self._build_image_index_from_zip(img_zip, prefix)
+
+    def _filename_matches_split(self, basename_lower: str, suffixes: tuple) -> bool:
+        for suffix in suffixes:
+            suffix = suffix.lower()
+            if basename_lower.endswith(f"_{suffix}.txt") or basename_lower.endswith(f"-{suffix}.txt"):
+                return True
+            if basename_lower.endswith(f"{suffix}.txt") and suffix not in {"val", "test"}:
+                return True
+        return False
+
+    def _find_test_qa_file(self, names: List[str]) -> str:
+        for name in names:
+            lower = name.lower()
+            if "__macosx" in lower:
+                continue
+            if lower.endswith(".txt") and "question" in lower and "answer" in lower:
+                return name
+        raise FileNotFoundError("No se encontró el archivo de preguntas con respuestas para el split TEST.")
+
+    def _find_test_images_zip(self, names: List[str]) -> str:
+        for name in names:
+            lower = name.lower()
+            if "__macosx" in lower or not lower.endswith(".zip"):
+                continue
+            if "image" in lower and "test" in lower:
+                return name
+        raise FileNotFoundError("No se encontró el ZIP de imágenes para el split TEST.")
+
+    def _build_image_index_from_zip(self, zf: zipfile.ZipFile, zip_root_prefix: Optional[str]) -> None:
+        index = {}
+        names = zf.namelist()
+        prefix = zip_root_prefix or self.zip_root_prefix
+
+        for name in names:
+            if name.endswith("/") or not name.lower().endswith((".jpg", ".jpeg", ".png")):
+                continue
+
+            base = os.path.basename(name)
+            stem, _ = os.path.splitext(base)
+            keys = [base]
+            if stem and stem != base:
+                keys.append(stem)
+
+            score = int(bool(self.images_subdir and self.images_subdir.lower() in name.lower()))
+            if prefix and name.startswith(prefix):
+                score += 1
+
+            for key in keys:
+                prev = index.get(key)
                 if prev is None or score > prev[0]:
-                    self._name_to_path[base] = (score, name)
-            self._name_to_path = {k: v[1] for k, v in self._name_to_path.items()}
+                    index[key] = (score, name)
 
-            # Construir candidatos por categoría DESPUÉS de aplicar el filtrado por split y categoría
-            # Esto inicializa self.candidates_per_cat
-            print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras del split TRAINING...")
+        self._name_to_path = {k: v[1] for k, v in index.items()}
+        if not self._name_to_path:
+            print("⚠️  ADVERTENCIA: No se construyó índice de imágenes. Verifica images_subdir y el ZIP.")
+
+    def _finalize_samples(self) -> None:
+        self._build_candidates_by_category()
+        self._filter_samples_without_candidates()
+        self._build_candidates_by_category()
+
+        if self.n_rows != "all":
+            self.samples = self.samples[:int(self.n_rows)]
+            print(f"📊 Reconstruyendo candidatos después de limitar a {self.n_rows} muestras...")
             self._build_candidates_by_category()
             self._filter_samples_without_candidates()
             self._build_candidates_by_category()
 
-            # Limitar número de muestras si se especifica
-            if n_rows != "all":
-                self.samples = self.samples[:int(n_rows)]
-                # Reconstruir candidatos después de limitar muestras
-                print(f"📊 Reconstruyendo candidatos después de limitar a {n_rows} muestras...")
-                self._build_candidates_by_category()
-                self._filter_samples_without_candidates()
-                self._build_candidates_by_category()
-        finally:
-            # Cerrar el zip si fue abierto
-            if zf:
-                zf.close()
+    # ------------------------------------------------------------------
+    # Utilidades de categorías y candidatos (mantienen la lógica previa)
+    # ------------------------------------------------------------------
 
     def _infer_category_from_filename(self, filename: str) -> str:
         """
@@ -364,7 +389,7 @@ class VQAMed2019Dataset(DatasetBase):
         }
 
         # Debug: mostrar estadísticas y resumen solicitado
-        print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras...")
+        print(f"📊 Construyendo candidatos desde {len(self.samples)} muestras (split {self.split_label})...")
         if self.candidates_per_cat:
             print("Resumen de candidatos por categoría:")
             for cat, cands in self.candidates_per_cat.items():
@@ -380,7 +405,7 @@ class VQAMed2019Dataset(DatasetBase):
         categories_in_samples = set(s.get('category') for s in self.samples if s.get('category') != "abnormality")
         categories_in_candidates = set(self.candidates_per_cat.keys())
 
-        print(f"📊 Verificación de categorías:")
+        print(f"📊 Verificación de categorías (split {self.split_label}):")
         print(f"   Categorías en samples: {sorted(categories_in_samples)}")
         print(f"   Categorías en candidates_per_cat: {sorted(categories_in_candidates)}")
 
@@ -414,6 +439,49 @@ class VQAMed2019Dataset(DatasetBase):
     def __len__(self):
         return len(self.samples)
 
+    def _candidate_image_names(self, image_filename: Optional[str], question_id: Optional[str]) -> List[str]:
+        raw_candidates = []
+        for raw in (image_filename, question_id):
+            if not raw:
+                continue
+            cleaned = raw.strip()
+            if cleaned.upper().startswith("Q") and cleaned[1:].isdigit():
+                cleaned = cleaned[1:]
+            cleaned = os.path.basename(cleaned)
+            if cleaned:
+                raw_candidates.append(cleaned)
+
+        expanded = []
+        for cand in raw_candidates:
+            if cand not in expanded:
+                expanded.append(cand)
+            stem, ext = os.path.splitext(cand)
+            if stem and stem not in expanded:
+                expanded.append(stem)
+            if not ext:
+                for extra in (".jpg", ".jpeg", ".png"):
+                    variant = f"{cand}{extra}"
+                    if variant not in expanded:
+                        expanded.append(variant)
+        return expanded
+
+    def _resolve_image_path(self, zf: zipfile.ZipFile, image_filename: Optional[str], question_id: Optional[str]) -> Optional[str]:
+        candidates = self._candidate_image_names(image_filename, question_id)
+
+        for cand in candidates:
+            path = self._name_to_path.get(cand)
+            if path:
+                return path
+
+        names = zf.namelist()
+        for cand in candidates:
+            cand_lower = cand.lower()
+            for name in names:
+                if name.lower().endswith(cand_lower):
+                    return name
+
+        return None
+
     def __getitem__(self, idx: int):
         sample = self.samples[idx]
         question = sample['question']
@@ -431,11 +499,9 @@ class VQAMed2019Dataset(DatasetBase):
             raise ValueError(f"Muestra {idx} carece de question_id.")
         image_filename = sample.get('image_filename')
 
-        # Asegurar que candidates_per_cat esté inicializado
         if not hasattr(self, 'candidates_per_cat') or self.candidates_per_cat is None:
             self._build_candidates_by_category()
 
-        # ANTES de devolver la muestra: verificar que category existe en candidates_per_cat
         if category not in self.candidates_per_cat:
             print(f"⚠️  ADVERTENCIA: Muestra {idx} tiene categoría '{category}' que no existe en candidates_per_cat")
             print(f"   - image_id: {question_id}")
@@ -443,89 +509,28 @@ class VQAMed2019Dataset(DatasetBase):
             print(f"   - answer: {answer}")
             print(f"   Categorías disponibles: {sorted(self.candidates_per_cat.keys())}")
             raise ValueError(
-                f"Muestra {idx} (image_id={question_id}) tiene categoría '{category}' que no existe en candidates_per_cat. "
-                f"Esta muestra debería haber sido filtrada durante la construcción del dataset. "
-                f"Categorías disponibles: {sorted(self.candidates_per_cat.keys())}"
+                f"Muestra {idx} (image_id={question_id}) tiene categoría '{category}' no registrada."
             )
 
         candidates = self.candidates_per_cat.get(category)
         if not candidates:
-            raise ValueError(
-                f"Dataset inconsistente: categoría {category} no tiene candidatos."
-            )
-        # entregar copia para evitar mutaciones externas
+            raise ValueError(f"Dataset inconsistente: categoría {category} no tiene candidatos.")
         candidates = list(candidates)
 
-        # Intentar encontrar la imagen asociada
-        image_path = None
-        image_filename = sample.get('image_filename')
-
-        # Abrir el zip correcto (padre o hijo)
-        if self.is_nested_zip:
-            # Abrir el zip hijo desde memoria
-            zf = zipfile.ZipFile(BytesIO(self.inner_zip_data), "r")
-        else:
-            # Abrir directamente el zip hijo
-            zf = zipfile.ZipFile(self.zip_path, "r")
+        zf = self._open_test_images_zip() if self.split_key == "test" else self._open_primary_zip()
 
         try:
-            # Estrategia 1: Si tenemos el nombre de imagen del archivo de preguntas
-            if image_filename:
-                # Buscar en el subdirectorio de imágenes
-                if self.images_subdir:
-                    candidate = f"{self.images_subdir.rstrip('/')}/{image_filename}"
-                    if candidate in zf.namelist():
-                        image_path = candidate
-
-                # Si no se encontró, buscar por basename en el índice
-                if image_path is None:
-                    base = os.path.basename(image_filename)
-                    image_path = self._name_to_path.get(base)
-
-                # Si aún no se encontró, buscar por nombre completo
-                if image_path is None:
-                    image_candidate_paths = [
-                        n for n in zf.namelist()
-                        if n.endswith(image_filename) or os.path.basename(n) == image_filename
-                    ]
-                    if image_candidate_paths:
-                        image_path = image_candidate_paths[0]
-
-            # Estrategia 2: Si no hay nombre de imagen, buscar por question_id
-            if image_path is None:
-                img_id = question_id.replace('Q', '').strip()
-                candidates_paths = []
-                for name in zf.namelist():
-                    if not name.lower().endswith((".jpg", ".jpeg", ".png")):
-                        continue
-                    base = os.path.basename(name)
-                    # Intentar coincidencia por ID en el nombre
-                    if img_id in base or base.startswith(img_id):
-                        candidates_paths.append(name)
-
-                if candidates_paths:
-                    image_path = candidates_paths[0]
-
-            # Estrategia 3: Último recurso - buscar cualquier imagen en el subdirectorio
-            if image_path is None:
-                for name in zf.namelist():
-                    if self.images_subdir.lower() in name.lower() and name.lower().endswith((".jpg", ".jpeg", ".png")):
-                        image_path = name
-                        break
-
+            image_path = self._resolve_image_path(zf, image_filename, question_id)
             if image_path is None:
                 raise KeyError(
-                    f"No se pudo encontrar imagen para {question_id}. "
+                    f"No se pudo encontrar imagen para {question_id} (split {self.split_label}). "
                     f"Revisa la estructura del ZIP y el mapeo pregunta-imagen."
                 )
 
-            # Cargar imagen
             with zf.open(image_path) as f:
                 image = Image.open(BytesIO(f.read())).convert("RGB")
         finally:
-            # Cerrar el zip
-            if zf:
-                zf.close()
+            zf.close()
 
         return {
             "image": image,
@@ -536,6 +541,6 @@ class VQAMed2019Dataset(DatasetBase):
             "meta": {
                 "question_id": question_id,
                 "image_path": image_path,
-                "split": self.split
+                "split": self.split_label.lower()
             }
         }

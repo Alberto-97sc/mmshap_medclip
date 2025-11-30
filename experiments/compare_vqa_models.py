@@ -65,12 +65,36 @@ device = get_device()
 
 # Construir dataset VQA-Med 2019 directamente
 # Ajusta estos parámetros según tu configuración
-dataset_params = {
-    "zip_path": "data/VQA-Med-2019.zip",  # Ruta al ZIP padre que contiene Training.zip
-    "split": "Training",  # SOLO se soporta "Training" o "train"
-    "images_subdir": "Train_images",  # SOLO se soporta "Train_images" para el split Training
-    "n_rows": "all"  # o un número para limitar muestras (ej: 100)
+vqa_split_aliases = {
+    "train": "train",
+    "training": "train",
+    "val": "validation",
+    "validation": "validation",
+    "test": "test",
+    "testing": "test",
 }
+VQA_SPLIT = os.environ.get("VQA_SPLIT", "train").strip().lower()
+if VQA_SPLIT not in vqa_split_aliases:
+    raise ValueError(f"Split VQA '{VQA_SPLIT}' no soportado. Usa train, validation o test.")
+
+split_key = vqa_split_aliases[VQA_SPLIT]
+split_image_dirs = {
+    "train": "Train_images",
+    "validation": "Val_images",
+    "test": "VQAMed2019_Test_Images",
+}
+
+print(f"📁 VQA-Med split seleccionado para el batch: {split_key.upper()}")
+
+dataset_params = {
+    "zip_path": "data/VQA-Med-2019.zip",  # Ruta al ZIP (padre o hijo)
+    "split": split_key,
+    "n_rows": "all",  # o un número para limitar muestras (ej: 100)
+}
+
+image_subdir = split_image_dirs.get(split_key)
+if image_subdir:
+    dataset_params["images_subdir"] = image_subdir
 
 from mmshap_medclip.registry import build_dataset
 dataset = build_dataset({"name": "vqa_med_2019", "params": dataset_params})

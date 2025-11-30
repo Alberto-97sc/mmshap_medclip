@@ -62,6 +62,39 @@ from mmshap_medclip.registry import build_dataset
 
 print("🔄 Cargando configuración y dataset...")
 cfg = load_config("configs/roco_isa_pubmedclip.yaml")
+
+roco_split_aliases = {
+    "train": "train",
+    "training": "train",
+    "val": "validation",
+    "validation": "validation",
+    "test": "test",
+    "testing": "test",
+}
+
+default_roco_split = (
+    cfg.get("dataset", {})
+       .get("params", {})
+       .get("split", "validation")
+       .lower()
+)
+roco_split_env = os.environ.get("ROCO_SPLIT")
+roco_split_raw = (roco_split_env or default_roco_split).strip().lower()
+if roco_split_raw not in roco_split_aliases:
+    raise ValueError(f"Split ROCO '{roco_split_raw}' no soportado. Usa train, validation o test.")
+
+roco_split = roco_split_aliases[roco_split_raw]
+roco_image_subdirs = {
+    "train": "all_data/training/radiology/images",
+    "validation": "all_data/validation/radiology/images",
+    "test": "all_data/test/radiology/images",
+}
+
+cfg["dataset"]["params"]["split"] = roco_split
+cfg["dataset"]["params"]["images_subdir"] = roco_image_subdirs.get(roco_split)
+cfg["dataset"]["params"].setdefault("columns", {}).pop("images_subdir", None)
+print(f"📁 ROCO split seleccionado: {roco_split.upper()}")
+
 device = get_device()
 dataset = build_dataset(cfg["dataset"])
 
