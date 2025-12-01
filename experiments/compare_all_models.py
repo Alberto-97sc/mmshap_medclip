@@ -63,6 +63,8 @@ from mmshap_medclip.registry import build_dataset
 print("🔄 Cargando configuración y dataset...")
 cfg = load_config("configs/roco_isa_pubmedclip.yaml")
 
+ROCO_SPLIT_MANUAL = None  # "train", "validation" o "test". Usa None para valor por defecto/entorno.
+
 roco_split_aliases = {
     "train": "train",
     "training": "train",
@@ -79,7 +81,8 @@ default_roco_split = (
        .lower()
 )
 roco_split_env = os.environ.get("ROCO_SPLIT")
-roco_split_raw = (roco_split_env or default_roco_split).strip().lower()
+roco_split_source = ROCO_SPLIT_MANUAL or roco_split_env or default_roco_split
+roco_split_raw = roco_split_source.strip().lower()
 if roco_split_raw not in roco_split_aliases:
     raise ValueError(f"Split ROCO '{roco_split_raw}' no soportado. Usa train, validation o test.")
 
