@@ -19,7 +19,15 @@ class VQAMed2019Dataset(DatasetBase):
     Soporta los splits oficiales: train, validation y test.
     """
 
-    VALID_CATEGORIES = {"modality", "plane", "organ_system"}
+    VALID_CATEGORIES = {"modality", "plane", "organ_system", "abnormality"}
+    CATEGORY_ALIASES = {
+        "modality": "modality",
+        "plane": "plane",
+        "organ": "organ_system",
+        "organ_system": "organ_system",
+        "organ system": "organ_system",
+        "abnormality": "abnormality",
+    }
 
     SPLIT_ALIASES = {
         "train": {"train", "training"},
@@ -92,6 +100,14 @@ class VQAMed2019Dataset(DatasetBase):
         raise ValueError(
             f"Split '{split}' no soportado. Usa uno de: {', '.join(self.SPLIT_LABELS.values())}."
         )
+
+    def _canonicalize_category(self, category: Optional[str]) -> Optional[str]:
+        if category is None:
+            return None
+        key = category.strip().lower()
+        if not key:
+            return None
+        return self.CATEGORY_ALIASES.get(key, key)
 
     def _prepare_zip_handle(self) -> None:
         zip_basename = os.path.basename(self.zip_path).lower()
@@ -169,8 +185,6 @@ class VQAMed2019Dataset(DatasetBase):
                 continue
             if not basename_lower.startswith("c"):
                 continue
-            if "c4" in basename_lower or "abnormality" in basename_lower:
-                continue
             if not self._filename_matches_split(basename_lower, suffixes):
                 continue
 
@@ -196,9 +210,7 @@ class VQAMed2019Dataset(DatasetBase):
             print(f"   - {os.path.basename(f)}")
 
         for file_to_read in category_files:
-            category = self._infer_category_from_filename(file_to_read)
-            if category == "abnormality":
-                continue
+            category = self._canonicalize_category(self._infer_category_from_filename(file_to_read))
 
             with zf.open(file_to_read) as f:
                 for line_num, line in enumerate(f, 1):
@@ -246,11 +258,12 @@ class VQAMed2019Dataset(DatasetBase):
                     continue
 
                 image_id = parts[0].strip()
-                category = parts[1].strip().lower()
+                raw_category = parts[1].strip()
+                category = self._canonicalize_category(raw_category)
                 question = parts[2].strip()
                 answer = parts[3].strip()
 
-                if category not in self.VALID_CATEGORIES:
+                if not category or category not in self.VALID_CATEGORIES:
                     continue
 
                 self.samples.append({
@@ -368,15 +381,13 @@ class VQAMed2019Dataset(DatasetBase):
         """
         Construye la lista de candidatos válidos por categoría.
         Todas las respuestas únicas de esa categoría dentro del split.
-        IGNORA la categoría "abnormality" completamente.
         """
         candidates_by_category = defaultdict(set)
 
         for sample in self.samples:
             category = sample.get('category')
             answer = sample.get('answer')
-            # IGNORAR muestras de abnormality
-            if category == "abnormality":
+            if not category or category not in self.VALID_CATEGORIES:
                 continue
             if category and answer:
                 # Agregar respuesta a los candidatos de su categoría
@@ -402,7 +413,11 @@ class VQAMed2019Dataset(DatasetBase):
                 print(f"   Primera muestra: {self.samples[0]}")
 
         # Verificar que las claves de candidates_per_cat coinciden con las categorías en samples
-        categories_in_samples = set(s.get('category') for s in self.samples if s.get('category') != "abnormality")
+        categories_in_samples = set(
+            s.get('category')
+            for s in self.samples
+            if s.get('category') and s.get('category') in self.VALID_CATEGORIES
+        )
         categories_in_candidates = set(self.candidates_per_cat.keys())
 
         print(f"📊 Verificación de categorías (split {self.split_label}):")
