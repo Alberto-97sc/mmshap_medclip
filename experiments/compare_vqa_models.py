@@ -202,6 +202,75 @@ for model_name, result in results.items():
         print(f"❌ Error generando heatmap para {model_name}: {e}\n")
 
 # %% [markdown]
+# ## 🧩 Heatmaps combinados en cuadrícula
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+
+MODEL_GRID_ORDER = ["PubMedCLIP", "BioMedCLIP", "RCLIP", "WhyXRayCLIP"]
+MODEL_DISPLAY_NAMES = {
+    "PubMedCLIP": "PubMedCLIP",
+    "BioMedCLIP": "biomedclip",
+    "RCLIP": "rclip",
+    "WhyXRayCLIP": "whyxrayclip",
+}
+
+
+def _figure_to_rgb_array(fig):
+    fig.canvas.draw()
+    width, height = fig.canvas.get_width_height()
+    data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    data = data.reshape((height, width, 3))
+    plt.close(fig)
+    return data
+
+
+def mostrar_heatmaps_vqa_en_grid(
+    results_dict,
+    image_obj,
+    question_text,
+):
+    snapshots = []
+    titles = []
+
+    for model_name in MODEL_GRID_ORDER:
+        result = results_dict.get(model_name)
+        if not result:
+            continue
+        if any(result.get(key) is None for key in ("shap_values", "mm_scores", "inputs")):
+            continue
+
+        fig = plot_vqa(
+            image=image_obj,
+            question=question_text,
+            vqa_output=result,
+            model_wrapper=result.get("model_wrapper"),
+            display_plot=False,
+        )
+        snapshots.append(_figure_to_rgb_array(fig))
+        titles.append(MODEL_DISPLAY_NAMES.get(model_name, model_name))
+
+    if not snapshots:
+        print("⚠️ No hay heatmaps disponibles para combinar.")
+        return
+
+    fig, axes = plt.subplots(2, 2, figsize=(20, 14))
+    flat_axes = axes.flatten()
+
+    for idx, ax in enumerate(flat_axes):
+        if idx < len(snapshots):
+            ax.imshow(snapshots[idx])
+            ax.set_title(titles[idx], fontsize=16, fontweight="bold")
+        ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
+mostrar_heatmaps_vqa_en_grid(results, image, question)
+
+# %% [markdown]
 # ## 🖼️ Exportar heatmaps VQA en lote
 #
 # Recorre un rango de muestras, genera los heatmaps individuales por modelo y los

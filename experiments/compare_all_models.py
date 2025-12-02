@@ -161,6 +161,72 @@ print("="*80 + "\n")
 plot_individual_heatmaps(results, image, caption)
 
 # %% [markdown]
+# ## 🧩 Heatmaps combinados en cuadrícula
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+from mmshap_medclip.tasks.isa import plot_isa
+
+ISA_MODEL_GRID_ORDER = ["PubMedCLIP", "BioMedCLIP", "RCLIP", "WhyXRayCLIP"]
+ISA_MODEL_DISPLAY_NAMES = {
+    "PubMedCLIP": "PubMedCLIP",
+    "BioMedCLIP": "biomedclip",
+    "RCLIP": "rclip",
+    "WhyXRayCLIP": "whyxrayclip",
+}
+
+
+def _fig_to_rgb_array(fig):
+    fig.canvas.draw()
+    width, height = fig.canvas.get_width_height()
+    data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    data = data.reshape((height, width, 3))
+    plt.close(fig)
+    return data
+
+
+def mostrar_heatmaps_isa_en_grid(results_dict, image_obj, caption_text):
+    snapshots = []
+    titles = []
+
+    for model_name in ISA_MODEL_GRID_ORDER:
+        result = results_dict.get(model_name)
+        if not result:
+            continue
+        if any(result.get(key) is None for key in ("shap_values", "mm_scores", "inputs")):
+            continue
+
+        fig = plot_isa(
+            image=image_obj,
+            caption=caption_text,
+            isa_output=result,
+            model_wrapper=result.get("model_wrapper"),
+            display_plot=False,
+        )
+        snapshots.append(_fig_to_rgb_array(fig))
+        titles.append(ISA_MODEL_DISPLAY_NAMES.get(model_name, model_name))
+
+    if not snapshots:
+        print("⚠️ No hay heatmaps disponibles para combinar.")
+        return
+
+    fig, axes = plt.subplots(2, 2, figsize=(20, 14))
+    flat_axes = axes.flatten()
+
+    for idx, ax in enumerate(flat_axes):
+        if idx < len(snapshots):
+            ax.imshow(snapshots[idx])
+            ax.set_title(titles[idx], fontsize=16, fontweight="bold")
+        ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
+mostrar_heatmaps_isa_en_grid(results, image, caption)
+
+# %% [markdown]
 # ## 🖼️ Exportar heatmaps ISA en lote
 #
 # Esta sección permite recorrer automáticamente un rango de muestras y guardar los
