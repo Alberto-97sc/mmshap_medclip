@@ -3,6 +3,7 @@ from typing import Dict, Optional, Union, Tuple
 from contextlib import nullcontext
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 
 class Predictor:
@@ -28,6 +29,7 @@ class Predictor:
 
         # Copia base_inputs al device del modelo
         self.base_inputs = {k: v.to(self.device) for k, v in base_inputs.items()}
+        self._pixel_values = self.base_inputs["pixel_values"]
 
         # Inferir patch_size si no viene
         ps = patch_size
@@ -54,7 +56,7 @@ class Predictor:
         self.patch_w = patch_w
 
         # Geometría de la imagen
-        _, _, H, W = self.base_inputs["pixel_values"].shape
+        _, _, H, W = self._pixel_values.shape
         if (H % self.patch_h != 0) or (W % self.patch_w != 0):
             raise AssertionError(
                 f"Imagen {H}×{W} no divisible por patch_size={self.patch_size}"
@@ -62,6 +64,8 @@ class Predictor:
         self.grid_h = H // self.patch_h
         self.grid_w = W // self.patch_w
         self.num_patches = self.grid_h * self.grid_w
+        self.image_height = H
+        self.image_width = W
 
         # Longitud de texto (para el split)
         # Usar text_len proporcionado (tokens reales) o fallback al tamaño completo
@@ -112,6 +116,16 @@ class Predictor:
 
         self.use_amp = bool(use_amp and self.device.type == "cuda")
 
+        # Valor al que se sustituyen los parches apagados (en el espacio normalizado CLIP)
+        self.mask_fill_value = torch.tensor(
+            [0.0, 0.0, 0.0],
+            dtype=self._pixel_values.dtype,
+            device=self.device,
+        ).view(1, 3, 1, 1)
+        self._mask_fill_is_zero = bool(
+            torch.allclose(self.mask_fill_value, torch.zeros_like(self.mask_fill_value))
+        )
+
     def __call__(self, x: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
         # Normalizar x → tensor long en device
         if isinstance(x, np.ndarray):
@@ -139,33 +153,35 @@ class Predictor:
         amp_ctx = torch.amp.autocast("cuda") if self.use_amp else nullcontext()
 
         with torch.inference_mode(), amp_ctx:
+            base_inputs = self.base_inputs
+            base_attention = base_inputs.get("attention_mask")
+
             for i in range(B):
-                # Clonar tensores base para no mutar el estado
-                masked = {k: v.clone() for k, v in self.base_inputs.items()}
+                # Clonar únicamente lo necesario para evitar trabajo extra en GPU
+                masked = dict(base_inputs)
+                masked["pixel_values"] = self._pixel_values.clone()
                 masked["input_ids"] = input_ids[i].unsqueeze(0)  # [1, L_txt]
 
                 # Atender attention_mask si existe
-                if "attention_mask" in masked:
-                    am = masked["attention_mask"]
-                    masked["attention_mask"] = (am[i] if am.shape[0] > i else am[0]).unsqueeze(0)
+                if base_attention is not None:
+                    if base_attention.shape[0] > 1 and base_attention.shape[0] >= (i + 1):
+                        masked["attention_mask"] = base_attention[i].unsqueeze(0)
+                    else:
+                        masked["attention_mask"] = base_attention[0].unsqueeze(0)
 
-                # Enmascarar los parches donde patch_mask_ids == 0
-                mid = patch_mask_ids[i]              # [N]
-                pix = masked["pixel_values"]         # [1, 3, H, W]
+                # Construir máscara espacial de parches directamente en GPU
+                patch_mask = patch_mask_ids[i].view(1, 1, self.grid_h, self.grid_w)
+                patch_mask = patch_mask.to(dtype=masked["pixel_values"].dtype, device=self.device)
+                patch_mask = F.interpolate(
+                    patch_mask,
+                    size=(self.image_height, self.image_width),
+                    mode="nearest",
+                )
 
-                # Estrategia de enmascaramiento: usar valor constante neutral
-                # En espacio normalizado CLIP, usar gris oscuro (0.0, 0.0, 0.0)
-                mask_value = torch.tensor([0.0, 0.0, 0.0],
-                                         dtype=pix.dtype,
-                                         device=pix.device).view(1, 3, 1, 1)
-
-                for k in range(self.num_patches):
-                    if mid[k].item() == 0:
-                        r = k // self.grid_w
-                        c = k %  self.grid_w
-                        r0, r1 = r * self.patch_h, (r + 1) * self.patch_h
-                        c0, c1 = c * self.patch_w, (c + 1) * self.patch_w
-                        pix[:, :, r0:r1, c0:c1] = mask_value
+                pix = masked["pixel_values"]  # [1, 3, H, W]
+                pix.mul_(patch_mask)
+                if not self._mask_fill_is_zero:
+                    pix.add_((1.0 - patch_mask) * self.mask_fill_value)
 
                 outputs = self.wrapper(**masked)     # logits_per_image: [1,1]
                 out[i] = outputs.logits_per_image.squeeze()

@@ -36,6 +36,8 @@
 import os
 from pathlib import Path
 
+import torch
+
 # 📌 Configuración - Asegurar que estamos en el directorio correcto
 try:
     # En scripts Python
@@ -49,6 +51,13 @@ except NameError:
 
 os.chdir(PROJECT_ROOT)
 print(f"📂 Directorio de trabajo: {PROJECT_ROOT}")
+
+# ⚙️ Ajustes globales para aprovechar GPUs como la A100
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    if hasattr(torch, "set_float32_matmul_precision"):
+        torch.set_float32_matmul_precision("high")
 
 # %% [markdown]
 # ## 🎯 Cargar dataset y dispositivo

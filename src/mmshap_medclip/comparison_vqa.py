@@ -6,6 +6,7 @@ Proporciona funciones para cargar modelos (PubMedCLIP y BiomedCLIP), ejecutar SH
 y visualizar los resultados de manera comparativa.
 """
 
+import os
 from typing import Dict, Any, List, Optional
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,6 +14,8 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.colors import TwoSlopeNorm
 import torch
 import torch.nn.functional as F
+
+CLEAR_CACHE_FLAG = os.environ.get("MMCLIP_CLEAR_CACHE", "0") == "1"
 
 from mmshap_medclip.registry import build_model
 from mmshap_medclip.tasks.vqa import run_vqa_one
@@ -145,10 +148,9 @@ def run_vqa_shap_on_models(
                 correct_str = "✅" if correct else "❌" if correct is False else "?"
                 print(f"✅ {model_name}: Predicción={prediction} {correct_str} | TScore={tscore:.2%} | IScore={iscore:.2%}")
 
-            # Limpiar memoria GPU después de cada modelo
-            if device.type == "cuda":
+            # Limpiar memoria GPU sólo si se solicita explícitamente
+            if CLEAR_CACHE_FLAG and device.type == "cuda":
                 torch.cuda.empty_cache()
-                # Forzar sincronización para liberar memoria inmediatamente
                 torch.cuda.synchronize()
 
         except Exception as e:
@@ -158,8 +160,8 @@ def run_vqa_shap_on_models(
                 traceback.print_exc()
             results[model_name] = None
 
-            # Limpiar memoria GPU incluso si hay error
-            if device.type == "cuda":
+            # Limpiar memoria GPU incluso si hay error (sólo si se solicitó)
+            if CLEAR_CACHE_FLAG and device.type == "cuda":
                 torch.cuda.empty_cache()
 
     if verbose:
