@@ -210,9 +210,11 @@ for model_name, result in results.items():
 
 # %%
 import re
+from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
+from mmshap_medclip.comparison_vqa import run_vqa_shap_on_models
 
 # 🎯 CONFIGURACIÓN: ajusta los parámetros según lo necesites
 VQA_HEATMAPS_START_IDX = 0          # Índice inicial (inclusive)

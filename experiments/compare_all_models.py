@@ -170,9 +170,11 @@ plot_individual_heatmaps(results, image, caption)
 
 # %%
 import re
+from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
+from mmshap_medclip.comparison import run_shap_on_all_models
 from mmshap_medclip.tasks.isa import plot_isa
 
 # 🎯 CONFIGURACIÓN: ajusta el rango y carpeta destino
