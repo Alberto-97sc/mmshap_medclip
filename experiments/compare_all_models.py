@@ -180,8 +180,15 @@ ISA_MODEL_DISPLAY_NAMES = {
 def _fig_to_rgb_array(fig):
     fig.canvas.draw()
     width, height = fig.canvas.get_width_height()
-    data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    data = data.reshape((height, width, 3))
+    if hasattr(fig.canvas, "tostring_rgb"):
+        buffer = fig.canvas.tostring_rgb()
+        data = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 3))
+    else:
+        buffer, _ = fig.canvas.print_to_buffer()
+        data = (
+            np.frombuffer(buffer, dtype=np.uint8)
+              .reshape((height, width, 4))[..., :3]
+        )
     plt.close(fig)
     return data
 
