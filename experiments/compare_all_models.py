@@ -218,7 +218,12 @@ def mostrar_heatmaps_isa_en_grid(results_dict, image_obj, caption_text):
         print("⚠️ No hay heatmaps disponibles para combinar.")
         return
 
-    fig, axes = plt.subplots(2, 2, figsize=(20, 14))
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(20, 14),
+        gridspec_kw={"wspace": 0.05, "hspace": 0.3},
+    )
     flat_axes = axes.flatten()
 
     for idx, ax in enumerate(flat_axes):
@@ -227,7 +232,6 @@ def mostrar_heatmaps_isa_en_grid(results_dict, image_obj, caption_text):
             ax.set_title(titles[idx], fontsize=16, fontweight="bold")
         ax.axis("off")
 
-    plt.tight_layout()
     plt.show()
 
 
