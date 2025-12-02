@@ -202,6 +202,125 @@ for model_name, result in results.items():
         print(f"❌ Error generando heatmap para {model_name}: {e}\n")
 
 # %% [markdown]
+# ## 🖼️ Exportar heatmaps VQA en lote
+#
+# Recorre un rango de muestras, genera los heatmaps individuales por modelo y los
+# guarda automáticamente dentro de `outputs/`. El nombre del archivo sigue la
+# convención `idx_modelo_vqa`.
+
+# %%
+import re
+from typing import Optional
+
+import matplotlib.pyplot as plt
+
+# 🎯 CONFIGURACIÓN: ajusta los parámetros según lo necesites
+VQA_HEATMAPS_START_IDX = 0          # Índice inicial (inclusive)
+VQA_HEATMAPS_END_IDX = 10           # Índice final (inclusive). Usa None para procesar hasta el final
+VQA_HEATMAPS_OUTPUT_DIR = "outputs/vqa_heatmaps"
+VQA_HEATMAPS_TARGET_LOGIT = "correct"
+VQA_HEATMAPS_OVERWRITE = False
+VQA_HEATMAPS_DPI = 200
+
+_vqa_slug_pattern = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify_model(label: str) -> str:
+    slug = _vqa_slug_pattern.sub("_", label.lower()).strip("_")
+    return slug or "modelo"
+
+
+def export_vqa_heatmaps_batch(
+    start_idx: int,
+    end_idx: Optional[int],
+    output_dir: str,
+    target_logit: str,
+    overwrite: bool = False,
+    dpi: int = 200,
+):
+    if not loaded_models:
+        raise RuntimeError("No hay modelos VQA cargados para generar heatmaps.")
+
+    total_samples = len(dataset)
+    if total_samples == 0:
+        raise RuntimeError("El dataset VQA está vacío; no hay muestras para procesar.")
+
+    max_idx = total_samples - 1
+    if start_idx < 0 or start_idx > max_idx:
+        raise ValueError(f"start_idx debe estar entre 0 y {max_idx}.")
+
+    if end_idx is None:
+        end_idx = max_idx
+    end_idx = min(end_idx, max_idx)
+    if end_idx < start_idx:
+        raise ValueError("end_idx no puede ser menor que start_idx.")
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n🖼️ Exportando heatmaps VQA de {start_idx} a {end_idx} (total {end_idx - start_idx + 1} muestras)")
+
+    for sample_idx in range(start_idx, end_idx + 1):
+        print(f"\n{'='*80}")
+        print(f"❓ Procesando muestra VQA {sample_idx}")
+        print(f"{'='*80}")
+
+        try:
+            results_batch, image, question, answer, candidates, category = run_vqa_shap_on_models(
+                models=loaded_models,
+                sample_idx=sample_idx,
+                dataset=dataset,
+                device=device,
+                target_logit=target_logit,
+                verbose=False
+            )
+        except Exception as exc:
+            print(f"❌ Error obteniendo SHAP para la muestra {sample_idx}: {exc}")
+            continue
+
+        for model_name, result in results_batch.items():
+            if result is None:
+                print(f"⚠️  {model_name} no devolvió resultados; se omite.")
+                continue
+
+            fig = None
+            try:
+                fig = plot_vqa(
+                    image=image,
+                    question=question,
+                    vqa_output=result,
+                    model_wrapper=result.get("model_wrapper"),
+                    display_plot=False
+                )
+
+                filename = f"{sample_idx}_{_slugify_model(model_name)}_vqa.png"
+                filepath = output_path / filename
+
+                if filepath.exists() and not overwrite:
+                    print(f"⏭️  {filepath.name} ya existe. Usa VQA_HEATMAPS_OVERWRITE=True para reemplazarlo.")
+                    continue
+
+                fig.savefig(filepath, bbox_inches="tight", dpi=dpi)
+                print(f"✅ Heatmap guardado: {filepath}")
+            except Exception as exc:
+                print(f"❌ Error guardando heatmap de {model_name} (muestra {sample_idx}): {exc}")
+            finally:
+                if fig is not None:
+                    plt.close(fig)
+
+    print("\n🎉 Exportación de heatmaps VQA finalizada.")
+
+
+export_vqa_heatmaps_batch(
+    start_idx=VQA_HEATMAPS_START_IDX,
+    end_idx=VQA_HEATMAPS_END_IDX,
+    output_dir=VQA_HEATMAPS_OUTPUT_DIR,
+    target_logit=VQA_HEATMAPS_TARGET_LOGIT,
+    overwrite=VQA_HEATMAPS_OVERWRITE,
+    dpi=VQA_HEATMAPS_DPI,
+)
+
+# %% [markdown]
 # ## 🚀 Análisis Batch de SHAP en VQA-Med 2019 (Sin Heatmaps)
 #
 # Esta sección replica el pipeline blindado del notebook de ISA pero adaptado a VQA.
