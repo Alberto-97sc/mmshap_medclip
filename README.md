@@ -13,6 +13,8 @@ Pipeline modular para medir el **balance multimodal** con **SHAP** en modelos ti
 - [Instalación Rápida (Un Solo Click)](#-instalación-rápida-un-solo-click)
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Experimentos disponibles](#experimentos-disponibles)
+- [Herramientas de comparación y análisis](#-herramientas-de-comparación-y-análisis)
+- [Resultados y dashboards incluidos](#-resultados-y-dashboards-incluidos)
 - [Instalación Manual](#instalación-manual)
 - [Descarga de datasets (ROCO y VQA-Med)](#descarga-de-datasets-roco-y-vqa-med)
 - [Conversión de scripts a notebooks](#conversión-de-scripts-a-notebooks)
@@ -75,10 +77,10 @@ El script `setup.sh` automatiza completamente la configuración del proyecto en 
    - Incluye soporte para Jupyter notebooks (jupytext, jupyter)
    - Instala todas las librerías necesarias (SHAP, transformers, torch, etc.)
 
-4. **📥 Descarga el dataset ROCO** desde Google Drive
-   - Descarga automáticamente usando `gdown`
-   - Lo guarda en `data/dataset_roco.zip`
-   - Si ya existe, pregunta si deseas volver a descargarlo
+4. **📥 Descarga automática de datasets médicos**
+   - Ejecuta `scripts/download_dataset.py` para obtener ROCO en `data/dataset_roco.zip`
+   - Ejecuta `scripts/download_vqa_med_2019.py` para guardar `data/VQA-Med-2019.zip` (solo si cuentas con permisos de ImageCLEF)
+   - Antes de reusar archivos existentes pregunta si deseas volver a descargarlos
 
 5. **📓 Convierte scripts a notebooks** Jupyter
    - Genera archivos `.ipynb` en el directorio `experiments/`
@@ -108,8 +110,11 @@ Cuando ejecutes `./setup.sh`, verás algo similar a esto:
       ✓ Paquete mmshap_medclip en modo editable
       ✓ Dependencias para notebooks (jupytext, jupyter)
 
-📥 [4/5] Descargando dataset ROCO desde Google Drive...
-   ✅ Dataset descargado correctamente
+📥 [4/5] Descargando datasets desde Google Drive...
+   📥 [4.1/5] Dataset ROCO → data/dataset_roco.zip
+      ✅ Descarga completada
+   📥 [4.2/5] Dataset VQA-Med 2019 → data/VQA-Med-2019.zip
+      ✅ Descarga completada (o se reutiliza el archivo existente)
 
 📓 [5/5] Convirtiendo scripts a notebooks Jupyter...
    ✅ Notebooks creados en experiments/
@@ -197,45 +202,58 @@ mmshap_medclip/
 
 ├── src/mmshap_medclip/
 │   ├── __init__.py
-│   ├── devices.py                          # manejo de device (CUDA/CPU)
-│   ├── registry.py                         # registro de modelos y datasets
-│   ├── models.py                           # wrappers de CLIP (PubMedCLIP, WhyXrayCLIP, Rclip, BioMedCLIP)
-│   ├── io_utils.py                         # cargar configs YAML
-│   ├── metrics.py                          # MM-score, IScore
+│   ├── comparison.py                      # compara 4 modelos ISA + batch SHAP
+│   ├── comparison_vqa.py                  # comparador PubMedCLIP vs BioMedCLIP en VQA-Med
+│   ├── devices.py                         # manejo de device (CUDA/CPU)
+│   ├── registry.py                        # registro de modelos y datasets
+│   ├── models.py                          # wrappers de CLIP (PubMedCLIP, WhyXrayCLIP, RCLIP, BioMedCLIP)
+│   ├── io_utils.py                        # cargar configs YAML
+│   ├── metrics.py                         # MM-score, IScore
 │   ├── datasets/
 │   │   ├── __init__.py
-│   │   ├── base.py                         # interfaz DatasetBase
-│   │   ├── roco.py                         # loader ROCO (lee ZIP local)
-│   │   └── vqa_med_2019.py                 # loader VQA-Med 2019 (solo split Training)
+│   │   ├── base.py                        # interfaz DatasetBase
+│   │   ├── roco.py                        # loader ROCO (lee ZIP local)
+│   │   └── vqa_med_2019.py                # loader VQA-Med 2019 (splits Training/Val/Test)
 │   ├── tasks/
 │   │   ├── __init__.py
-│   │   ├── isa.py                          # tarea Image-Sentence Alignment
-│   │   ├── vqa.py                          # tarea VQA + SHAP + visualizaciones
-│   │   ├── utils.py                        # prepare_batch, token lengths, etc.
-│   │   └── whyxrayclip.py                  # utilidades específicas WhyXrayCLIP
-│   ├── comparison_vqa.py                   # utilidades para comparar modelos en VQA-Med 2019
+│   │   ├── isa.py                         # tarea Image-Sentence Alignment
+│   │   ├── vqa.py                         # tarea VQA + SHAP + visualizaciones
+│   │   ├── utils.py                       # prepare_batch, token lengths, etc.
+│   │   └── whyxrayclip.py                 # utilidades específicas WhyXrayCLIP
 │   ├── shap_tools/
-│   │   ├── masker.py                       # build_masker (BOS/EOS safe)
-│   │   └── predictor.py                    # Predictor callable para SHAP
+│   │   ├── masker.py                      # build_masker (BOS/EOS safe)
+│   │   ├── predictor.py                   # predictor ISA
+│   │   └── vqa_predictor.py               # predictor especializado para VQA
 │   └── vis/
-│       └── heatmaps.py                     # mapas de calor imagen+texto
+│       └── heatmaps.py                    # mapas de calor imagen+texto
 ├── experiments/
-│   ├── pubmedclip_roco_isa.py              # experimento PubMedCLIP + ROCO
-│   ├── whyxrayclip_roco_isa.py             # experimento WhyXrayCLIP + ROCO
-│   ├── rclip_roco_isa.py                   # experimento Rclip + ROCO
-│   ├── biomedclip_roco_isa.py              # experimento BiomedCLIP + ROCO
-│   ├── compare_all_models.py               # compara simultáneamente en ISA
-│   └── compare_vqa_models.py               # compara PubMedCLIP vs BioMedCLIP en VQA-Med
+│   ├── analyze_batch_results.py           # dashboard estadístico desde batch_shap_results.csv
+│   ├── biomedclip_roco_isa.py
+│   ├── compare_all_models.py              # comparador 4 modelos ISA (script/notebook)
+│   ├── compare_vqa_models.py              # comparador VQA
+│   ├── pubmedclip_roco_isa.py
+│   ├── rclip_roco_isa.py
+│   ├── README_compare_models.md           # guía detallada del comparador
+│   └── whyxrayclip_roco_isa.py
+├── outputs/
+│   ├── analysis/                          # dashboards (tabla_iscore_promedio.png, etc.)
+│   ├── isa_heatmaps/                      # >100 heatmaps ISA (png)
+│   └── vqa_heatmaps/                      # 80+ heatmaps VQA
 ├── configs/
-│   ├── roco_isa_pubmedclip.yaml            # config ISA para PubMedCLIP
-│   ├── roco_isa_whyxrayclip.yaml           # config ISA para WhyXrayCLIP
-│   ├── roco_isa_rclip.yaml                 # config ISA para Rclip
-│   └── roco_isa_biomedclip.yaml            # config ISA para BiomedCLIP
+│   ├── roco_isa_pubmedclip.yaml
+│   ├── roco_isa_whyxrayclip.yaml
+│   ├── roco_isa_rclip.yaml
+│   ├── roco_isa_biomedclip.yaml
+│   └── vqa_med_2019_pubmedclip.yaml
 ├── scripts/
-│   └── download_dataset.py                 # script para descargar dataset
-├── data/                                    # carpeta para datasets (no versionada)
-├── setup.sh                                 # script de instalación automática (un solo click)
-├── pyproject.toml                          # configuración del proyecto y dependencias
+│   ├── download_dataset.py                # descarga ROCO
+│   └── download_vqa_med_2019.py           # descarga VQA-Med 2019 (ZIP completo)
+├── data/                                  # carpeta para datasets (no versionada)
+├── documentation_tecnica.md
+├── REPORTE_TECNICO_MM_SHAP_MEDCLIP.md
+├── setup.sh                               # script de instalación automática (un solo click)
+├── pyproject.toml                         # configuración del proyecto y dependencias
+├── test_alpha_adjustment.py
 └── README.md
 ```
 
@@ -271,7 +289,7 @@ El directorio `experiments/` contiene scripts completos listos para ejecutar loc
 
 ### 🧠 `compare_vqa_models.py`
 - **Modelos**: PubMedCLIP (ViT-B/32) y BioMedCLIP (ViT-B/16)
-- **Dataset**: VQA-Med 2019 (split *Training*, categorías C1–C3)
+- **Dataset**: VQA-Med 2019 (splits *Training/Validation/Test*, categorías C1–C4). El notebook usa por defecto C1–C3 Training.
 - **Tarea**: Visual Question Answering (multiple-choice) con explicación SHAP
 - **Formato**: disponible en `.py` y `.ipynb` para ejecución directa o notebook
 - **Incluye**:
@@ -280,6 +298,22 @@ El directorio `experiments/` contiene scripts completos listos para ejecutar loc
   - Visualización comparativa conjunta + heatmaps individuales por modelo
   - Control del grid de parches (PubMedCLIP mantiene 7×7, BioMedCLIP se normaliza a 7×7 para comparación justa)
 
+### 🧮 `compare_all_models.py`
+- **Objetivo**: comparar simultáneamente PubMedCLIP, BioMedCLIP, RCLIP y WhyXrayCLIP sobre la misma muestra de ROCO.
+- **Basado en**: `src/mmshap_medclip/comparison.py` (usa `load_all_models`, `run_shap_on_all_models`, `plot_comparison_simple` y `save_comparison`).
+- **Extras**:
+  - Identifica automáticamente el modelo más balanceado según IScore.
+  - Permite guardar figuras (`outputs/comparison_sample_XX.png`) y resúmenes JSON.
+  - Documentación extendida en `experiments/README_compare_models.md`.
+
+### 📈 `analyze_batch_results.py`
+- **Entrada**: `outputs/batch_shap_results.csv` generado con `comparison.batch_shap_analysis`.
+- **Salida**: tableros en `outputs/analysis/` (`dashboard_completo.png`, `boxplot_iscore.png`, `balance_score_comparison.png`, tablas CSV, etc.).
+- **Análisis incluye**:
+  - Estadísticos descriptivos para IScore/TScore/Logit por modelo.
+  - Pruebas inferenciales (Shapiro-Wilk, Kruskal-Wallis, Wilcoxon) y correlaciones con la longitud del caption.
+  - Visualizaciones listas para presentaciones (ranking de modelos, heatmap de correlaciones, violin/box plots).
+
 **Todos los experimentos incluyen**:
 - Carga automática del dataset desde archivo local
 - Evaluación de balance multimodal con SHAP
@@ -287,6 +321,58 @@ El directorio `experiments/` contiene scripts completos listos para ejecutar loc
 - Cálculo de métricas (TScore, IScore, MM-Score)
 
 ---
+
+## 🧰 Herramientas de comparación y análisis
+
+### Comparador ISA (`src/mmshap_medclip/comparison.py`)
+- `load_all_models`, `run_shap_on_all_models` y `plot_comparison_simple` permiten levantar los 4 modelos médicos y generar una figura conjunta (imagen + texto coloreado) con métricas logit/TScore/IScore.
+- `plot_individual_heatmaps` y `save_comparison` facilitan guardar PNG/JSON en `outputs/`.
+- `analyze_multiple_samples` resume SHAP de varios índices y devuelve un `DataFrame`.
+- `batch_shap_analysis` ejecuta SHAP en rangos grandes de muestras, es **idempotente** (retoma donde se quedó, detecta NaN y vuelve a procesar) y escribe `outputs/batch_shap_results.csv`, que luego usa el notebook de análisis.
+
+```python
+from mmshap_medclip.comparison import load_all_models, batch_shap_analysis
+from mmshap_medclip.devices import get_device
+from mmshap_medclip.io_utils import load_config
+from mmshap_medclip.registry import build_dataset
+
+device = get_device()
+cfg = load_config("configs/roco_isa_pubmedclip.yaml")
+dataset = build_dataset(cfg["dataset"])
+models = load_all_models(device)
+
+df = batch_shap_analysis(
+    models=models,
+    dataset=dataset,
+    device=device,
+    start_idx=0,
+    end_idx=500,
+    csv_path="outputs/batch_shap_results.csv",
+)
+```
+
+### Comparador VQA (`src/mmshap_medclip/comparison_vqa.py`)
+- `load_vqa_models` levanta PubMedCLIP y BioMedCLIP, respetando las preferencias de visualización de cada wrapper.
+- `run_vqa_shap_on_models` usa `tasks.vqa.run_vqa_one` para explicar simultáneamente ambos modelos sobre la misma pregunta (usa los candidatos generados por `datasets.vqa_med_2019`).
+- `plot_vqa_comparison` normaliza automáticamente los grids de parches (todos quedan en 7×7) y crea colorbars independientes para texto e imagen.
+- El script `experiments/compare_vqa_models.py` y los heatmaps en `outputs/vqa_heatmaps/` se apoyan en este módulo.
+
+### Dashboards estadísticos
+- `batch_shap_analysis` + `experiments/analyze_batch_results.py` conforman el flujo de análisis masivo: primero se genera un CSV con los SHAP por modelo, luego el notebook produce tablas y gráficos listos para reportes.
+- El notebook guarda tanto CSV (`estadisticas_descriptivas.csv`, `metricas_balance_multimodal.csv`, etc.) como figuras (`dashboard_completo.png`, `ranking_balance_modelos.png`, ...) directamente en `outputs/analysis/`.
+
+---
+
+## 📊 Resultados y dashboards incluidos
+
+- `outputs/analysis/` contiene gráficas y tablas ya renderizadas:
+  - `balance_score_comparison.png`, `ranking_balance_modelos.png` → ranking visual del modelo más balanceado.
+  - `boxplot_iscore.png`, `violinplot_iscore.png`, `boxplots_iscore_tscore.png`, `violinplots_iscore_tscore.png` → distribución detallada de IScores/TScores.
+  - `heatmap_correlaciones.png`, `scatter_iscore_vs_tscore.png`, `scatter_caption_length_vs_iscore.png` → correlaciones entre modelos y con la longitud del caption.
+  - `tabla_iscore_promedio.png` y el `dashboard_completo.png` listos para presentaciones.
+- `outputs/isa_heatmaps/` agrupa más de 100 PNG con los heatmaps ISA generados por `compare_all_models.py` (uno por modelo y muestra).
+- `outputs/vqa_heatmaps/` incluye 88 visualizaciones VQA (PubMedCLIP y BioMedCLIP) con grids normalizados y palabras coloreadas.
+- El notebook también escribe CSV (`estadisticas_descriptivas.csv`, `metricas_balance_multimodal.csv`, `analisis_estadisticos_inferenciales.csv`, etc.) dentro de `outputs/analysis/` cada vez que se ejecuta el flujo de análisis.
 
 ## 🚀 Instalación Manual
 
@@ -370,41 +456,55 @@ gdown 1eRUC8F8PtXffa9iArJnyB8AMqlPNoSwc -O data/dataset_roco.zip
 
 ### Dataset VQA-Med 2019 (Visual Question Answering)
 
-> ⚠️ El conjunto VQA-Med 2019 requiere registro en ImageCLEF. No se redistribuye en este repositorio.
+> ⚠️ El conjunto VQA-Med 2019 requiere registro en ImageCLEF. El script y las instrucciones suponen que ya cuentas con permisos para descargar el ZIP oficial. El loader soporta los splits **Training / Validation / Test** y las categorías **C1–C4** (Modality, Plane, Organ System, Abnormality).
 
-1. **Solicita el dataset** en la [página oficial de ImageCLEF VQA-Med](https://www.imageclef.org/VQA/2019). Descarga el archivo `ImageClef-2019-VQA-Med-Training.zip` (o el paquete completo `VQA-Med-2019.zip`, que contiene los sub-zips).
-2. **Coloca el ZIP sin descomprimir** en `data/`. Se soportan dos opciones:
+#### Opción 1: Script automático
+
+```bash
+python scripts/download_vqa_med_2019.py
+```
+
+El script:
+1. ✅ Crea `data/` si no existe.
+2. 📥 Descarga el ZIP completo `VQA-Med-2019.zip` vía `gdown` (no lo descomprime).
+3. 📦 Conserva la estructura oficial; el loader abrirá internamente `ImageClef-2019-VQA-Med-Training.zip` o los sub-zips correspondientes.
+4. 🔁 Si el archivo ya existe, pregunta si deseas sobrescribirlo.
+
+#### Opción 2: Descarga manual
+
+1. **Solicita el dataset** en la [página oficial de ImageCLEF VQA-Med](https://www.imageclef.org/VQA/2019). Descarga el archivo `ImageClef-2019-VQA-Med-Training.zip` o el paquete completo `VQA-Med-2019.zip`.
+2. **Coloca el ZIP sin descomprimir** en `data/`. Se soportan ambas rutas:
    - `data/ImageClef-2019-VQA-Med-Training.zip`
-   - `data/VQA-Med-2019.zip` (el loader abrirá el zip hijo automáticamente)
-3. **Estructura esperada** dentro del zip:
+   - `data/VQA-Med-2019.zip` (el loader abrirá automáticamente el ZIP interno correcto para el split seleccionado)
+3. **Estructura esperada** dentro del ZIP de Training:
    ```
    ImageClef-2019-VQA-Med-Training/
      ├── QAPairsByCategory/
      │   ├── C1_Modality_train.txt
      │   ├── C2_Plane_train.txt
-     │   └── C3_Organ_train.txt
+     │   ├── C3_Organ_train.txt
+     │   └── C4_Abnormality_train.txt
      └── Train_images/
          ├── xxx.jpg
          └── ...
    ```
-   Solo se admiten las categorías C1–C3 y el subdirectorio `Train_images`. El split de validación/Test no se utiliza.
-4. **Configura el experimento** apuntando al zip. Ejemplo mínimo (`configs/vqa_med_2019_pubmedclip.yaml`):
+4. **Configura el experimento** apuntando al ZIP adecuado. Ejemplo mínimo (`configs/vqa_med_2019_pubmedclip.yaml`):
    ```yaml
    dataset:
      name: vqa_med_2019
      params:
-       zip_path: data/ImageClef-2019-VQA-Med-Training.zip
+       zip_path: data/ImageClef-2019-VQA-Med-Training.zip   # o data/VQA-Med-2019.zip
        split: Training
        images_subdir: Train_images
        n_rows: all
    ```
 5. **Verificación**: al cargar el dataset verás mensajes como:
    ```
-   📊 Split: TRAINING ...
-   📂 Detectado prefijo ...
+   📊 Split seleccionado: TRAINING
    📁 Archivos a leer para split TRAINING: ['C1_Modality_train.txt', ...]
+   📊 Construyendo candidatos por categoría...
    ```
-   Si aparece un error sobre candidatos vacíos o rutas inválidas, revisa que los archivos *_train.txt* estén dentro de `QAPairsByCategory/` y que las imágenes residan en `Train_images/`.
+   Si aparece un error sobre candidatos vacíos o rutas inválidas, revisa que los archivos C1–C4 estén dentro de `QAPairsByCategory/` y que las imágenes residan en la carpeta correcta (`Train_images`, `Val_images` o `VQAMed2019_Test_Images` según el split).
 
 ---
 
@@ -468,8 +568,9 @@ python3 experiments/biomedclip_roco_isa.py
 ### Opción 2: Ejecutar scripts directamente (manual)
 
 ```bash
-# 1. Descargar dataset
+# 1. Descargar datasets necesarios
 python3 scripts/download_dataset.py
+# (opcional) python3 scripts/download_vqa_med_2019.py  # solo si usarás VQA-Med
 
 # 2. Ejecutar experimento con PubMedCLIP
 python3 experiments/pubmedclip_roco_isa.py
