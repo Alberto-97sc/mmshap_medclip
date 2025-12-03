@@ -1,6 +1,6 @@
 # Informe técnico de `mmshap_medclip`
 
-_Fecha: 29 de noviembre de 2025_
+_Fecha: 2 de diciembre de 2025_
 
 ---
 
@@ -21,13 +21,13 @@ _Fecha: 29 de noviembre de 2025_
 | --- | --- |
 | `README.md` | Guía de uso, instalación y estructura general. |
 | `configs/` | Plantillas YAML para ROCO (ISA) y VQA‑Med, reutilizadas por scripts/notebooks. |
-| `data/` | Carpeta destino para los ZIP de datasets (no versionada). |
-| `experiments/` | Scripts Jupytext (`*.py`) que pueden ejecutarse como notebook o CLI. |
-| `outputs/analysis/` | Ejemplos de figuras y tablas generadas por análisis previos. |
+| `data/` | Actualmente versionada con `dataset_roco.zip` y `VQA-Med-2019.zip`, listos para lectura directa sin descomprimir. |
+| `experiments/` | Scripts Jupytext (`*.py`) y sus notebooks sincronizados (`*.ipynb`) para ejecutar los pipelines ISA/VQA. |
+| `experiments/analyze_batch_results.[py\|ipynb]` | Notebook/CLI para auditar CSVs batch, generar tablas y figuras consolidadas en `outputs/analysis/`. |
+| `outputs/analysis/` | Ejemplos de figuras y dashboards generados por el análisis batch. |
+| `outputs/*.csv` | Artefactos reanudables: `batch_shap_results_test.csv` e `vqa_batch_shap_results_test.csv` sirven como plantillas. |
 | `scripts/` | Descarga automatizada (`download_dataset.py`, `download_vqa_med_2019.py`). |
 | `src/mmshap_medclip/` | Paquete instalable con toda la lógica de modelos, datasets, SHAP y visualizaciones. |
-| `mmshap_medclip/` | Copia espejo del paquete (misma estructura) usada en empaquetados previos; revisar para evitar divergencias. |
-| `venv/`, `venv_windows/` | Entornos virtuales listos para Linux/macOS y Windows respectivamente (se mantienen en el repo actual). |
 | `setup.sh` | Instalación “one click”: verifica Python, configura Git, instala dependencias, descarga datasets y genera notebooks. |
 | `documentation_tecnica.md` | Documento previo; el presente informe amplía y actualiza la fotografía del repositorio. |
 
@@ -35,28 +35,29 @@ _Fecha: 29 de noviembre de 2025_
 
 ## 3. Flujo funcional end‑to‑end
 
-1. **Configuración**  
+1. **Configuración**
    - Se selecciona una configuración YAML en `configs/` con rutas de dataset y nombre de modelo.
    - `io_utils.load_config()` la carga y se inicializa el dispositivo vía `devices.get_device()`.
 
-2. **Construcción de componentes**  
+2. **Construcción de componentes**
    - `registry.build_dataset()` y `registry.build_model()` instancian clases registradas mediante decoradores `@register_dataset` y `@register_model`.
 
-3. **Preparación de lotes**  
+3. **Preparación de lotes**
    - `tasks.utils.prepare_batch()` normaliza PIL/captions, aplica el `processor` del wrapper y traslada tensores al device, incorporando truncado seguro para tokenizadores de Hugging Face.
 
-4. **Inferencia + SHAP**  
+4. **Inferencia + SHAP**
    - `tasks.isa.run_isa_one()` o `tasks.vqa.run_vqa_one()` calculan logits y, si se solicita, ejecutan `_compute_*_shap()` que:
      - Calcula longitudes reales de texto y la rejilla de parches.
      - Genera un `masker` que preserva tokens especiales y un `Predictor`/`VQAPredictor` que enmascara parches antes de llamar al modelo.
      - Ajusta automáticamente `max_evals` del `shap.Explainer` a `2 * (#features) + 1`.
 
-5. **Métricas y visualizaciones**  
+5. **Métricas y visualizaciones**
    - `metrics.compute_mm_score()` y `compute_iscore()` derivan TScore/IScore y desglose palabra→peso.
    - `vis.heatmaps.plot_text_image_heatmaps()` produce una figura combinada texto‑imagen, desnormalizando imágenes y aplicando overlays controlados (alpha configurable, coarsening opcional).
 
-6. **Consumo**  
+6. **Consumo**
    - Scripts en `experiments/` llaman al pipeline sobre un índice o lote, generan notebooks sincronizables (Jupytext) y pueden usar `comparison.py` para evaluar múltiples modelos en paralelo.
+   - El análisis posterior se centraliza en `experiments/analyze_batch_results` (py/notebook), que resume cualquier CSV batch y alimenta las figuras en `outputs/analysis/`.
 
 ---
 
@@ -123,34 +124,36 @@ Ubicados en `models.py`:
 | --- | --- | --- |
 | `experiments/pubmedclip_roco_isa.py` | Evalúa PubMedCLIP en ROCO; ejecuta `run_isa_one` sobre un índice configurable. | `configs/roco_isa_pubmedclip.yaml` |
 | `experiments/whyxrayclip_roco_isa.py`, `rclip_roco_isa.py`, `biomedclip_roco_isa.py` | Variantes para cada modelo soportado, idéntica interfaz. | Config YAML correspondiente. |
-| `experiments/compare_all_models.py` | Carga simultáneamente los cuatro modelos, ejecuta SHAP, imprime resumen y heatmaps individuales, incluye `batch_shap_analysis`. | `configs/roco_isa_pubmedclip.yaml`, `outputs/batch_shap_results.csv`. |
-| `experiments/compare_vqa_models.py` | Comparación PubMedCLIP vs BioMedCLIP en VQA‑Med 2019, incluye versión batch reanudable. | `data/VQA-Med-2019.zip`, parámetros `dataset_params`. |
+| `experiments/compare_all_models.py` | Carga simultáneamente los cuatro modelos, ejecuta SHAP, imprime resumen y heatmaps individuales; `batch_shap_analysis` persiste en `outputs/batch_shap_results_test.csv` (renombrable). | `configs/roco_isa_pubmedclip.yaml`, `outputs/batch_shap_results_test.csv`. |
+| `experiments/compare_vqa_models.py` | Comparación PubMedCLIP vs BioMedCLIP en VQA‑Med 2019, incluye versión batch reanudable que escribe `outputs/vqa_batch_shap_results_test.csv`. | `data/VQA-Med-2019.zip`, parámetros `dataset_params`. |
+| `experiments/analyze_batch_results.py` | Notebook/CLI que analiza cualquier CSV batch (ISA o VQA), genera estadísticas, dashboards y tablas en `outputs/analysis/`. | `outputs/batch_shap_results*.csv` o `outputs/vqa_batch_shap_results*.csv`. |
 | `experiments/README_compare_models.md` | Documenta el uso del comparador, incluye ejemplos de código y recomendaciones. | — |
 | `test_alpha_adjustment.py` | Script rápido para verificar alpha en heatmaps (ejecuta RCLIP + PubMedCLIP). | Configs de ROCO. |
 
-Todos los scripts están en formato Jupytext (`py:percent`), por lo que `jupytext --to notebook` crea el `.ipynb` correspondiente sin perder versionado limpio.
+Todos los scripts están en formato Jupytext (`py:percent`), por lo que `jupytext --sync --to notebook` crea/actualiza el `.ipynb` correspondiente sin perder versionado limpio.
 
 ---
 
 ## 6. Gestión de datos y assets
 
-- **Descarga automática**  
+- **Descarga automática**
   - `scripts/download_dataset.py`: descarga `dataset_roco.zip` (~6.6 GB) con `gdown`, valida tamaño y evita descargar de nuevo salvo confirmación.
   - `scripts/download_vqa_med_2019.py`: descarga `VQA-Med-2019.zip` (ZIP padre completo) para permitir lectura anidada.
+  - El repositorio actual ya versiona ambos ZIP dentro de `data/`, facilitando pruebas offline a costa de mayor peso en Git.
 
-- **Configs**  
+- **Configs**
   - `configs/roco_isa_*.yaml`: mismos parámetros de dataset; solo cambia `model.name`/`params`.
   - `configs/vqa_med_2019_pubmedclip.yaml`: ejemplo de configuración VQA; se puede duplicar para otros modelos.
 
-- **Outputs**  
-  - `outputs/analysis/`: contiene PNGs (balance, heatmaps, dashboards) como referencia de resultados esperados.
-  - Los scripts batch guardan CSV/JSON en `outputs/` con métricas por muestra y figura comparativa (`comparison_sample_<idx>.png`).
+- **Outputs**
+  - `outputs/analysis/`: contiene PNGs (balance, heatmaps, dashboards) generados por `experiments/analyze_batch_results`.
+  - Los scripts batch guardan CSV/JSON en `outputs/` con métricas por muestra (ej. `batch_shap_results_test.csv`, `vqa_batch_shap_results_test.csv`) más figuras comparativas (`comparison_sample_<idx>.png`).
 
 ---
 
 ## 7. Dependencias e instalación
 
-- `pyproject.toml` (tanto en la raíz como en `mmshap_medclip/`) declara dependencias base: `torch`, `torchvision`, `transformers`, `open-clip-torch`, `shap`, `matplotlib`, `pandas`, `pillow`, `pyyaml`, `tqdm`, `gdown`.
+- `pyproject.toml` (único, en la raíz) declara las dependencias base: `torch`, `torchvision`, `transformers`, `open-clip-torch`, `shap`, `matplotlib`, `pandas`, `pillow`, `pyyaml`, `tqdm`, `gdown`.
 - Extras:
   - `notebooks`: `jupytext`, `notebook`, `ipykernel`.
   - `dev`: `pytest`, `black`, `ruff`.
@@ -159,27 +162,27 @@ Todos los scripts están en formato Jupytext (`py:percent`), por lo que `jupytex
   2. Configuración de Git con el usuario del proyecto.
   3. Instalación editable `pip install -e .`.
   4. Descarga de datasets (ROCO + VQA) usando los scripts de `scripts/`.
-  5. Conversión de todos los experiments a notebooks (`jupytext --to notebook`).
-- Entornos locales (`venv/`, `venv_windows/`) están presentes; si se trabaja dentro del repo se recomienda no usarlos directamente para evitar conflictos con `pip install -e .` y preferir un entorno limpio por usuario.
+  5. Conversión y sincronización de todos los experiments a notebooks (`jupytext --sync --to notebook`).
+- Actualmente no se versionan entornos virtuales precreados; se espera que cada colaborador genere su propio `venv` o entorno de Conda antes de ejecutar `pip install -e .`.
 
 ---
 
 ## 8. Observaciones relevantes del estado actual
 
-1. **Duplicación del paquete**  
-   - Existe una copia completa en `mmshap_medclip/` además de `src/mmshap_medclip/`. No hay diferencias aparentes hoy, pero conviene definir cuál será la fuente de verdad para evitar editar archivos en un árbol y ejecutar desde otro.
+1. **Estructura consolidada**
+   - El paquete solo vive en `src/mmshap_medclip/`; ya no existe una copia paralela en la raíz, lo que simplifica la elección de “fuente de verdad”.
 
-2. **Entornos virtuales versionados**  
-  - `venv/` y `venv_windows/` ocupan espacio considerable. Evaluar moverlos fuera del repositorio o añadirlos a `.gitignore` en futuras limpiezas para reducir peso del proyecto.
+2. **Datasets versionados**
+   - `data/dataset_roco.zip` y `data/VQA-Med-2019.zip` están presentes en Git. Esto agiliza la reproducción, pero incrementa tamaño y puede convenir migrarlos a almacenamiento externo o Git LFS.
 
-3. **Documentación**  
-  - `README.md` y `documentation_tecnica.md` ya contienen mucha información operativa. Este reporte los complementa con una descripción integral de componentes; mantenerlos sincronizados ayudará a nuevos colaboradores.
+3. **Outputs de referencia**
+   - Se versionan CSV de ejemplo (`batch_shap_results_test.csv`, `vqa_batch_shap_results_test.csv`) y múltiples PNG en `outputs/analysis/`. Son útiles como baseline, aunque conviene definir una política de rotación para evitar crecimiento descontrolado.
 
-4. **Outputs y datos**  
-  - `outputs/analysis/` y los CSV generados por `batch_shap_analysis` sirven como baseline de visualización y métricas; conviene ubicarlos fuera del versionado si comienzan a crecer (o añadir limpieza automática).
+4. **Sincronización Py/IPynb**
+   - `experiments/` mantiene cada cuaderno en doble formato (`.py` + `.ipynb`). Cualquier cambio debe sincronizarse con `jupytext --sync` para prevenir divergencias difíciles de revisar.
 
-5. **Scripts batch**  
-  - Los procesos en `comparison.py`/`comparison_vqa.py` manejan reanudación mediante CSV, pero asumen que el archivo es accesible y consistente. Si se cambia la lista de modelos registrados, se debe regenerar el CSV para evitar columnas obsoletas.
+5. **Procesos batch**
+   - `comparison.py`/`comparison_vqa.py` y `analyze_batch_results` dependen de columnas específicas en los CSV; si se agregan nuevos modelos o métricas hay que regenerar todos los archivos derivados para mantener consistencia.
 
 ---
 
@@ -207,12 +210,11 @@ Todos los scripts están en formato Jupytext (`py:percent`), por lo que `jupytex
 
 ## 10. Próximos pasos sugeridos
 
-- Consolidar la estructura en un único árbol (`src/`) y, si la carpeta `mmshap_medclip/` ya no es necesaria para distribución, documentar su uso o eliminarla.
-- Ignorar los entornos virtuales predeterminados para reducir peso del repositorio.
-- Automatizar la limpieza de salidas masivas (`outputs/`) y proporcionar scripts para regenerarlas cuando sea necesario.
+- Evaluar mover los ZIP de `data/` a almacenamiento externo (o Git LFS) para mantener liviano el repositorio sin perder reproducibilidad.
+- Definir una política de limpieza/rotación para `outputs/analysis/` y los CSV batch, incluyendo scripts que regeneren las figuras bajo demanda.
+- Integrar `jupytext --sync` en una tarea de CI/linting para asegurar que los pares `.py`/`.ipynb` permanezcan alineados.
 - Añadir pruebas unitarias (el extra `dev` ya incluye `pytest`) para validar nuevas incorporaciones de modelos/datasets.
 
 ---
 
 Este informe resume la lógica, componentes y estado actual del repositorio, proporcionando una vista integrada que facilita la incorporación de nuevos colaboradores y la planificación de mejoras futuras.
-

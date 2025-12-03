@@ -62,6 +62,42 @@ from mmshap_medclip.registry import build_dataset
 
 print("🔄 Cargando configuración y dataset...")
 cfg = load_config("configs/roco_isa_pubmedclip.yaml")
+
+ROCO_SPLIT_MANUAL = None  # "train", "validation" o "test". Usa None para valor por defecto/entorno.
+
+roco_split_aliases = {
+    "train": "train",
+    "training": "train",
+    "val": "validation",
+    "validation": "validation",
+    "test": "test",
+    "testing": "test",
+}
+
+default_roco_split = (
+    cfg.get("dataset", {})
+       .get("params", {})
+       .get("split", "validation")
+       .lower()
+)
+roco_split_env = os.environ.get("ROCO_SPLIT")
+roco_split_source = ROCO_SPLIT_MANUAL or roco_split_env or default_roco_split
+roco_split_raw = roco_split_source.strip().lower()
+if roco_split_raw not in roco_split_aliases:
+    raise ValueError(f"Split ROCO '{roco_split_raw}' no soportado. Usa train, validation o test.")
+
+roco_split = roco_split_aliases[roco_split_raw]
+roco_image_subdirs = {
+    "train": "all_data/training/radiology/images",
+    "validation": "all_data/validation/radiology/images",
+    "test": "all_data/test/radiology/images",
+}
+
+cfg["dataset"]["params"]["split"] = roco_split
+cfg["dataset"]["params"]["images_subdir"] = roco_image_subdirs.get(roco_split)
+cfg["dataset"]["params"].setdefault("columns", {}).pop("images_subdir", None)
+print(f"📁 ROCO split seleccionado: {roco_split.upper()}")
+
 device = get_device()
 dataset = build_dataset(cfg["dataset"])
 
@@ -123,6 +159,124 @@ print("🔍 GENERANDO HEATMAPS INDIVIDUALES DETALLADOS")
 print("="*80 + "\n")
 
 plot_individual_heatmaps(results, image, caption)
+
+# %% [markdown]
+# ## 🖼️ Exportar heatmaps ISA en lote
+#
+# Esta sección permite recorrer automáticamente un rango de muestras y guardar los
+# 4 heatmaps (uno por modelo) en la carpeta indicada dentro de `outputs/`.
+# Puedes relanzar el proceso cuantas veces necesites; opcionalmente puedes
+# sobrescribir archivos existentes.
+
+# %%
+import re
+from pathlib import Path
+from typing import Optional
+
+import matplotlib.pyplot as plt
+from mmshap_medclip.comparison import run_shap_on_all_models
+from mmshap_medclip.tasks.isa import plot_isa
+
+# 🎯 CONFIGURACIÓN: ajusta el rango y carpeta destino
+HEATMAPS_START_IDX = 150          # Índice inicial (inclusive)
+HEATMAPS_END_IDX = 155            # Índice final (inclusive). Usa None para llegar al final del dataset
+HEATMAPS_OUTPUT_DIR = "outputs/isa_heatmaps"
+HEATMAPS_OVERWRITE = False        # Cambia a True para reemplazar archivos existentes
+HEATMAPS_DPI = 200
+
+_slug_pattern = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(label: str) -> str:
+    slug = _slug_pattern.sub("_", label.lower()).strip("_")
+    return slug or "modelo"
+
+
+def export_isa_heatmaps_batch(
+    start_idx: int,
+    end_idx: Optional[int],
+    output_dir: str,
+    overwrite: bool = False,
+    dpi: int = 200,
+):
+    if not loaded_models:
+        raise RuntimeError("No hay modelos cargados para generar heatmaps.")
+
+    total_samples = len(dataset)
+    if total_samples == 0:
+        raise RuntimeError("El dataset está vacío; no hay muestras para procesar.")
+
+    max_idx = total_samples - 1
+    if start_idx < 0 or start_idx > max_idx:
+        raise ValueError(f"start_idx debe estar entre 0 y {max_idx}.")
+
+    if end_idx is None:
+        end_idx = max_idx
+    end_idx = min(end_idx, max_idx)
+    if end_idx < start_idx:
+        raise ValueError("end_idx no puede ser menor que start_idx.")
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n🖼️ Exportando heatmaps ISA de {start_idx} a {end_idx} (total {end_idx - start_idx + 1} muestras)")
+
+    for sample_idx in range(start_idx, end_idx + 1):
+        print(f"\n{'='*80}")
+        print(f"📸 Procesando muestra {sample_idx}")
+        print(f"{'='*80}")
+
+        try:
+            results_batch, image, caption = run_shap_on_all_models(
+                models=loaded_models,
+                sample_idx=sample_idx,
+                dataset=dataset,
+                device=device,
+                verbose=False
+            )
+        except Exception as exc:
+            print(f"❌ Error obteniendo SHAP para la muestra {sample_idx}: {exc}")
+            continue
+
+        for model_name, result in results_batch.items():
+            if result is None:
+                print(f"⚠️  {model_name} no devolvió resultados; se omite.")
+                continue
+
+            fig = None
+            try:
+                fig = plot_isa(
+                    image=image,
+                    caption=caption,
+                    isa_output=result,
+                    display_plot=False
+                )
+
+                filename = f"{sample_idx}_{_slugify(model_name)}_isa.png"
+                filepath = output_path / filename
+
+                if filepath.exists() and not overwrite:
+                    print(f"⏭️  {filepath.name} ya existe. Usa HEATMAPS_OVERWRITE=True para reemplazarlo.")
+                    continue
+
+                fig.savefig(filepath, bbox_inches="tight", dpi=dpi)
+                print(f"✅ Heatmap guardado: {filepath}")
+            except Exception as exc:
+                print(f"❌ Error guardando heatmap de {model_name} (muestra {sample_idx}): {exc}")
+            finally:
+                if fig is not None:
+                    plt.close(fig)
+
+    print("\n🎉 Exportación de heatmaps ISA finalizada.")
+
+
+export_isa_heatmaps_batch(
+    start_idx=HEATMAPS_START_IDX,
+    end_idx=HEATMAPS_END_IDX,
+    output_dir=HEATMAPS_OUTPUT_DIR,
+    overwrite=HEATMAPS_OVERWRITE,
+    dpi=HEATMAPS_DPI,
+)
 
 # %% [markdown]
 # ## 💾 Guardar resultados
