@@ -35,27 +35,27 @@ _Fecha: 2 de diciembre de 2025_
 
 ## 3. Flujo funcional end‑to‑end
 
-1. **Configuración**  
+1. **Configuración**
    - Se selecciona una configuración YAML en `configs/` con rutas de dataset y nombre de modelo.
    - `io_utils.load_config()` la carga y se inicializa el dispositivo vía `devices.get_device()`.
 
-2. **Construcción de componentes**  
+2. **Construcción de componentes**
    - `registry.build_dataset()` y `registry.build_model()` instancian clases registradas mediante decoradores `@register_dataset` y `@register_model`.
 
-3. **Preparación de lotes**  
+3. **Preparación de lotes**
    - `tasks.utils.prepare_batch()` normaliza PIL/captions, aplica el `processor` del wrapper y traslada tensores al device, incorporando truncado seguro para tokenizadores de Hugging Face.
 
-4. **Inferencia + SHAP**  
+4. **Inferencia + SHAP**
    - `tasks.isa.run_isa_one()` o `tasks.vqa.run_vqa_one()` calculan logits y, si se solicita, ejecutan `_compute_*_shap()` que:
      - Calcula longitudes reales de texto y la rejilla de parches.
      - Genera un `masker` que preserva tokens especiales y un `Predictor`/`VQAPredictor` que enmascara parches antes de llamar al modelo.
      - Ajusta automáticamente `max_evals` del `shap.Explainer` a `2 * (#features) + 1`.
 
-5. **Métricas y visualizaciones**  
+5. **Métricas y visualizaciones**
    - `metrics.compute_mm_score()` y `compute_iscore()` derivan TScore/IScore y desglose palabra→peso.
    - `vis.heatmaps.plot_text_image_heatmaps()` produce una figura combinada texto‑imagen, desnormalizando imágenes y aplicando overlays controlados (alpha configurable, coarsening opcional).
 
-6. **Consumo**  
+6. **Consumo**
    - Scripts en `experiments/` llaman al pipeline sobre un índice o lote, generan notebooks sincronizables (Jupytext) y pueden usar `comparison.py` para evaluar múltiples modelos en paralelo.
    - El análisis posterior se centraliza en `experiments/analyze_batch_results` (py/notebook), que resume cualquier CSV batch y alimenta las figuras en `outputs/analysis/`.
 
@@ -136,16 +136,16 @@ Todos los scripts están en formato Jupytext (`py:percent`), por lo que `jupytex
 
 ## 6. Gestión de datos y assets
 
-- **Descarga automática**  
+- **Descarga automática**
   - `scripts/download_dataset.py`: descarga `dataset_roco.zip` (~6.6 GB) con `gdown`, valida tamaño y evita descargar de nuevo salvo confirmación.
   - `scripts/download_vqa_med_2019.py`: descarga `VQA-Med-2019.zip` (ZIP padre completo) para permitir lectura anidada.
   - El repositorio actual ya versiona ambos ZIP dentro de `data/`, facilitando pruebas offline a costa de mayor peso en Git.
 
-- **Configs**  
+- **Configs**
   - `configs/roco_isa_*.yaml`: mismos parámetros de dataset; solo cambia `model.name`/`params`.
   - `configs/vqa_med_2019_pubmedclip.yaml`: ejemplo de configuración VQA; se puede duplicar para otros modelos.
 
-- **Outputs**  
+- **Outputs**
   - `outputs/analysis/`: contiene PNGs (balance, heatmaps, dashboards) generados por `experiments/analyze_batch_results`.
   - Los scripts batch guardan CSV/JSON en `outputs/` con métricas por muestra (ej. `batch_shap_results_test.csv`, `vqa_batch_shap_results_test.csv`) más figuras comparativas (`comparison_sample_<idx>.png`).
 
@@ -169,19 +169,19 @@ Todos los scripts están en formato Jupytext (`py:percent`), por lo que `jupytex
 
 ## 8. Observaciones relevantes del estado actual
 
-1. **Estructura consolidada**  
+1. **Estructura consolidada**
    - El paquete solo vive en `src/mmshap_medclip/`; ya no existe una copia paralela en la raíz, lo que simplifica la elección de “fuente de verdad”.
 
-2. **Datasets versionados**  
+2. **Datasets versionados**
    - `data/dataset_roco.zip` y `data/VQA-Med-2019.zip` están presentes en Git. Esto agiliza la reproducción, pero incrementa tamaño y puede convenir migrarlos a almacenamiento externo o Git LFS.
 
-3. **Outputs de referencia**  
+3. **Outputs de referencia**
    - Se versionan CSV de ejemplo (`batch_shap_results_test.csv`, `vqa_batch_shap_results_test.csv`) y múltiples PNG en `outputs/analysis/`. Son útiles como baseline, aunque conviene definir una política de rotación para evitar crecimiento descontrolado.
 
-4. **Sincronización Py/IPynb**  
+4. **Sincronización Py/IPynb**
    - `experiments/` mantiene cada cuaderno en doble formato (`.py` + `.ipynb`). Cualquier cambio debe sincronizarse con `jupytext --sync` para prevenir divergencias difíciles de revisar.
 
-5. **Procesos batch**  
+5. **Procesos batch**
    - `comparison.py`/`comparison_vqa.py` y `analyze_batch_results` dependen de columnas específicas en los CSV; si se agregan nuevos modelos o métricas hay que regenerar todos los archivos derivados para mantener consistencia.
 
 ---
@@ -218,4 +218,3 @@ Todos los scripts están en formato Jupytext (`py:percent`), por lo que `jupytex
 ---
 
 Este informe resume la lógica, componentes y estado actual del repositorio, proporcionando una vista integrada que facilita la incorporación de nuevos colaboradores y la planificación de mejoras futuras.
-
