@@ -82,8 +82,8 @@ Ubicados en `models.py`:
 - **`RocoDataset` (`datasets/roco.py`)**: lee el CSV correspondiente directamente desde el ZIP, indexa rutas por basename priorizando coincidencias con `/images/` y el split activo, soporta `images_subdir` explícito y devuelve diccionarios con `{image, text, meta}`.
 - **`VQAMed2019Dataset` (`datasets/vqa_med_2019.py`)**:
   - Permite usar el ZIP padre (`VQA-Med-2019.zip`) o el hijo (`ImageClef-2019-VQA-Med-Training.zip`) sin descomprimir.
-  - Filtra archivos `QAPairsByCategory` para C1–C3 (`*_train.txt`), construye listas de candidatos únicos por categoría y valida que cada muestra conserve al menos un candidato disponible.
-  - Implementa estrategias de resolución de imágenes (por `images_subdir`, basename, ID numérico) y rechaza splits diferentes de Training para mantener consistencia.
+  - Normaliza alias de split (`Training/Validation/Test`) y procesa los archivos `QAPairsByCategory` para las categorías C1–C4, construyendo listas de candidatos únicos por categoría y verificando que cada muestra conserve alternativas.
+  - Detecta automáticamente los subdirectorios de imágenes (`Train_images`, `Val_images`, `VQAMed2019_Test_Images`), resuelve rutas por `images_subdir`, basename o ID numérico y puede trabajar con ZIPs anidados sin requerir extracción previa.
 
 ### 4.4 Utilidades y tareas
 
@@ -147,6 +147,7 @@ Todos los scripts están en formato Jupytext (`py:percent`), por lo que `jupytex
 
 - **Outputs**
   - `outputs/analysis/`: contiene PNGs (balance, heatmaps, dashboards) generados por `experiments/analyze_batch_results`.
+  - `outputs/isa_heatmaps/` y `outputs/vqa_heatmaps/`: colecciones de overlays SHAP exportados por los comparadores ISA/VQA (útiles como baseline visual).
   - Los scripts batch guardan CSV/JSON en `outputs/` con métricas por muestra (ej. `batch_shap_results_test.csv`, `vqa_batch_shap_results_test.csv`) más figuras comparativas (`comparison_sample_<idx>.png`).
 
 ---
