@@ -47,14 +47,12 @@ cd mmshap_medclip
   [Verificar Python]  [Configurar Git]  [Instalar deps]
         │                   │                   │
         └───────────────────┼───────────────────┘
-                            ▼
-                  [Instalar dependencias]
                             │
                             ▼
                    [Descargar dataset]
                             │
                             ▼
-                  [Convertir a notebooks]
+              [Convertir scripts a notebooks]
                             │
                             ▼
                      ✅ ¡LISTO!
